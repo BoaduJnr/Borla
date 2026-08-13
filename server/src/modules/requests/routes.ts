@@ -55,7 +55,16 @@ requestsRouter.post(
   })
 );
 
-/** GET /requests/mine — requests sent (household) or received (collector). */
+/**
+ * GET /requests/mine — requests sent (household) or received (collector).
+ *
+ * Also carries the location each side needs to route to the other once a request is accepted
+ * (the introduce-a-route feature): a household's pickup point (`r.lon/r.lat`) was never
+ * privacy-gated — the target collector already receives it in the `request:new` socket event
+ * the moment the request is created — so it's included unconditionally here too. A collector's
+ * *live* position is a different matter: it's only meaningful, and only shared, once they've
+ * actually accepted (same reveal-on-accept timing as the phone number in GET /requests/:id).
+ */
 requestsRouter.get(
   "/mine",
   requireAuth,
@@ -65,13 +74,18 @@ requestsRouter.get(
       user.role === "household"
         ? await query(
             `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
-                    u.id AS collector_id, u.display_name AS collector_name
-             FROM requests r JOIN users u ON u.id = r.collector_id
+                    u.id AS collector_id, u.display_name AS collector_name,
+                    CASE WHEN r.status = 'accepted' THEN c.last_lon END AS collector_lon,
+                    CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat
+             FROM requests r
+             JOIN users u ON u.id = r.collector_id
+             LEFT JOIN collectors c ON c.user_id = r.collector_id
              WHERE r.household_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
             [user.id]
           )
         : await query(
             `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
+                    r.lon AS household_lon, r.lat AS household_lat,
                     u.id AS household_id, u.display_name AS household_name
              FROM requests r JOIN users u ON u.id = r.household_id
              WHERE r.collector_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,

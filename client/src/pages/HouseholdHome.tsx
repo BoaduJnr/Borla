@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/AuthContext";
 import { useSocket } from "../hooks/SocketContext";
 import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
 import { MapView, type MapPoint } from "../components/MapView";
+import { RoutePanel } from "../components/RoutePanel";
 import { ReviewForm } from "../components/ReviewForm";
 import { IconTrash, IconRecycle, IconLeaf, IconBox, IconPin, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
@@ -36,6 +37,8 @@ interface RequestRow {
   responded_at: string | null;
   collector_id: string;
   collector_name: string | null;
+  collector_lon: number | null;
+  collector_lat: number | null;
 }
 
 export default function HouseholdHome() {
@@ -304,6 +307,13 @@ export default function HouseholdHome() {
                   <button className="btn btn-green btn-sm" onClick={() => revealContact(r.id)}>
                     Show contact
                   </button>
+                )}
+                {r.collector_lon != null && r.collector_lat != null && (
+                  <RoutePanel
+                    from={center}
+                    to={{ lon: r.collector_lon, lat: r.collector_lat }}
+                    label={r.collector_name ?? "collector"}
+                  />
                 )}
                 <div style={{ marginTop: 8 }}>
                   <ReviewForm requestId={r.id} subjectId={r.collector_id} />

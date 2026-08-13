@@ -61,7 +61,7 @@ separate phase, which is appropriate at this scale.</p>
 <h3>2.1 Server (<code>npm run test -w server</code>)</h3>
 <pre><code>✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
-✓ test/integration/requests.test.ts (4 tests)
+✓ test/integration/requests.test.ts (5 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
@@ -71,8 +71,8 @@ separate phase, which is appropriate at this scale.</p>
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  46 passed (46)
-   Duration  47.30s
+      Tests  47 passed (47)
+   Duration  28.87s
 </code></pre>
 <p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); <code>broadcasts.test.ts</code>
@@ -85,7 +85,7 @@ instead of asserting on a field the old synchronous handler used to return direc
  Test Files  2 passed (2)
       Tests  4 passed (4)
 </code></pre>
-<p><strong>Total: 50/50 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
+<p><strong>Total: 51/51 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
 <h2>3. Test case log</h2>
 <p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
@@ -470,6 +470,14 @@ development (rows T-08, T-19, and T-39).</p>
 <td><code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> → <code>404</code>; <code>gemini-3.6-flash</code>/<code>gemini-3.5-flash</code>/<code>gemini-3.7-flash</code>/<code>gemini-flash-latest</code> → <code>200</code> — the code tries <code>gemini-3.6-flash</code> first and succeeds immediately</td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-47</td>
+<td>FR-27: <code>GET /requests/mine</code> exposes the right location to the right side, gated the same way as contact reveal</td>
+<td>Integration</td>
+<td>Collector always sees the household&#39;s pickup point (already shared at request creation); household sees no collector location before acceptance, then the real one after</td>
+<td>Confirmed in <code>requests.test.ts</code> — <code>collector_lon/lat</code> are <code>null</code> pre-accept and match the collector&#39;s position post-accept; <code>household_lon/lat</code> present in both cases</td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -529,13 +537,20 @@ development (rows T-08, T-19, and T-39).</p>
 <td>The moderation pipeline was hardcoded to <code>gemini-2.5-flash</code>. Once the user provisioned a real <code>GEMINI_API_KEY</code>, live calls started returning <code>404 — this model is no longer available to new users</code> for that account&#39;s tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. <strong>Found via production logs after the key was set.</strong></td>
 <td>First fix (switching to a single hardcoded <code>gemini-flash-latest</code>) still couldn&#39;t be confirmed live. Root-caused properly by probing six candidate model IDs directly against the real key: <code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> both 404, <code>gemini-3.6-flash</code>/<code>gemini-3.5-flash</code>/<code>gemini-3.7-flash</code>/<code>gemini-flash-latest</code> all work. Rewrote <code>classifyText</code> to try an ordered candidate list and cache whichever one succeeds per process, instead of betting on one guessed ID — confirmed working end-to-end locally (T-45/T-46).</td>
 </tr>
+<tr>
+<td>D-09</td>
+<td><code>client/src/components/Avatar.tsx</code>, <code>client/src/styles/tokens.css</code></td>
+<td>Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the <code>Avatar</code> component referenced <code>.avatar</code>/<code>.avatar.g</code> classes that had never actually been added to <code>tokens.css</code>, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the <em>last</em> whitespace-separated token without checking it started with a letter, so <code>&quot;Ama (Osu)&quot;</code> produced <code>&quot;A(&quot;</code>.</td>
+<td>Added the missing <code>.avatar</code>/<code>.avatar.g</code> rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes.</td>
+</tr>
 </tbody></table>
-<p>All eight were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
+<p>All nine were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
 corresponding feature — five by the automated suite, three by deliberately exercising the live
 deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
-by the user; D-08 surfaced in production logs once the Gemini key went live) — direct evidence
-for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just
-hasn&#39;t been extended to every corner of the app, including production behaviour, yet.</p>
+by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by a
+scripted screenshot pass rather than by reading the code — direct evidence for why TD-10 (test
+depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t been
+extended to every corner of the app, including production behaviour, yet.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>
@@ -587,13 +602,14 @@ hasn&#39;t been extended to every corner of the app, including production behavi
 animated &quot;broadcast ring&quot; were all re-implemented in the real app (not just approximated with
 emoji) and verified with real, scripted screenshots (Puppeteer driving headless Chrome against
 the running dev server, logged in as the seeded demo accounts) rather than eyeballing the code.</p>
-<p><strong>D-05 (found this way):</strong> the screenshots showed collector/household initials rendering as
-bare unstyled text with no circular background — <code>.avatar</code>/<code>.avatar.g</code> were referenced by the
-new <code>Avatar</code> component but had never actually been added to <code>tokens.css</code>. Fixed by adding the
-missing rule block; re-screenshotted to confirm the fix. A second minor defect surfaced the
-same way: <code>Ama (Osu)</code> produced initials <code>&quot;A(&quot;</code> because the initials helper took the first
-character of the <em>last</em> whitespace-separated token without checking it started with a letter;
-fixed by filtering to letter-led words first.</p>
+<p><strong>D-09 (found this way)</strong> — see §4 — covers both the missing avatar styling and the broken
+initials logic that the screenshot pass surfaced.</p>
+<p>A second usability pass, prompted directly by user feedback rather than a screenshot diff:
+admin-facing copy had leaked internal spec references (<code>design §17</code>, <code>Technical Debt Plan TD-01/TD-02</code>) into user-visible text, and a live-ops legend spelled out colour names in prose
+(&quot;gold = active pins, green = online collectors&quot;) instead of showing an actual colour swatch.
+Both are informational-only, so no defect ID or regression test was warranted — fixed directly
+in <code>AdminDashboard.tsx</code>/<code>Login.tsx</code>/<code>auth/routes.ts</code> and the new <code>.legend-dot</code> style
+(<code>tokens.css</code>), re-verified by re-reading the rendered JSX rather than a screenshot.</p>
 <p>Beyond that: tap targets ≥44px (<code>.btn</code> padding), icon-first primary actions, a single primary
 action per screen, and colour contrast matching the approved palette (green/marigold/coral on
 a warm paper background) — confirmed manually in-browser at mobile viewport widths (390px,

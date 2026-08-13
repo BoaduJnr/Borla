@@ -69,9 +69,11 @@ household, a collector, or an admin — **your phone number tells the app who yo
    **Request**. Your request appears under "My requests" with a status chip: *Sent* → *Seen* →
    *Accepted*/*Rejected*/*No response*.
 5. **Once accepted**: tap **Show contact** to reveal the collector's phone number and call them
-   directly. You'll also see a **⭐ Leave a review** option — rate 1–5 and optionally comment;
-   it becomes public once it passes moderation and the other side has also reviewed (or after
-   the review window closes).
+   directly. A small map also appears showing the **route to your collector** with distance and
+   an estimated time — a straight line if the routing service is briefly unreachable, a real
+   road route otherwise. You'll also see a **⭐ Leave a review** option — rate 1–5 and
+   optionally comment; it becomes public once it passes moderation and the other side has also
+   reviewed (or after the review window closes).
 6. **Profile tab**: adjust your alert radius and whether standing alerts are on; see reviews
    collectors have left about you.
 
@@ -88,7 +90,8 @@ household, a collector, or an admin — **your phone number tells the app who yo
 4. **Nearby waste**: active pins appear on your map and in the list below it, closest first,
    with a one-tap **📞 Call** button.
 5. **Incoming direct requests**: appear as a card with **Accept**/**Reject**. Accepting reveals
-   the household's phone number to both of you and lets you leave a review afterwards.
+   the household's phone number to both of you, shows a small map with the **route to that
+   household** (distance + estimated time), and lets you leave a review afterwards.
 6. **Go offline** when you're done — this immediately removes you from the matchable set.
 
 ## 5. Admin walkthrough

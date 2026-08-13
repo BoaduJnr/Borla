@@ -231,7 +231,7 @@ export default function Login() {
             ) : (
               devOtp && (
                 <div className="otp-dev-banner">
-                  {otpMessage || "SMS delivery unavailable right now (see Technical Debt Plan, TD-02)."}
+                  {otpMessage || "SMS delivery isn't available right now — use the code below instead."}
                   <br />
                   Your one-time code is: <b>{devOtp}</b>
                 </div>

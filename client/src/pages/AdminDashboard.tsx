@@ -79,7 +79,7 @@ function StatsTab() {
             ))}
           </ul>
           <p className="muted" style={{ fontSize: 12 }}>
-            Cleared vs expired is the wasted-trip proxy (design §14, risk #3).
+            Cleared vs expired is the wasted-trip proxy.
           </p>
         </div>
         <div className="card">
@@ -120,8 +120,13 @@ function LiveMapTab() {
 
   return (
     <div className="stack">
-      <p className="muted" style={{ fontSize: 12.5 }}>
-        Live ops view (design §17): gold = active broadcast pins, green = online collectors.
+      <p className="muted row" style={{ fontSize: 12.5, gap: 14 }}>
+        <span className="row" style={{ gap: 6 }}>
+          <i className="legend-dot" style={{ background: "var(--marigold)" }} /> Active broadcast pins
+        </span>
+        <span className="row" style={{ gap: 6 }}>
+          <i className="legend-dot" style={{ background: "var(--green)" }} /> Online collectors
+        </span>
       </p>
       <div className="map-wrap tall">
         <MapView center={center} points={points} className="map-wrap tall" />
@@ -258,7 +263,8 @@ function ModerationTab() {
       <div className="card stack">
         <b>Awaiting moderation ({queue.awaitingManual.length})</b>
         <p className="muted" style={{ fontSize: 12 }}>
-          Shown here because no GEMINI_API_KEY is configured — manual-only fallback (Technical Debt Plan, TD-01).
+          Items land here whenever AI screening doesn't return a confident verdict — review each
+          one below.
         </p>
         {queue.awaitingManual.length === 0 && <p className="muted">Nothing pending.</p>}
         {queue.awaitingManual.map((item) => (
@@ -322,7 +328,7 @@ function ConfigTab() {
   return (
     <div className="stack">
       <p className="muted" style={{ fontSize: 12.5 }}>
-        Live-tunable settings (design §17) — changes apply without a redeploy.
+        Live-tunable settings — changes apply without a redeploy.
       </p>
       {rows.map((r) => (
         <div key={r.key} className="card row" style={{ justifyContent: "space-between" }}>

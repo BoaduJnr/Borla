@@ -76,4 +76,32 @@ describe("request plane (design §3.2 state machine)", () => {
     const res = await request(app).post(`/api/requests/${created.body.request.id}/accept`).set(auth(stranger.access));
     expect(res.status).toBe(409); // conditional update matched zero rows for this collector_id
   });
+
+  it("GET /requests/mine exposes the location each side needs to route to the other, gated the same way as contact reveal", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+    const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    const requestId = created.body.request.id;
+
+    // Collector already saw the household's pickup point via request:new at creation time —
+    // GET /requests/mine reflects that, unconditionally, not gated on acceptance.
+    const collectorMineBefore = await request(app).get("/api/requests/mine").set(auth(collector.access));
+    const rowBefore = collectorMineBefore.body.requests.find((r: any) => r.id === requestId);
+    expect(rowBefore.household_lon).toBeCloseTo(POINT.lon);
+    expect(rowBefore.household_lat).toBeCloseTo(POINT.lat);
+
+    // A collector's live position, by contrast, is reveal-on-accept — same timing as the phone
+    // number — so the household sees no location before acceptance.
+    const householdMineBefore = await request(app).get("/api/requests/mine").set(auth(household.access));
+    const hRowBefore = householdMineBefore.body.requests.find((r: any) => r.id === requestId);
+    expect(hRowBefore.collector_lon).toBeNull();
+    expect(hRowBefore.collector_lat).toBeNull();
+
+    await request(app).post(`/api/requests/${requestId}/accept`).set(auth(collector.access));
+
+    const householdMineAfter = await request(app).get("/api/requests/mine").set(auth(household.access));
+    const hRowAfter = householdMineAfter.body.requests.find((r: any) => r.id === requestId);
+    expect(hRowAfter.collector_lon).toBeCloseTo(POINT.lon);
+    expect(hRowAfter.collector_lat).toBeCloseTo(POINT.lat);
+  });
 });

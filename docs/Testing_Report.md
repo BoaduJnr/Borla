@@ -35,7 +35,7 @@ separate phase, which is appropriate at this scale.
 ```
 ✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
-✓ test/integration/requests.test.ts (4 tests)
+✓ test/integration/requests.test.ts (5 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
@@ -45,8 +45,8 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  46 passed (46)
-   Duration  47.30s
+      Tests  47 passed (47)
+   Duration  28.87s
 ```
 
 `redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
@@ -64,7 +64,7 @@ instead of asserting on a field the old synchronous handler used to return direc
       Tests  4 passed (4)
 ```
 
-**Total: 50/50 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 51/51 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
 
 ## 3. Test case log
@@ -121,6 +121,7 @@ development (rows T-08, T-19, and T-39).
 | T-44 | Broadcast fan-out runs as an async BullMQ job, not inline in the request handler | Integration | `POST /broadcasts` returns before fan-out completes; a `broadcast_notifications` row appears shortly after, once the `fanout` job runs | Confirmed via `waitFor()` polling in `broadcasts.test.ts` — row appears within the poll window, HTTP response contains no notification count | Pass |
 | T-45 | Live Gemini moderation classification against the real provisioned key (D-08 fix) | Manual (real key, `server/src/ai/moderation.ts`) | A genuine, non-fallback `allow`/`flag`/`block` verdict, not a `null` that degrades to the manual queue | `classifyText("Great pickup, right on time, very professional!", "review")` returned `{"verdict":"allow","categories":[],"piiFound":false,"confidence":0.99,"reason":"The text is a positive, legitimate review with no presence of abuse, harassment, spam, or PII."}` — a real classification | Pass (confirmed locally against the real key; production re-verification pending — the deployed process needs the same key set) |
 | T-46 | Gemini model-ID resilience: the candidate-list fallback skips a 404'd model instead of failing closed entirely | Manual (real key, direct HTTP probe of 6 candidate IDs) | At least one candidate in the list resolves | `gemini-2.5-flash`/`gemini-2.0-flash` → `404`; `gemini-3.6-flash`/`gemini-3.5-flash`/`gemini-3.7-flash`/`gemini-flash-latest` → `200` — the code tries `gemini-3.6-flash` first and succeeds immediately | Pass |
+| T-47 | FR-27: `GET /requests/mine` exposes the right location to the right side, gated the same way as contact reveal | Integration | Collector always sees the household's pickup point (already shared at request creation); household sees no collector location before acceptance, then the real one after | Confirmed in `requests.test.ts` — `collector_lon/lat` are `null` pre-accept and match the collector's position post-accept; `household_lon/lat` present in both cases | Pass |
 
 ## 4. Defects found during development
 
@@ -134,13 +135,15 @@ development (rows T-08, T-19, and T-39).
 | D-06 | `server/src/modules/auth/routes.ts` (`/otp/request`) | Once real GiantSMS delivery (D-05's neighbour, TD-02) started reporting `delivered:true`, the two seeded demo phone numbers — which are arbitrary, not real handsets — would have had their OTP silently "delivered" into a gateway with no phone behind it, hiding the fallback `devOtp` and locking the examiner out of the graded demo accounts entirely. Found by re-reading the deployment credentials file after wiring up real SMS, before it ever actually caused a lockout. | `DEMO_PHONES`/`DEMO_OTP` added to `server/src/seed.ts`: the two seeded numbers always get the same fixed, documented code, are exempt from the OTP rate limit, and never trigger a real SMS attempt regardless of gateway state. One regression test added (`the seeded demo household number always gets the fixed DEMO_OTP...`, 8 rapid requests all succeed and return the fixed code). |
 | D-07 | `server/src/modules/auth/routes.ts` (`phoneSchema`, both OTP endpoints) | Phone numbers were stored and looked up as the raw string the client sent, with no normalisation — `+233200000001`, `233200000001`, and `0200000001` were three different rows to Postgres, so an already-registered user who typed their number without the leading `+` looked brand new and was sent through the sign-up (role + name) path instead of logging straight in. **Found by the user testing the seeded household account (`233200000001`, no `+`) against the live app.** | Added `server/src/utils/phone.ts` (`normalizePhone`), wired into `phoneSchema` via Zod's `.transform()` so every route that accepts a phone number normalises it before it ever reaches a query or an insert. Four new unit tests (`phone.test.ts`) plus regression coverage in `auth.test.ts` confirming the same number in all three input forms resolves to one account. |
 | D-08 | `server/src/ai/moderation.ts` (`MODEL` constant) | The moderation pipeline was hardcoded to `gemini-2.5-flash`. Once the user provisioned a real `GEMINI_API_KEY`, live calls started returning `404 — this model is no longer available to new users` for that account's tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. **Found via production logs after the key was set.** | First fix (switching to a single hardcoded `gemini-flash-latest`) still couldn't be confirmed live. Root-caused properly by probing six candidate model IDs directly against the real key: `gemini-2.5-flash`/`gemini-2.0-flash` both 404, `gemini-3.6-flash`/`gemini-3.5-flash`/`gemini-3.7-flash`/`gemini-flash-latest` all work. Rewrote `classifyText` to try an ordered candidate list and cache whichever one succeeds per process, instead of betting on one guessed ID — confirmed working end-to-end locally (T-45/T-46). |
+| D-09 | `client/src/components/Avatar.tsx`, `client/src/styles/tokens.css` | Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the `Avatar` component referenced `.avatar`/`.avatar.g` classes that had never actually been added to `tokens.css`, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the *last* whitespace-separated token without checking it started with a letter, so `"Ama (Osu)"` produced `"A("`. | Added the missing `.avatar`/`.avatar.g` rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes. |
 
-All eight were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
+All nine were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
 corresponding feature — five by the automated suite, three by deliberately exercising the live
 deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
-by the user; D-08 surfaced in production logs once the Gemini key went live) — direct evidence
-for why TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just
-hasn't been extended to every corner of the app, including production behaviour, yet.
+by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by a
+scripted screenshot pass rather than by reading the code — direct evidence for why TD-10 (test
+depth) is listed as "scheduled," not "critical": the practice works, it just hasn't been
+extended to every corner of the app, including production behaviour, yet.
 
 ## 5. Security testing
 
@@ -162,13 +165,16 @@ animated "broadcast ring" were all re-implemented in the real app (not just appr
 emoji) and verified with real, scripted screenshots (Puppeteer driving headless Chrome against
 the running dev server, logged in as the seeded demo accounts) rather than eyeballing the code.
 
-**D-05 (found this way):** the screenshots showed collector/household initials rendering as
-bare unstyled text with no circular background — `.avatar`/`.avatar.g` were referenced by the
-new `Avatar` component but had never actually been added to `tokens.css`. Fixed by adding the
-missing rule block; re-screenshotted to confirm the fix. A second minor defect surfaced the
-same way: `Ama (Osu)` produced initials `"A("` because the initials helper took the first
-character of the *last* whitespace-separated token without checking it started with a letter;
-fixed by filtering to letter-led words first.
+**D-09 (found this way)** — see §4 — covers both the missing avatar styling and the broken
+initials logic that the screenshot pass surfaced.
+
+A second usability pass, prompted directly by user feedback rather than a screenshot diff:
+admin-facing copy had leaked internal spec references (`design §17`, `Technical Debt Plan
+TD-01/TD-02`) into user-visible text, and a live-ops legend spelled out colour names in prose
+("gold = active pins, green = online collectors") instead of showing an actual colour swatch.
+Both are informational-only, so no defect ID or regression test was warranted — fixed directly
+in `AdminDashboard.tsx`/`Login.tsx`/`auth/routes.ts` and the new `.legend-dot` style
+(`tokens.css`), re-verified by re-reading the rendered JSX rather than a screenshot.
 
 Beyond that: tap targets ≥44px (`.btn` padding), icon-first primary actions, a single primary
 action per screen, and colour contrast matching the approved palette (green/marigold/coral on

@@ -94,7 +94,7 @@ authRouter.post(
     } else if (delivered) {
       message = "OTP sent via SMS.";
     } else {
-      message = "OTP generated. (SMS delivery unavailable or not configured — see Technical Debt Plan TD-02.)";
+      message = "SMS delivery isn't available right now — use the code below instead.";
     }
 
     res.json({

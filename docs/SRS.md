@@ -150,6 +150,7 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-24 | An admin can view a moderation queue (AI-flagged + user-reported + awaiting-manual) and resolve items | Must | `admin/routes.ts` |
 | FR-25 | An admin can view live stats, a live ops map, and the full audit log of privileged actions | Must | `admin/routes.ts` |
 | FR-26 | An admin can retune operational config (pin TTL, radius, timeouts, review window) without a redeploy | Should | `admin/routes.ts` `app_config` |
+| FR-27 | Once a direct request is accepted, each side sees a route to the other (road route where available, straight-line otherwise) with distance/ETA — a collector's target household, and a household's accepted collector | Should | `client/src/components/{MapView,RoutePanel}.tsx`; collector's live position is reveal-on-accept, same timing as FR-16's phone number |
 
 ## 5. Non-functional requirements
 
@@ -164,7 +165,7 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | NFR-7 (Availability) | The deployed instance stays reachable for grading | Render health check (`/api/health`) wired into `render.yaml` |
 | NFR-8 (Data integrity) | A review can never be posted about a fabricated interaction | DB-level `UNIQUE(author_id, request_id)` / `UNIQUE(author_id, broadcast_id)` plus application-level interaction checks |
 | NFR-9 (Fail-safe moderation) | Unmoderated content never goes public by default | Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue |
-| NFR-10 (Testability) | Core business logic is covered by automated tests | 46 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see `Testing_Report.md` |
+| NFR-10 (Testability) | Core business logic is covered by automated tests | 47 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see `Testing_Report.md` |
 
 ## 6. Requirement prioritisation (MoSCoW)
 
@@ -173,8 +174,8 @@ two-plane matching engine, masked contact, the full review/moderation/double-bli
 the admin console.
 
 **Should-have (built, lighter-touch)**: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning) — all present, but not stress-tested to the same
-depth as Must-Have items.
+(user reporting), FR-26 (live config tuning), FR-27 (accepted-request route) — all present, but
+not stress-tested to the same depth as Must-Have items.
 
 **Could-have (explicitly deferred — see `Technical_Debt_Plan.md`)**: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n

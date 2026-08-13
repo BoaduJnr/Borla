@@ -152,6 +152,16 @@ label {
   color: var(--coral);
 }
 
+/* A small colour swatch for map-legend rows — the colour itself is the indicator, not a
+   written-out colour name. */
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .banner {
   background: var(--marigold-tint);
   border: 1.5px solid var(--marigold);

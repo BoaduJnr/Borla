@@ -416,10 +416,14 @@ aggregates; the full admin console (verify/suspend/reinstate, moderation queue, 
 stats, live ops map, live config tuning); a real installable PWA (manifest, icons, a
 Workbox service worker precaching the app shell, an explicit "Update available" prompt, and a
 native "Install app" button) — verified by checking `navigator.serviceWorker.getRegistrations()`
-against the actual production build, not just trusting the plugin; and, since Technical_Debt_Plan.md
-TD-05 was resolved, a Redis-backed hot path for presence/geo-matching/rate-limiting plus a real
-BullMQ job queue (broadcast fan-out and AI moderation both run as retryable background jobs
-rather than inline in the request handler) and a Socket.IO Redis adapter.
+against the actual production build, not just trusting the plugin; a Redis-backed hot path for
+presence/geo-matching/rate-limiting plus a real BullMQ job queue (broadcast fan-out and AI
+moderation both run as retryable background jobs rather than inline in the request handler) and
+a Socket.IO Redis adapter, since Technical_Debt_Plan.md TD-05 was resolved; and FR-27, a
+collector-to-household / household-to-collector **route** once a direct request is accepted —
+a road-following route where the routing service resolves, a straight line otherwise, with
+distance/ETA — respecting the same reveal-on-accept timing as the phone number (TD-14 covers
+the third-party routing dependency this introduces).
 
 ### 10.3 Code organisation
 ```
@@ -428,7 +432,7 @@ server/src/redis/{client,presence,rateLimit}.ts                                 
 server/src/jobs/{queues,scheduler,workers,index}.ts                             — BullMQ queues/schedulers/workers
 server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours,phone}.ts  — isolated, unit-testable logic
 client/src/pages/{Login,HouseholdHome,CollectorHome,AdminDashboard,Profile}.tsx  — one screen per role/concern
-client/src/components/{MapView,ReviewForm,ProtectedRoute}.tsx                    — shared, reusable
+client/src/components/{MapView,RoutePanel,ReviewForm,ProtectedRoute}.tsx         — shared, reusable
 ```
 
 ### 10.4 Security controls actually implemented
@@ -443,23 +447,25 @@ verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-50/50 automated tests passing (46 server — unit + Supertest integration against a real
+51/51 automated tests passing (47 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance *and* a real Redis instance; 4 client — React Testing Library) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
-Seven real defects were caught and fixed during development — five in the automated suite (a
-broken first-time-signup code path, a review-reply status gap, and three others) plus two found
-only by treating the *live deployed app* as the actual object under test: the admin account was
-reachable via the weaker OTP flow, bypassing its intended phone+password requirement entirely
-(found by me, re-testing production); and an already-registered phone number typed without its
-leading `+` was treated as brand-new instead of logging straight in (found by the user,
-D-07) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone numbers would have
-silently "succeeded" into a gateway with no phone behind them, locking any examiner out of the
-graded accounts. Full detail, every test case, and all seven defect write-ups are in
-`Testing_Report.md`.
+Nine real defects were caught and fixed during development — five in the automated suite (a
+broken first-time-signup code path, a review-reply status gap, and three others), one in a
+scripted screenshot pass (missing avatar CSS + broken initials logic, D-09), and three found
+only by treating the *live deployed app or its logs* as the actual object under test: the admin
+account was reachable via the weaker OTP flow, bypassing its intended phone+password requirement
+entirely (found by me, re-testing production); an already-registered phone number typed without
+its leading `+` was treated as brand-new instead of logging straight in (found by the user,
+D-07); and a hardcoded Gemini model ID started 404ing the moment a real key went live in
+production (D-08) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone
+numbers would have silently "succeeded" into a gateway with no phone behind them, locking any
+examiner out of the graded accounts. Full detail, every test case, and all nine defect write-ups
+are in `Testing_Report.md`.
 
 ## 12. Technical debt
 
-Thirteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
+Fourteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
 Resolution. One is 🔴 Critical (admin has no 2FA), five are 🟡 Scheduled — including the
 GiantSMS OTP integration, which was **confirmed live in production** (the gateway accepted a
 real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢
@@ -498,7 +504,7 @@ what appears; an admin lands on `/admin` after the password step.
 
 | Type | Approach |
 |---|---|
-| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 46 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with `phone.test.ts` added before the fix. |
+| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 47 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with `phone.test.ts` added before the fix. |
 | **Adaptive** | Config changes (radius, TTLs, timeouts) go through `app_config` and the admin UI — no redeploy needed for the most likely "the environment changed" adjustments. |
 | **Perfective** | Tracked as the technical-debt repayment plan (`Technical_Debt_Plan.md` §4) — i18n, offline shell, deeper test coverage. |
 | **Preventive** | `npm audit` run before any dependency bump; the health-check endpoint (`/api/health`) lets Render auto-restart a wedged instance. |

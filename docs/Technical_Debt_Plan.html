@@ -171,6 +171,14 @@ or a meaningful scale-up.</li>
 <td>🟡 Scheduled</td>
 <td>Add a GitHub Actions workflow running <code>npm test</code> on every push (config-only change, no app-code change needed) and a second Render environment for staging before promoting to the graded URL.</td>
 </tr>
+<tr>
+<td><strong>TD-14</strong></td>
+<td><strong>The collector↔household route (once a direct request is accepted) calls OSRM&#39;s public demo routing server</strong> (<code>router.project-osrm.org</code>) directly from the browser — no API key, but also no SLA, rate-limit guarantee, or uptime commitment.</td>
+<td>Zero-config, matching the same trade-off already made for the OSM raster tile layer (TD-08): a routing feature needed to exist for this build, and every account-gated alternative (Mapbox Directions, Google Directions) needed a key nobody had time to provision.</td>
+<td>If the demo server is down, slow, or rate-limits this app&#39;s traffic, the route silently degrades to a straight line between the two points (<code>client/src/components/MapView.tsx</code>, <code>useRoute</code>&#39;s fallback) rather than failing — correct fail-safe behaviour, but the <em>quality</em> of the route (does it actually follow real roads) is not guaranteed at any given moment.</td>
+<td>🟢 Acceptable</td>
+<td>If usage grows, move to a self-hosted OSRM instance or a funded Directions API with an SLA — the <code>useRoute</code> hook&#39;s interface (<code>from</code>/<code>to</code> in, a lat/lon path + distance/duration out) would not need to change, only the fetch URL inside it.</td>
+</tr>
 </tbody></table>
 <h2>3. Debt NOT taken — deliberate design choices worth naming</h2>
 <p>To be explicit about the difference between <em>debt</em> (a shortcut that should eventually be paid

@@ -375,6 +375,12 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <td>Should</td>
 <td><code>admin/routes.ts</code> <code>app_config</code></td>
 </tr>
+<tr>
+<td>FR-27</td>
+<td>Once a direct request is accepted, each side sees a route to the other (road route where available, straight-line otherwise) with distance/ETA — a collector&#39;s target household, and a household&#39;s accepted collector</td>
+<td>Should</td>
+<td><code>client/src/components/{MapView,RoutePanel}.tsx</code>; collector&#39;s live position is reveal-on-accept, same timing as FR-16&#39;s phone number</td>
+</tr>
 </tbody></table>
 <h2>5. Non-functional requirements</h2>
 <table>
@@ -433,7 +439,7 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <tr>
 <td>NFR-10 (Testability)</td>
 <td>Core business logic is covered by automated tests</td>
-<td>46 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
+<td>47 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
 </tr>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
@@ -441,8 +447,8 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 two-plane matching engine, masked contact, the full review/moderation/double-blind pipeline, and
 the admin console.</p>
 <p><strong>Should-have (built, lighter-touch)</strong>: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning) — all present, but not stress-tested to the same
-depth as Must-Have items.</p>
+(user reporting), FR-26 (live config tuning), FR-27 (accepted-request route) — all present, but
+not stress-tested to the same depth as Must-Have items.</p>
 <p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
 beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on
