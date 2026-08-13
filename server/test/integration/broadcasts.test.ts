@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
-import { signup, auth } from "../helpers.js";
+import { signup, auth, waitFor } from "../helpers.js";
+import { query } from "../../src/db/pool.js";
 
 const app = createApp();
 
@@ -49,13 +50,25 @@ describe("broadcast plane (design §3.1)", () => {
       .set(auth(household.access))
       .send({ ...HOUSEHOLD_POINT, wasteType: "general", note: "by the gate" });
     expect(created.status).toBe(201);
-    expect(created.body.notifiedCollectors).toBeGreaterThanOrEqual(1);
+    const broadcastId = created.body.broadcast.id;
 
+    // The pin registers in Redis synchronously (route handler), so it's visible immediately —
+    // but the actual candidate-matching + notification gauntlet runs in a BullMQ `fanout` job
+    // (Technical_Debt_Plan.md TD-05), so we wait for its side effect (a broadcast_notifications
+    // row) rather than asserting on a field that used to be in the synchronous response.
     const pins = await request(app)
       .get(`/api/pins/nearby?lon=${COLLECTOR_POINT.lon}&lat=${COLLECTOR_POINT.lat}&radius=2000`)
       .set(auth(verifiedCollector.access));
     expect(pins.status).toBe(200);
-    expect(pins.body.pins.some((p: any) => p.id === created.body.broadcast.id)).toBe(true);
+    expect(pins.body.pins.some((p: any) => p.id === broadcastId)).toBe(true);
+
+    await waitFor(async () => {
+      const rows = await query(`SELECT 1 FROM broadcast_notifications WHERE broadcast_id = $1 AND collector_id = $2`, [
+        broadcastId,
+        verifiedCollector.user.id,
+      ]);
+      return rows.length > 0;
+    });
 
     // Clear it and confirm it drops from active/me and from the collector's nearby feed logic
     // (the clear endpoint itself is the source of truth we assert on here).

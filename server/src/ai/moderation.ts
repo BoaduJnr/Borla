@@ -1,5 +1,5 @@
-import { query } from "../db/pool.js";
 import { config } from "../config.js";
+import { moderateQueue } from "../jobs/queues.js";
 
 /**
  * AI moderation (borla-technical-design.md §18.1, Job A). Runs at content-creation time, never
@@ -7,6 +7,11 @@ import { config } from "../config.js";
  * harassment, spam, and PII leakage. Fails CLOSED: if the key is missing or the call errors or
  * times out, the content stays hidden and lands in the admin's manual-only queue instead of
  * auto-publishing (Technical_Debt_Plan.md, TD-01 covers the no-key path explicitly).
+ *
+ * The actual classify-and-apply-verdict work now runs inside a BullMQ job (server/src/jobs/
+ * workers.ts, `moderate` queue) instead of a bare fire-and-forget async IIFE — this resolves
+ * the job-queue half of Technical_Debt_Plan.md TD-05: a slow/failed Gemini call now retries
+ * with backoff and survives a worker restart mid-call, rather than silently vanishing.
  */
 
 export type ModerationVerdict = {
@@ -17,7 +22,7 @@ export type ModerationVerdict = {
   reason: string;
 };
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-flash-latest";
 const TIMEOUT_MS = 8000;
 
 export async function classifyText(text: string, context: string): Promise<ModerationVerdict | null> {
@@ -74,37 +79,10 @@ ${text.slice(0, 2000)}
   }
 }
 
-/** Fire-and-forget: never awaited by the route handler, so a slow model call can't block the user. */
-export function moderateReviewAsync(reviewId: string, text: string) {
-  void (async () => {
-    const verdict = await classifyText(text || "(no comment, rating only)", "review comment");
-    if (!verdict) return; // no key / error — stays pending, visible only via admin manual approval
-    if (verdict.verdict === "allow") {
-      await query(`UPDATE reviews SET moderation_passed = true WHERE id = $1`, [reviewId]);
-    } else {
-      await query(`UPDATE reviews SET status = 'flagged' WHERE id = $1`, [reviewId]);
-      await query(
-        `INSERT INTO moderation_flags (target_type, target_id, reason, source, score)
-         VALUES ('review', $1, $2, 'ai', $3)`,
-        [reviewId, verdict.categories.join(",") || verdict.reason || "flagged", verdict.confidence]
-      );
-    }
-  })().catch((err) => console.error("[moderation] review pipeline error", err));
+export async function moderateReviewAsync(reviewId: string, text: string) {
+  await moderateQueue.add("moderate", { targetType: "review", targetId: reviewId, text });
 }
 
-export function moderateReplyAsync(replyId: string, text: string) {
-  void (async () => {
-    const verdict = await classifyText(text, "review reply");
-    if (!verdict) return;
-    if (verdict.verdict === "allow") {
-      await query(`UPDATE review_replies SET moderation_passed = true, status = 'visible' WHERE id = $1`, [replyId]);
-    } else {
-      await query(`UPDATE review_replies SET status = 'flagged' WHERE id = $1`, [replyId]);
-      await query(
-        `INSERT INTO moderation_flags (target_type, target_id, reason, source, score)
-         VALUES ('reply', $1, $2, 'ai', $3)`,
-        [replyId, verdict.categories.join(",") || verdict.reason || "flagged", verdict.confidence]
-      );
-    }
-  })().catch((err) => console.error("[moderation] reply pipeline error", err));
+export async function moderateReplyAsync(replyId: string, text: string) {
+  await moderateQueue.add("moderate", { targetType: "reply", targetId: replyId, text });
 }

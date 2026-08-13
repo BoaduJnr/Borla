@@ -69,11 +69,11 @@ or a meaningful scale-up.</li>
 </thead>
 <tbody><tr>
 <td><strong>TD-01</strong></td>
-<td>Review/reply moderation runs with <strong>no AI key by default</strong> — everything lands in a manual admin queue instead of being auto-screened.</td>
-<td>No Google AI Studio account was provisioned for this build; the moderation pipeline (<code>server/src/ai/moderation.ts</code>) checks <code>GEMINI_API_KEY</code> and no-ops if absent.</td>
-<td>Every review needs a human click before publishing; fine at demo volume (a handful of reviews), would not scale to real usage — but is explicitly the <em>safer</em> failure direction (fail-closed, not fail-open).</td>
-<td>🟡 Scheduled</td>
-<td>Provision a Gemini API key on Render (<code>GEMINI_API_KEY</code> env var, sync:false in <code>render.yaml</code> so it must be set manually) — the code path is already written and tested; this is a config change, not a code change.</td>
+<td><del>No AI key by default</del> — <strong>mostly resolved</strong>: a real <code>GEMINI_API_KEY</code> is now set on Render, so moderation actually calls Gemini instead of falling straight to the manual queue. A second, related defect (D-08) surfaced immediately once the key was live: the hardcoded model ID (<code>gemini-2.5-flash</code>) started returning <code>404 — no longer available to new users</code> against this key&#39;s account tier, so every call silently fell back to fail-closed/manual — fixed by switching to the <code>gemini-flash-latest</code> alias (<code>server/src/ai/moderation.ts</code>).</td>
+<td>No Google AI Studio account was provisioned for the <em>original</em> build; the moderation pipeline (<code>server/src/ai/moderation.ts</code>) checks <code>GEMINI_API_KEY</code> and no-ops if absent — that fail-closed behaviour is exactly why D-08 degraded silently to the manual queue instead of breaking the review flow.</td>
+<td>Residual risk is now just &quot;hasn&#39;t been re-verified live since the model-ID fix,&quot; not &quot;no AI screening exists.&quot;</td>
+<td>🟡 Scheduled (down from unresolved — key is provisioned; pending one live moderation call against production to confirm <code>gemini-flash-latest</code> actually classifies correctly post-redeploy)</td>
+<td>Re-run a live moderation test (submit a borderline review in production, confirm a real <code>allow</code>/<code>flag</code>/<code>block</code> verdict instead of manual-queue fallback) once the model-ID fix is deployed.</td>
 </tr>
 <tr>
 <td><strong>TD-02</strong></td>
@@ -101,11 +101,11 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-05</strong></td>
-<td><strong>No Redis/BullMQ.</strong> Presence TTL, pin expiry, request timeout, and double-blind review release are all <code>node-cron</code> sweeps against Postgres directly; rate-limiting is a coarse in-memory per-IP limiter (<code>express-rate-limit</code>), not the design&#39;s per-collector notification cap.</td>
-<td>Provisioning a managed Redis instance is an extra account/service with no functional benefit at this traffic volume; BullMQ adds retry/backoff semantics that matter only once notification volume is real.</td>
-<td>All scheduled-job state is <strong>lost on process restart</strong> (a mid-flight sweep just re-runs on the next tick — acceptable, since every sweep is idempotent by construction) and <strong>cannot scale past one Node instance</strong> (Socket.IO has no Redis adapter either, so multi-instance deployments would silently drop events to users connected to a different instance).</td>
-<td>🟡 Scheduled</td>
-<td>Add Upstash/Render Redis, move the four cron sweeps to BullMQ repeatable/delayed jobs, wire the Socket.IO Redis adapter, and replace the per-IP limiter with the design&#39;s per-collector <code>ratelimit:notif:{id}</code> counter — all four sweeps already have clean, small, idempotent bodies (<code>server/src/jobs/index.ts</code>) so the migration is mostly infrastructure, not logic rewrite.</td>
+<td><del>No Redis/BullMQ</del> — <strong>resolved</strong>. A real Upstash Redis instance now backs exactly what the original design specified: <code>presence:{id}</code>/<code>geo:collectors</code>/<code>heartbeat:zset</code> for live presence (<code>server/src/redis/presence.ts</code>), <code>pins:active</code> for broadcast pins, <code>ratelimit:otp:{phone}</code>/<code>ratelimit:notif:{id}</code> for rate limiting (<code>server/src/redis/rateLimit.ts</code>), a Socket.IO Redis adapter (<code>@socket.io/redis-adapter</code>) for cross-instance event delivery, and BullMQ replacing all four <code>node-cron</code> sweeps plus two new jobs — <code>fanout</code> (broadcast candidate-matching/notification, off the request thread with retries/backoff) and <code>moderate</code> (the Gemini call, same). Postgres/PostGIS stays the durable mirror, exactly per the original hot-path/cold-path split.</td>
+<td>— (closed)</td>
+<td>— (closed)</td>
+<td>🟢 Resolved</td>
+<td>Verified end-to-end against a real local Redis (Docker, mirroring the exact Upstash <code>rediss://</code> URL shape used in production): a collector going online is visible via <code>ZCARD geo:collectors</code>/<code>EXISTS presence:{id}</code>; creating a broadcast registers <code>pins:active</code> synchronously and produces a real <code>broadcast_notifications</code> row via the async <code>fanout</code> job within ~1s; clearing the pin removes it from <code>pins:active</code>. 46 server tests passing (up from 39), including new coverage of the rate limiter and the async fan-out path. Production verification pending the user pasting <code>REDIS_URL</code> into Render&#39;s dashboard (<code>sync: false</code> in <code>render.yaml</code>, same pattern as the other secrets).</td>
 </tr>
 <tr>
 <td><strong>TD-06</strong></td>
@@ -141,7 +141,7 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-10</strong></td>
-<td><strong>Automated test coverage is broad, not deep.</strong> 31 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
+<td><strong>Automated test coverage is broad, not deep.</strong> 46 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
 <td>A time-boxed exam favoured &quot;every module has real integration tests&quot; over &quot;one module is exhaustively tested&quot; — a deliberate breadth-over-depth call, consistent with §7.7 of the SRS.</td>
 <td>Edge cases in less-tested paths (e.g. concurrent double-accept races under real network latency, malformed geo payloads) are not proven safe, only reasoned about.</td>
 <td>🟡 Scheduled</td>
@@ -193,7 +193,7 @@ the right call at this scale (see <code>borla-technical-design.md</code> §1 and
 </tr>
 <tr>
 <td><strong>v1.2</strong></td>
-<td>TD-01 (provision Gemini key in production), TD-13 (CI pipeline)</td>
+<td>TD-01 (re-verify live moderation post-model-fix — key is already provisioned), TD-13 (CI pipeline)</td>
 </tr>
 <tr>
 <td><strong>v1.3</strong></td>
@@ -201,7 +201,7 @@ the right call at this scale (see <code>borla-technical-design.md</code> §1 and
 </tr>
 <tr>
 <td><strong>v2.0</strong></td>
-<td>TD-05 (Redis/BullMQ + Socket.IO Redis adapter, needed once traffic outgrows one instance), TD-09 (i18n), TD-04 (offline write queue — the install/update half already shipped), TD-11 (photo classification)</td>
+<td>TD-09 (i18n), TD-04 (offline write queue — the install/update half already shipped), TD-11 (photo classification)</td>
 </tr>
 <tr>
 <td><strong>Ongoing</strong></td>

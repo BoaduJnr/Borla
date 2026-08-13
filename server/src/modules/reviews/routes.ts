@@ -71,7 +71,10 @@ reviewsRouter.post(
       throw err;
     }
 
-    moderateReviewAsync(row!.id, comment ?? "");
+    // Enqueue, don't await the classification itself — a slow/failed Gemini call must never
+    // block the response; a failure to even *enqueue* (e.g. Redis hiccup) is logged but still
+    // doesn't fail the review creation, which already committed.
+    await moderateReviewAsync(row!.id, comment ?? "").catch((err) => console.error("[reviews] failed to enqueue moderation", err));
     res.status(201).json({ review: { id: row!.id, status: "pending" } });
   })
 );
@@ -123,7 +126,7 @@ reviewsRouter.post(
       if (err?.code === "23505") throw new ApiError(409, "This review already has a reply");
       throw err;
     }
-    moderateReplyAsync(row!.id, req.body.body);
+    await moderateReplyAsync(row!.id, req.body.body).catch((err) => console.error("[reviews] failed to enqueue moderation", err));
     res.status(201).json({ reply: { id: row!.id, status: "pending" } });
   })
 );

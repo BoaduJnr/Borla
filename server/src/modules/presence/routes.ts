@@ -4,6 +4,7 @@ import { query, queryOne } from "../../db/pool.js";
 import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
+import * as presence from "../../redis/presence.js";
 
 export const presenceRouter = Router();
 
@@ -16,6 +17,9 @@ const toggleSchema = z.object({
 /**
  * POST /presence — collector "Go online / Go offline" toggle (borla-technical-design.md §6).
  * Gated on `users.verified` so only KYC-lite-approved collectors ever enter the matchable set.
+ * Redis (`presence:{id}`, `geo:collectors`, `heartbeat:zset`) is the live matching substrate
+ * (Technical_Debt_Plan.md TD-05); Postgres is updated alongside purely as a durable mirror for
+ * admin reads/history — it is never consulted for live matching.
  */
 presenceRouter.post(
   "/presence",
@@ -33,6 +37,7 @@ presenceRouter.post(
       if (lon === undefined || lat === undefined) {
         throw new ApiError(400, "lon/lat required to go online");
       }
+      await presence.goOnline(user.id, lon, lat);
       await query(
         `UPDATE collectors SET
            online = true,
@@ -43,6 +48,7 @@ presenceRouter.post(
         [lon, lat, user.id]
       );
     } else {
+      await presence.goOffline(user.id);
       await query(`UPDATE collectors SET online = false WHERE user_id = $1`, [user.id]);
     }
 
@@ -56,9 +62,9 @@ const heartbeatSchema = z.object({
 });
 
 /**
- * POST /presence/heartbeat — sustains "online" (design §6). No Redis TTL in this build
- * (Technical_Debt_Plan.md, TD-05) — a Postgres cron sweep (jobs/presenceSweep.ts) marks
- * collectors offline if their heartbeat goes stale, which is the honesty guarantee.
+ * POST /presence/heartbeat — sustains "online" (design §6). Refreshes the Redis TTL/geo/last-
+ * seen score; the BullMQ presence-sweep job evicts anyone whose heartbeat goes stale, which is
+ * the self-healing honesty guarantee described in the original design.
  */
 presenceRouter.post(
   "/presence/heartbeat",
@@ -67,9 +73,11 @@ presenceRouter.post(
   validateBody(heartbeatSchema),
   asyncHandler(async (req, res) => {
     const { lon, lat } = req.body as { lon: number; lat: number };
-    const row = await queryOne<{ online: boolean }>(`SELECT online FROM collectors WHERE user_id = $1`, [req.user!.id]);
-    if (!row?.online) throw new ApiError(400, "Not online — call POST /presence first");
+    if (!(await presence.isOnline(req.user!.id))) {
+      throw new ApiError(400, "Not online — call POST /presence first");
+    }
 
+    await presence.heartbeat(req.user!.id, lon, lat);
     await query(
       `UPDATE collectors SET
          last_lon = $1, last_lat = $2,
@@ -95,19 +103,32 @@ presenceRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const rows = await query(
-      `SELECT u.id, u.display_name, c.vehicle_type, c.waste_types, c.rating_avg, c.rating_count,
-              c.last_lon, c.last_lat,
-              ST_Distance(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
-       FROM collectors c
-       JOIN users u ON u.id = c.user_id
-       WHERE c.online = true AND u.suspended = false
-         AND ST_DWithin(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-       ORDER BY distance_m ASC
-       LIMIT 100`,
-      [lon, lat, radius]
+    const hits = await presence.nearbyCollectors(lon, lat, radius);
+    if (hits.length === 0) return res.json({ collectors: [] });
+
+    const rows = await query<{
+      id: string;
+      display_name: string | null;
+      vehicle_type: string | null;
+      waste_types: string[];
+      rating_avg: string | null;
+      rating_count: number;
+    }>(
+      `SELECT u.id, u.display_name, c.vehicle_type, c.waste_types, c.rating_avg, c.rating_count
+       FROM collectors c JOIN users u ON u.id = c.user_id
+       WHERE u.suspended = false AND c.user_id = ANY($1)`,
+      [hits.map((h) => h.id)]
     );
-    res.json({ collectors: rows });
+    const profileById = new Map(rows.map((r) => [r.id, r]));
+
+    const collectors = hits
+      .map((h) => {
+        const profile = profileById.get(h.id);
+        if (!profile) return null; // suspended, or a stale Redis entry the sweep hasn't caught yet
+        return { ...profile, last_lon: h.lon, last_lat: h.lat, distance_m: h.distanceM };
+      })
+      .filter(Boolean);
+    res.json({ collectors });
   })
 );
 

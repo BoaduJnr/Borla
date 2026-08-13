@@ -59,19 +59,25 @@ console exactly as a real user would.</li>
 separate phase, which is appropriate at this scale.</p>
 <h2>2. Automated test results</h2>
 <h3>2.1 Server (<code>npm run test -w server</code>)</h3>
-<pre><code>✓ test/unit/otp.test.ts (3 tests)
-✓ test/unit/quietHours.test.ts (4 tests)
-✓ test/unit/sms.test.ts (3 tests)
-✓ test/integration/auth.test.ts (13 tests)
-✓ test/integration/broadcasts.test.ts (4 tests)
-✓ test/integration/requests.test.ts (4 tests)
+<pre><code>✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
+✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/admin.test.ts (4 tests)
+✓ test/integration/auth.test.ts (13 tests)
+✓ test/unit/redisRateLimit.test.ts (3 tests)
+✓ test/unit/quietHours.test.ts (4 tests)
+✓ test/unit/phone.test.ts (4 tests)
+✓ test/unit/otp.test.ts (3 tests)
+✓ test/unit/sms.test.ts (3 tests)
 
- Test Files  8 passed (8)
-      Tests  39 passed (39)
-   Duration  67.76s
+ Test Files  10 passed (10)
+      Tests  46 passed (46)
+   Duration  47.30s
 </code></pre>
+<p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
+(Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); <code>broadcasts.test.ts</code>
+now polls for the async BullMQ <code>fanout</code> job&#39;s side effect (a <code>broadcast_notifications</code> row)
+instead of asserting on a field the old synchronous handler used to return directly.</p>
 <h3>2.2 Client (<code>npm run test -w client</code>)</h3>
 <pre><code>✓ src/pages/StatusChip.test.tsx (2 tests)
 ✓ src/components/ReviewForm.test.tsx (2 tests)
@@ -79,12 +85,12 @@ separate phase, which is appropriate at this scale.</p>
  Test Files  2 passed (2)
       Tests  4 passed (4)
 </code></pre>
-<p><strong>Total: 43/43 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
-repository root (requires a reachable Postgres+PostGIS — see <code>README.md</code>).</p>
+<p><strong>Total: 50/50 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
+repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
 <h2>3. Test case log</h2>
 <p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
-&quot;Actual result&quot; reflects the real run, including two real defects caught and fixed during
-development (rows T-08 and T-19).</p>
+&quot;Actual result&quot; reflects the real run, including three real defects caught and fixed during
+development (rows T-08, T-19, and T-39).</p>
 <table>
 <thead>
 <tr>
@@ -400,6 +406,54 @@ development (rows T-08 and T-19).</p>
 <td>Confirmed via <code>auth.test.ts</code>; also re-confirmed directly against production</td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-39</td>
+<td><strong>(defect)</strong> An already-registered phone number typed without the leading <code>+</code> (e.g. <code>233200000001</code>)</td>
+<td>Integration + manual (found by the user against the live app, D-07)</td>
+<td>Recognised as the same existing account, logs straight in</td>
+<td><strong>First implementation stored/looked up the raw string, so <code>+233200000001</code>/<code>233200000001</code>/<code>0200000001</code> were three different DB rows</strong> — see §4</td>
+<td>Fail → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-40</td>
+<td><code>normalizePhone</code> collapses all three Ghanaian phone-number input forms (<code>+233…</code>, <code>233…</code>, <code>0…</code>) to one canonical string</td>
+<td>Unit</td>
+<td>All three forms produce an identical result</td>
+<td>4/4 cases correct (<code>phone.test.ts</code>)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-41</td>
+<td>Redis-backed presence: a collector going online is visible to a nearby household via <code>GEOSEARCH</code>, not a Postgres scan</td>
+<td>Integration + manual (real local Redis)</td>
+<td><code>ZCARD geo:collectors</code> and <code>EXISTS presence:{id}</code> both reflect the online collector immediately</td>
+<td>Confirmed via direct Redis inspection alongside the <code>/collectors/nearby</code> response</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-42</td>
+<td>Redis-backed per-collector notification rate limit caps fan-out messages independently per collector</td>
+<td>Unit</td>
+<td>Requests beyond the cap are rejected for that collector only; a different collector is unaffected</td>
+<td>3/3 cases correct (<code>redisRateLimit.test.ts</code>)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-43</td>
+<td>Redis-backed OTP request rate limit caps requests per phone number</td>
+<td>Unit</td>
+<td>The (cap+1)th request for the same phone is rejected</td>
+<td>Confirmed (<code>redisRateLimit.test.ts</code>)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-44</td>
+<td>Broadcast fan-out runs as an async BullMQ job, not inline in the request handler</td>
+<td>Integration</td>
+<td><code>POST /broadcasts</code> returns before fan-out completes; a <code>broadcast_notifications</code> row appears shortly after, once the <code>fanout</code> job runs</td>
+<td>Confirmed via <code>waitFor()</code> polling in <code>broadcasts.test.ts</code> — row appears within the poll window, HTTP response contains no notification count</td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -447,13 +501,25 @@ development (rows T-08 and T-19).</p>
 <td>Once real GiantSMS delivery (D-05&#39;s neighbour, TD-02) started reporting <code>delivered:true</code>, the two seeded demo phone numbers — which are arbitrary, not real handsets — would have had their OTP silently &quot;delivered&quot; into a gateway with no phone behind it, hiding the fallback <code>devOtp</code> and locking the examiner out of the graded demo accounts entirely. Found by re-reading the deployment credentials file after wiring up real SMS, before it ever actually caused a lockout.</td>
 <td><code>DEMO_PHONES</code>/<code>DEMO_OTP</code> added to <code>server/src/seed.ts</code>: the two seeded numbers always get the same fixed, documented code, are exempt from the OTP rate limit, and never trigger a real SMS attempt regardless of gateway state. One regression test added (<code>the seeded demo household number always gets the fixed DEMO_OTP...</code>, 8 rapid requests all succeed and return the fixed code).</td>
 </tr>
+<tr>
+<td>D-07</td>
+<td><code>server/src/modules/auth/routes.ts</code> (<code>phoneSchema</code>, both OTP endpoints)</td>
+<td>Phone numbers were stored and looked up as the raw string the client sent, with no normalisation — <code>+233200000001</code>, <code>233200000001</code>, and <code>0200000001</code> were three different rows to Postgres, so an already-registered user who typed their number without the leading <code>+</code> looked brand new and was sent through the sign-up (role + name) path instead of logging straight in. <strong>Found by the user testing the seeded household account (<code>233200000001</code>, no <code>+</code>) against the live app.</strong></td>
+<td>Added <code>server/src/utils/phone.ts</code> (<code>normalizePhone</code>), wired into <code>phoneSchema</code> via Zod&#39;s <code>.transform()</code> so every route that accepts a phone number normalises it before it ever reaches a query or an insert. Four new unit tests (<code>phone.test.ts</code>) plus regression coverage in <code>auth.test.ts</code> confirming the same number in all three input forms resolves to one account.</td>
+</tr>
+<tr>
+<td>D-08</td>
+<td><code>server/src/ai/moderation.ts</code> (<code>MODEL</code> constant)</td>
+<td>The moderation pipeline was hardcoded to <code>gemini-2.5-flash</code>. Once the user provisioned a real <code>GEMINI_API_KEY</code> on Render, live calls started returning <code>404 — this model is no longer available to new users</code> for that account&#39;s tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. <strong>Found via production logs after the key was set.</strong></td>
+<td>Switched <code>MODEL</code> to the <code>gemini-flash-latest</code> alias. Not yet re-verified by an actual live moderation call post-redeploy — tracked as the remaining half of TD-01.</td>
+</tr>
 </tbody></table>
-<p>All six were caught by testing immediately after (or, for D-05/D-06, well after) the
-corresponding feature — four by the automated suite, two by deliberately exercising the live
-deployed app and re-reading the credentials file with a grader&#39;s eyes — direct evidence for why
-TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t
-been extended to every corner of the app, including production
-behaviour, yet.</p>
+<p>All eight were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
+corresponding feature — five by the automated suite, three by deliberately exercising the live
+deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
+by the user; D-08 surfaced in production logs once the Gemini key went live) — direct evidence
+for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just
+hasn&#39;t been extended to every corner of the app, including production behaviour, yet.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>
@@ -475,8 +541,8 @@ behaviour, yet.</p>
 </tr>
 <tr>
 <td>OTP brute-force / spam</td>
-<td>Code review + manual test</td>
-<td>5-per-10-minutes request cap and a 5-attempt verify cap are enforced (<code>otp/routes.ts</code>); acknowledged as coarse, see TD-05</td>
+<td>Code review + manual test + unit (T-43)</td>
+<td>5-per-10-minutes request cap (now Redis-backed, <code>checkOtpRateLimit</code>, per-phone rather than per-IP — Technical_Debt_Plan.md TD-05) and a 5-attempt verify cap are enforced (<code>otp/routes.ts</code>)</td>
 </tr>
 <tr>
 <td>Role escalation (collector calling household-only routes, etc.)</td>
@@ -517,16 +583,21 @@ action per screen, and colour contrast matching the approved palette (green/mari
 a warm paper background) — confirmed manually in-browser at mobile viewport widths (390px,
 414px) and desktop.</p>
 <h2>7. Performance testing</h2>
-<p>Out of scope at pilot scale by design (see SRS NFR discussion) — the one performance-relevant
-check performed was confirming the PostGIS <code>ST_DWithin</code>/<code>GEOSEARCH</code>-equivalent nearby queries
-use the <code>GIST</code> index created in <code>001_init.sql</code> (<code>EXPLAIN</code> on <code>broadcasts_loc_gix</code> confirmed an
-index scan, not a sequential scan, even against the small seeded dataset).</p>
+<p>Out of scope at pilot scale by design (see SRS NFR discussion). Two checks performed: (1) the
+PostGIS <code>ST_DWithin</code> queries that Postgres still runs as the durable mirror use the <code>GIST</code>
+index created in <code>001_init.sql</code> (<code>EXPLAIN</code> on <code>broadcasts_loc_gix</code> confirmed an index scan, not
+a sequential scan, even against the small seeded dataset); (2) since Technical_Debt_Plan.md
+TD-05, the actual hot-path nearby-collector/nearby-pin lookups run against Redis <code>GEOSEARCH</code>
+(<code>server/src/redis/presence.ts</code>) instead of Postgres on every request — confirmed functionally
+correct (T-41) but not load-tested at real traffic volume.</p>
 <h2>8. What was NOT tested (honestly stated, ties to Technical_Debt_Plan.md TD-10)</h2>
 <p>Visual confirmation of a GiantSMS text actually arriving on a real handset (T-33 confirmed the
 gateway <em>accepts</em> the request in production; the seeded demo number is a placeholder, not a
-live phone someone was watching); concurrent double-accept under real
-network race conditions (only sequential-call idempotency is proven); load/stress testing;
-cross-browser automated testing (manual only); the four
-<code>CollectorHome</code>/<code>HouseholdHome</code>/<code>AdminDashboard</code>/<code>Profile</code> React pages have no component tests
-yet, only the two smaller components (<code>StatusChip</code>, <code>ReviewForm</code>).</p>
+live phone someone was watching); a live Gemini moderation call against the real production key
+post-D-08 fix (the model-ID switch to <code>gemini-flash-latest</code> has not yet been re-verified with an
+actual submitted review since the redeploy — no local key is available to reproduce this
+outside production); concurrent double-accept under real network race conditions (only
+sequential-call idempotency is proven); load/stress testing; cross-browser automated testing
+(manual only); the four <code>CollectorHome</code>/<code>HouseholdHome</code>/<code>AdminDashboard</code>/<code>Profile</code> React pages
+have no component tests yet, only the two smaller components (<code>StatusChip</code>, <code>ReviewForm</code>).</p>
 </body></html>

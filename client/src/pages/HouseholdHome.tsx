@@ -110,26 +110,34 @@ export default function HouseholdHome() {
     const onUpdate = () => {
       loadRequests();
     };
+    // Fan-out now runs as a BullMQ job (Technical_Debt_Plan.md TD-05), off the request thread —
+    // the notified-count arrives over the socket once the job actually finishes, not in the
+    // POST /broadcasts response itself.
+    const onFannedOut = (payload: { broadcastId: string; notified: number }) => {
+      setInfo(`Pin is live — ${payload.notified} nearby collector(s) notified.`);
+    };
     socket.on("request:seen", onUpdate);
     socket.on("request:accepted", onUpdate);
     socket.on("request:rejected", onUpdate);
     socket.on("request:timed_out", onUpdate);
+    socket.on("broadcast:fanned_out", onFannedOut);
     return () => {
       socket.off("request:seen", onUpdate);
       socket.off("request:accepted", onUpdate);
       socket.off("request:rejected", onUpdate);
       socket.off("request:timed_out", onUpdate);
+      socket.off("broadcast:fanned_out", onFannedOut);
     };
   }, [socket]);
 
   async function submitBroadcast() {
     setError(null);
     try {
-      const res = await api<{ notifiedCollectors: number }>("/broadcasts", {
+      await api("/broadcasts", {
         method: "POST",
         body: { lon: center.lon, lat: center.lat, wasteType, note: note || undefined },
       });
-      setInfo(`Pin is live — ${res.notifiedCollectors} nearby collector(s) notified.`);
+      setInfo("Pin is live — notifying nearby collectors…");
       setShowForm(false);
       setNote("");
       loadActiveBroadcast();

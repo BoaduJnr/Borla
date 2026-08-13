@@ -56,9 +56,12 @@ request goes through a real accept/reject/timeout state machine) — plus a <str
 content moderation.</p>
 <p>This SRS covers the <strong>web-only v1</strong> that was actually built and deployed for this examination.
 A larger design (<code>borla-technical-design.md</code>, retained in the repository as a reference) covers
-a full production system with a native Android collector app, managed Redis/BullMQ, a real SMS
-gateway, and a separate admin application; §1.4 explains why that design was intentionally
-descoped, and the full delta is tracked in <code>Technical_Debt_Plan.md</code>.</p>
+a full production system with a native Android collector app and a separate admin application;
+§1.4 explains why those two pieces were intentionally descoped, and the full delta is tracked in
+<code>Technical_Debt_Plan.md</code>. The design&#39;s Redis/BullMQ layer (live presence, per-collector
+notification rate limiting, job scheduling, Socket.IO horizontal-scale readiness) was originally
+descoped for the same reason but was <strong>subsequently implemented against a real Upstash Redis
+instance</strong> once the user provisioned one — see <code>Technical_Debt_Plan.md</code> TD-05.</p>
 <h3>1.3 Definitions</h3>
 <table>
 <thead>
@@ -93,13 +96,16 @@ descoped, and the full delta is tracked in <code>Technical_Debt_Plan.md</code>.<
 </tr>
 </tbody></table>
 <h3>1.4 Why the scope was reduced from the original design</h3>
-<p>The original design assumed infrastructure and accounts that cannot be provisioned inside an
-individual, time-boxed examination: a native Capacitor Android build with a background-location
-plugin (needs an Android toolchain and a physical/emulated device, and produces an installable
-APK rather than a gradable &quot;Live Application URL&quot;); a paid Ghanaian SMS gateway account; a
-managed Redis instance for BullMQ; and a second admin web application. Building the full system
-would also cost roughly 3,800 person-hours by formal estimation (§7) — nowhere near
-appropriately scoped for this exam. The requirements below are the <strong>Must-Have</strong> slice that
+<p>The original design assumed infrastructure and accounts that could not all be provisioned
+inside an individual, time-boxed examination: a native Capacitor Android build with a
+background-location plugin (needs an Android toolchain and a physical/emulated device, and
+produces an installable APK rather than a gradable &quot;Live Application URL&quot;); a paid Ghanaian SMS
+gateway account; a managed Redis instance for BullMQ; and a second admin web application.
+Building the full system would also cost roughly 3,800 person-hours by formal estimation (§7)
+— nowhere near appropriately scoped for this exam. Two of those four gaps were later closed
+once the user supplied real credentials mid-project: a funded GiantSMS account (TD-02) and an
+Upstash Redis instance (TD-05, Redis-backed presence/rate-limiting + BullMQ + Socket.IO Redis
+adapter). The native Android app and the separate admin application remain descoped. The requirements below are the <strong>Must-Have</strong> slice that
 <em>is</em> fully implemented, deployed, and tested; everything else is deliberately deferred and
 tracked as technical debt with a resolution plan (<code>Technical_Debt_Plan.md</code>).</p>
 <hr>
@@ -153,12 +159,16 @@ safe fallback (tracked as TD-02, scheduled, in the Technical Debt Plan, pending 
 confirmation on a real handset).</li>
 <li>AI moderation is optional infrastructure: the system is fully functional with
 <code>GEMINI_API_KEY</code> unset, falling back to a manual admin-only moderation queue.</li>
-<li>A single deployed Node process is assumed (no horizontal scaling) — acceptable at pilot scale.</li>
+<li>A single deployed Node process is what&#39;s actually running for this exam, but the app is no
+longer architecturally limited to one instance: Socket.IO uses a Redis adapter and presence/
+rate-limiting/job state live in Redis rather than in-process memory, so a second Render
+instance would receive and deliver events correctly (untested at real scale — TD-05).</li>
 </ul>
 <h3>2.5 Constraints</h3>
 <ul>
 <li>48-hour-equivalent time-box for the examination → aggressive MoSCoW prioritisation (§6).</li>
-<li>No budget for paid third-party services (SMS gateway, managed Redis, Vertex AI tier).</li>
+<li>Free/low-cost tiers only for third-party services — GiantSMS (funded), Upstash Redis (free
+tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <li>Deployment target restricted to free-tier hosting (Render).</li>
 </ul>
 <hr>
@@ -192,9 +202,9 @@ confirmation on a real handset).</li>
 <td>Server-to-server HTTPS</td>
 </tr>
 <tr>
-<td>Scheduler (cron sweeps)</td>
+<td>Scheduler (BullMQ repeatable jobs)</td>
 <td>Simple (time-triggered)</td>
-<td>In-process, drives system use cases</td>
+<td>Redis-backed queue, drives system use cases</td>
 </tr>
 </tbody></table>
 <hr>
@@ -297,7 +307,7 @@ confirmation on a real handset).</li>
 <td>FR-15</td>
 <td>A request auto-times-out if the collector doesn&#39;t respond within a configurable window (default 90s)</td>
 <td>Must</td>
-<td><code>jobs/index.ts</code> request-timeout sweep</td>
+<td><code>jobs/workers.ts</code> request-timeout sweep, a repeatable BullMQ job (<code>jobs/scheduler.ts</code>)</td>
 </tr>
 <tr>
 <td>FR-16</td>
@@ -327,7 +337,7 @@ confirmation on a real handset).</li>
 <td>FR-20</td>
 <td>A review is only shown once both sides have reviewed, or the review window has closed (double-blind release)</td>
 <td>Must</td>
-<td><code>jobs/index.ts</code> review-release sweep</td>
+<td><code>jobs/workers.ts</code> review-release sweep (BullMQ repeatable job)</td>
 </tr>
 <tr>
 <td>FR-21</td>
@@ -398,7 +408,7 @@ confirmation on a real handset).</li>
 <tr>
 <td>NFR-5 (Reliability under poor connectivity)</td>
 <td>The app tolerates dropped connections and stale devices</td>
-<td>Presence self-heals via TTL-style sweep; idempotent state transitions; polling fallback alongside sockets</td>
+<td>Presence self-heals via a Redis-backed TTL/heartbeat sweep (<code>redis/presence.ts</code>, TD-05); idempotent state transitions; polling fallback alongside sockets</td>
 </tr>
 <tr>
 <td>NFR-6 (Usability)</td>
@@ -423,7 +433,7 @@ confirmation on a real handset).</li>
 <tr>
 <td>NFR-10 (Testability)</td>
 <td>Core business logic is covered by automated tests</td>
-<td>31 server tests (unit + Supertest integration) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
+<td>46 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
 </tr>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
@@ -434,9 +444,9 @@ the admin console.</p>
 (user reporting), FR-26 (live config tuning) — all present, but not stress-tested to the same
 depth as Must-Have items.</p>
 <p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
-geolocation, real SMS OTP, Redis/BullMQ + Socket.IO Redis adapter, provider call-masking, photo
-→ waste-type AI classification, admin 2FA, notification rate-limiting nuance beyond a coarse
-per-IP limit, i18n beyond English.</p>
+geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
+beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on
+this list too but were subsequently built — TD-02, TD-05.)</p>
 <p><strong>Won&#39;t-have (out of scope entirely, per the original design&#39;s own roadmap)</strong>: in-app
 payments/escrow, live turn-by-turn tracking, auto-fallback dispatch, multi-neighbourhood
 expansion.</p>
@@ -476,7 +486,7 @@ exercise where the reasoning must be shown, not just a number.</p>
 <td>1</td>
 </tr>
 <tr>
-<td>Scheduler (cron)</td>
+<td>Scheduler (BullMQ)</td>
 <td>Simple (time-triggered)</td>
 <td>1</td>
 </tr>

@@ -21,3 +21,18 @@ export async function signup(app: Express, role: "household" | "collector", phon
 export function auth(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
+
+/**
+ * Polls `check` until it returns true or `timeoutMs` elapses — needed because broadcast fan-out
+ * and review/reply moderation now run as BullMQ jobs (Technical_Debt_Plan.md TD-05), not
+ * synchronously inside the route handler, so their side effects land a beat after the HTTP
+ * response.
+ */
+export async function waitFor(check: () => Promise<boolean>, timeoutMs = 5000, intervalMs = 100): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+}

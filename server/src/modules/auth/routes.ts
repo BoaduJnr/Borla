@@ -9,12 +9,19 @@ import { generateOtp, hashOtp, verifyOtp, OTP_TTL_MINUTES, OTP_MAX_ATTEMPTS } fr
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt.js";
 import { sendSms, isSmsConfigured } from "../../utils/sms.js";
 import { DEMO_PHONES, DEMO_OTP } from "../../seed.js";
+import { checkOtpRateLimit } from "../../redis/rateLimit.js";
+import { normalizePhone } from "../../utils/phone.js";
 import type { Role } from "../../types.js";
 
 export const authRouter = Router();
 
 // E.164-ish: + followed by 8-15 digits. Loose on purpose — this is a demo, not a carrier lookup.
-export const phoneSchema = z.string().regex(/^\+?[0-9]{8,15}$/, "Enter a valid phone number");
+// .transform normalizes "233…"/"0…"/"+233…" to the same canonical "+233…" *before* it's ever
+// used as a lookup key or stored — see utils/phone.ts for why this matters (D-07).
+export const phoneSchema = z
+  .string()
+  .regex(/^\+?[0-9]{8,15}$/, "Enter a valid phone number")
+  .transform(normalizePhone);
 
 const otpRequestSchema = z.object({
   phone: phoneSchema,
@@ -54,18 +61,12 @@ authRouter.post(
       return res.json({ requiresPassword: true });
     }
 
-    // Basic abuse guard: at most 5 OTP requests per phone per 10 minutes (stands in for the
-    // Redis rate limiter in the original design — see Technical_Debt_Plan.md). Exempt the demo
-    // numbers so a grader mashing "resend" never gets rate-limited out of the exam.
+    // Abuse guard: at most 5 OTP requests per phone per 10 minutes, via the Redis
+    // `ratelimit:otp:{phone}` counter from the original design (Technical_Debt_Plan.md TD-05).
+    // Exempt the demo numbers so a grader mashing "resend" never gets rate-limited out of the exam.
     const isDemoPhone = DEMO_PHONES.includes(phone);
-    if (!isDemoPhone) {
-      const recent = await queryOne<{ count: string }>(
-        `SELECT count(*) FROM otp_codes WHERE phone = $1 AND created_at > now() - interval '10 minutes'`,
-        [phone]
-      );
-      if (Number(recent?.count ?? 0) >= 5) {
-        throw new ApiError(429, "Too many OTP requests — wait a few minutes and try again");
-      }
+    if (!isDemoPhone && !(await checkOtpRateLimit(phone))) {
+      throw new ApiError(429, "Too many OTP requests — wait a few minutes and try again");
     }
 
     // The two seeded demo numbers are arbitrary, not real handsets (Deployment_and_Source_Links.txt)

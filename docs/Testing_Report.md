@@ -33,19 +33,26 @@ separate phase, which is appropriate at this scale.
 ### 2.1 Server (`npm run test -w server`)
 
 ```
-✓ test/unit/otp.test.ts (3 tests)
-✓ test/unit/quietHours.test.ts (4 tests)
-✓ test/unit/sms.test.ts (3 tests)
-✓ test/integration/auth.test.ts (13 tests)
 ✓ test/integration/broadcasts.test.ts (4 tests)
-✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
+✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/admin.test.ts (4 tests)
+✓ test/integration/auth.test.ts (13 tests)
+✓ test/unit/redisRateLimit.test.ts (3 tests)
+✓ test/unit/quietHours.test.ts (4 tests)
+✓ test/unit/phone.test.ts (4 tests)
+✓ test/unit/otp.test.ts (3 tests)
+✓ test/unit/sms.test.ts (3 tests)
 
- Test Files  8 passed (8)
-      Tests  39 passed (39)
-   Duration  67.76s
+ Test Files  10 passed (10)
+      Tests  46 passed (46)
+   Duration  47.30s
 ```
+
+`redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
+(Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); `broadcasts.test.ts`
+now polls for the async BullMQ `fanout` job's side effect (a `broadcast_notifications` row)
+instead of asserting on a field the old synchronous handler used to return directly.
 
 ### 2.2 Client (`npm run test -w client`)
 
@@ -57,14 +64,14 @@ separate phase, which is appropriate at this scale.
       Tests  4 passed (4)
 ```
 
-**Total: 43/43 automated tests passing** at time of submission. Re-run with `npm test` from the
-repository root (requires a reachable Postgres+PostGIS — see `README.md`).
+**Total: 50/50 automated tests passing** at time of submission. Re-run with `npm test` from the
+repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
 
 ## 3. Test case log
 
 Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
-"Actual result" reflects the real run, including two real defects caught and fixed during
-development (rows T-08 and T-19).
+"Actual result" reflects the real run, including three real defects caught and fixed during
+development (rows T-08, T-19, and T-39).
 
 | # | Test case | Layer | Expected result | Actual result | Pass/Fail |
 |---|---|---|---|---|---|
@@ -106,6 +113,12 @@ development (rows T-08 and T-19).
 | T-36 | Unified sign-in: an admin's phone number is auto-detected and routed to a password prompt instead of an OTP | Integration + scripted screenshot | `requiresPassword:true`, no OTP issued; UI shows the password form directly | Confirmed both ways | Pass |
 | T-37 | PWA service worker registers and activates on the production build | System (headless browser against `dist/`) | `navigator.serviceWorker.getRegistrations()` returns an active registration scoped to `/` | Confirmed: `{"scope":"http://localhost:5175/","active":true,"scriptURL":"…/sw.js"}`, `<link rel="manifest">` present in the DOM | Pass |
 | T-38 | Seeded demo phone numbers always get the fixed `DEMO_OTP`, are exempt from the rate limit, and never trigger a real SMS attempt (D-06) | Integration | 8 rapid `/otp/request` calls all succeed and return `devOtp:"482913"`, `delivered:false` | Confirmed via `auth.test.ts`; also re-confirmed directly against production | Pass |
+| T-39 | **(defect)** An already-registered phone number typed without the leading `+` (e.g. `233200000001`) | Integration + manual (found by the user against the live app, D-07) | Recognised as the same existing account, logs straight in | **First implementation stored/looked up the raw string, so `+233200000001`/`233200000001`/`0200000001` were three different DB rows** — see §4 | Fail → **Fixed**, now Pass |
+| T-40 | `normalizePhone` collapses all three Ghanaian phone-number input forms (`+233…`, `233…`, `0…`) to one canonical string | Unit | All three forms produce an identical result | 4/4 cases correct (`phone.test.ts`) | Pass |
+| T-41 | Redis-backed presence: a collector going online is visible to a nearby household via `GEOSEARCH`, not a Postgres scan | Integration + manual (real local Redis) | `ZCARD geo:collectors` and `EXISTS presence:{id}` both reflect the online collector immediately | Confirmed via direct Redis inspection alongside the `/collectors/nearby` response | Pass |
+| T-42 | Redis-backed per-collector notification rate limit caps fan-out messages independently per collector | Unit | Requests beyond the cap are rejected for that collector only; a different collector is unaffected | 3/3 cases correct (`redisRateLimit.test.ts`) | Pass |
+| T-43 | Redis-backed OTP request rate limit caps requests per phone number | Unit | The (cap+1)th request for the same phone is rejected | Confirmed (`redisRateLimit.test.ts`) | Pass |
+| T-44 | Broadcast fan-out runs as an async BullMQ job, not inline in the request handler | Integration | `POST /broadcasts` returns before fan-out completes; a `broadcast_notifications` row appears shortly after, once the `fanout` job runs | Confirmed via `waitFor()` polling in `broadcasts.test.ts` — row appears within the poll window, HTTP response contains no notification count | Pass |
 
 ## 4. Defects found during development
 
@@ -117,13 +130,15 @@ development (rows T-08 and T-19).
 | D-04 | `server/src/modules/reviews/routes.ts` (reply endpoint) | Only checked `review.subject_id === user.id`, not `review.status === 'visible'`, so a reply could be posted on a still-hidden/pending review | Added the status check; covered by T-19 |
 | D-05 (security) | `server/src/modules/auth/routes.ts` (`/auth/otp/request`, `/auth/otp/verify`) | Neither endpoint checked `users.role` — an admin account (meant to require phone+password) could also be logged into via the plain OTP flow, defeating the two-tier auth model entirely. Found by manually testing the OTP flow **against live production** with the admin's own phone number, post-deployment, not by the existing test suite. | Both endpoints now reject any phone number belonging to an admin account with the same generic message either way (doesn't confirm/deny which numbers are admins). Two live OTP codes already issued to the admin number in production during discovery were immediately neutralised by deliberately exhausting the 5-attempt lockout before the fix deployed. Added two regression tests (`refuses to send an OTP to an admin's phone number`, `refuses to verify an OTP into an admin account even if a code somehow exists`) so this can't silently regress. |
 | D-06 | `server/src/modules/auth/routes.ts` (`/otp/request`) | Once real GiantSMS delivery (D-05's neighbour, TD-02) started reporting `delivered:true`, the two seeded demo phone numbers — which are arbitrary, not real handsets — would have had their OTP silently "delivered" into a gateway with no phone behind it, hiding the fallback `devOtp` and locking the examiner out of the graded demo accounts entirely. Found by re-reading the deployment credentials file after wiring up real SMS, before it ever actually caused a lockout. | `DEMO_PHONES`/`DEMO_OTP` added to `server/src/seed.ts`: the two seeded numbers always get the same fixed, documented code, are exempt from the OTP rate limit, and never trigger a real SMS attempt regardless of gateway state. One regression test added (`the seeded demo household number always gets the fixed DEMO_OTP...`, 8 rapid requests all succeed and return the fixed code). |
+| D-07 | `server/src/modules/auth/routes.ts` (`phoneSchema`, both OTP endpoints) | Phone numbers were stored and looked up as the raw string the client sent, with no normalisation — `+233200000001`, `233200000001`, and `0200000001` were three different rows to Postgres, so an already-registered user who typed their number without the leading `+` looked brand new and was sent through the sign-up (role + name) path instead of logging straight in. **Found by the user testing the seeded household account (`233200000001`, no `+`) against the live app.** | Added `server/src/utils/phone.ts` (`normalizePhone`), wired into `phoneSchema` via Zod's `.transform()` so every route that accepts a phone number normalises it before it ever reaches a query or an insert. Four new unit tests (`phone.test.ts`) plus regression coverage in `auth.test.ts` confirming the same number in all three input forms resolves to one account. |
+| D-08 | `server/src/ai/moderation.ts` (`MODEL` constant) | The moderation pipeline was hardcoded to `gemini-2.5-flash`. Once the user provisioned a real `GEMINI_API_KEY` on Render, live calls started returning `404 — this model is no longer available to new users` for that account's tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. **Found via production logs after the key was set.** | Switched `MODEL` to the `gemini-flash-latest` alias. Not yet re-verified by an actual live moderation call post-redeploy — tracked as the remaining half of TD-01. |
 
-All six were caught by testing immediately after (or, for D-05/D-06, well after) the
-corresponding feature — four by the automated suite, two by deliberately exercising the live
-deployed app and re-reading the credentials file with a grader's eyes — direct evidence for why
-TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just hasn't
-been extended to every corner of the app, including production
-behaviour, yet.
+All eight were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
+corresponding feature — five by the automated suite, three by deliberately exercising the live
+deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
+by the user; D-08 surfaced in production logs once the Gemini key went live) — direct evidence
+for why TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just
+hasn't been extended to every corner of the app, including production behaviour, yet.
 
 ## 5. Security testing
 
@@ -131,7 +146,7 @@ behaviour, yet.
 |---|---|---|
 | Every mutating/reading-sensitive route requires a valid JWT | Automated (T-05, T-12, T-16, T-22) + manual `curl` without a token | Consistently `401`/`403` |
 | SQL injection surface | Code review — every query in `server/src/modules/**` uses parameterised `$1..$n` placeholders, none concatenate user input into SQL | No string-built SQL found |
-| OTP brute-force / spam | Code review + manual test | 5-per-10-minutes request cap and a 5-attempt verify cap are enforced (`otp/routes.ts`); acknowledged as coarse, see TD-05 |
+| OTP brute-force / spam | Code review + manual test + unit (T-43) | 5-per-10-minutes request cap (now Redis-backed, `checkOtpRateLimit`, per-phone rather than per-IP — Technical_Debt_Plan.md TD-05) and a 5-attempt verify cap are enforced (`otp/routes.ts`) |
 | Role escalation (collector calling household-only routes, etc.) | Automated (T-12) + manual `curl` across all role-gated routes | Consistently `403` |
 | Contact information leakage pre-accept | Automated (T-14) | Phone fields verified absent from the JSON payload itself (not just hidden in the UI) before acceptance |
 | Secrets handling | Code review | JWT secrets and the Gemini key are read from environment variables only, never committed (`.env` is git-ignored, `.env.example` has placeholders) |
@@ -160,17 +175,22 @@ a warm paper background) — confirmed manually in-browser at mobile viewport wi
 
 ## 7. Performance testing
 
-Out of scope at pilot scale by design (see SRS NFR discussion) — the one performance-relevant
-check performed was confirming the PostGIS `ST_DWithin`/`GEOSEARCH`-equivalent nearby queries
-use the `GIST` index created in `001_init.sql` (`EXPLAIN` on `broadcasts_loc_gix` confirmed an
-index scan, not a sequential scan, even against the small seeded dataset).
+Out of scope at pilot scale by design (see SRS NFR discussion). Two checks performed: (1) the
+PostGIS `ST_DWithin` queries that Postgres still runs as the durable mirror use the `GIST`
+index created in `001_init.sql` (`EXPLAIN` on `broadcasts_loc_gix` confirmed an index scan, not
+a sequential scan, even against the small seeded dataset); (2) since Technical_Debt_Plan.md
+TD-05, the actual hot-path nearby-collector/nearby-pin lookups run against Redis `GEOSEARCH`
+(`server/src/redis/presence.ts`) instead of Postgres on every request — confirmed functionally
+correct (T-41) but not load-tested at real traffic volume.
 
 ## 8. What was NOT tested (honestly stated, ties to Technical_Debt_Plan.md TD-10)
 
 Visual confirmation of a GiantSMS text actually arriving on a real handset (T-33 confirmed the
 gateway *accepts* the request in production; the seeded demo number is a placeholder, not a
-live phone someone was watching); concurrent double-accept under real
-network race conditions (only sequential-call idempotency is proven); load/stress testing;
-cross-browser automated testing (manual only); the four
-`CollectorHome`/`HouseholdHome`/`AdminDashboard`/`Profile` React pages have no component tests
-yet, only the two smaller components (`StatusChip`, `ReviewForm`).
+live phone someone was watching); a live Gemini moderation call against the real production key
+post-D-08 fix (the model-ID switch to `gemini-flash-latest` has not yet been re-verified with an
+actual submitted review since the redeploy — no local key is available to reproduce this
+outside production); concurrent double-accept under real network race conditions (only
+sequential-call idempotency is proven); load/stress testing; cross-browser automated testing
+(manual only); the four `CollectorHome`/`HouseholdHome`/`AdminDashboard`/`Profile` React pages
+have no component tests yet, only the two smaller components (`StatusChip`, `ReviewForm`).

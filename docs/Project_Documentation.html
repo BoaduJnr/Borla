@@ -102,10 +102,11 @@ extension/reduction process:</p>
 <ol>
 <li>Took every functional area of the original design (two matching planes, presence, trust
 layer, admin, AI) as the candidate requirement pool.</li>
-<li>Removed anything that depends on infrastructure or accounts that cannot be provisioned
-inside the exam (native Android background location, a funded SMS gateway — later
-<em>partially</em> resolved once real GiantSMS credentials became available mid-build, see
-<code>Technical_Debt_Plan.md</code> TD-02 — managed Redis, a second admin application).</li>
+<li>Removed anything that depends on infrastructure or accounts that could not be provisioned
+inside the exam (native Android background location, a funded SMS gateway, a managed Redis
+instance, a second admin application) — two of those four were later resolved once real
+credentials became available mid-build: GiantSMS (<code>Technical_Debt_Plan.md</code> TD-02) and
+Upstash Redis (TD-05). Native Android and the separate admin app remain descoped.</li>
 <li>Classified everything that remained with MoSCoW (<code>SRS.md</code> §6).</li>
 <li>Ran Use Case Points estimation (§7 below) against the <em>remaining</em> scope to confirm the
 prioritisation was still necessary even after the initial cut — it was, by roughly 16–80×
@@ -114,7 +115,7 @@ the nominal time-box, which is exactly the signal the exam brief anticipates.</l
 <p>Full functional/non-functional requirement tables are in <code>SRS.md</code> §4–§5.</p>
 <h2>6. Software Requirements Specification (summary)</h2>
 <p>See <code>SRS.md</code> for the complete document. In summary: three human actors (household, collector,
-admin) plus two system actors (the Gemini moderation API, the cron scheduler); 26 functional
+admin) plus two system actors (the Gemini moderation API, the BullMQ scheduler); 26 functional
 requirements spanning auth, the broadcast plane, the request plane, the trust layer, and the
 admin console; ten non-functional requirements covering security, privacy, reliability,
 usability, and fail-safe moderation.</p>
@@ -185,27 +186,31 @@ alive on a free tier):</p>
 │  ┌───────────────────────────────────────────────────────────────┐   │
 │  │ Express: REST routes (auth/presence/broadcasts/requests/       │   │
 │  │           reviews/admin) · Socket.IO gateway (JWT, room-per-   │   │
-│  │           user) · static file server for the built client      │   │
+│  │           user, Redis adapter) · static file server for build  │   │
 │  ├───────────────────────────────────────────────────────────────┤   │
-│  │ node-cron sweeps: presence (30s) · pin-expiry (60s) ·           │   │
-│  │           request-timeout (15s) · review double-blind (2m)     │   │
-│  └───────────────────────────┬───────────────────────────────────┘   │
-└───────────────────────────────┼─────────────────────────────────────┘
-                                │ pg (parameterised SQL)
-                    ┌───────────▼────────────┐        ┌──────────────────┐
-                    │ PostgreSQL + PostGIS    │        │ External APIs     │
-                    │ (single source of truth)│        │ • Gemini (mod.)   │
-                    │ users/households/       │◄───────│ • GiantSMS (OTP)  │
-                    │ collectors/broadcasts/  │        │   both optional,  │
-                    │ requests/reviews/…      │        │   fail gracefully │
-                    └─────────────────────────┘        └──────────────────┘
+│  │ BullMQ workers + repeatable jobs: presence-sweep (30s) ·        │   │
+│  │           pin-expiry (60s) · request-timeout (15s) ·           │   │
+│  │           review-release (2m) · fanout (per-broadcast) ·       │   │
+│  │           moderate (per-review/reply) — retries + backoff      │   │
+│  └──────────────┬──────────────────────────────┬─────────────────┘   │
+└─────────────────┼──────────────────────────────┼─────────────────────┘
+                   │ pg (parameterised SQL)       │ ioredis
+       ┌───────────▼────────────┐   ┌─────────────▼──────────────┐   ┌──────────────────┐
+       │ PostgreSQL + PostGIS    │   │ Redis (Upstash)             │   │ External APIs     │
+       │ durable source of truth │   │ hot path: presence:{id},    │   │ • Gemini (mod.)   │
+       │ users/households/       │   │ geo:collectors (GEOSEARCH), │◄──│ • GiantSMS (OTP)  │
+       │ collectors/broadcasts/  │   │ pins:active, ratelimit:*,   │   │   both optional,  │
+       │ requests/reviews/…      │   │ BullMQ queue state          │   │   fail gracefully │
+       └─────────────────────────┘   └─────────────────────────────┘   └──────────────────┘
 </code></pre>
 <p><strong>Deliberate substitutions from the original design</strong> (each is a named technical-debt item,
-not an oversight): PostGIS/Postgres directly instead of a Redis hot-path + Postgres cold-path
-split (TD-05); <code>node-cron</code> sweeps instead of BullMQ+Redis jobs (TD-05); Leaflet+OSM raster tiles
-instead of MapLibre+vector tiles (TD-08); one Express service instead of separate
-household/collector/admin apps (TD-07); phone+password admin login instead of email+2FA
-(TD-06).</p>
+not an oversight): Leaflet+OSM raster tiles instead of MapLibre+vector tiles (TD-08); one
+Express service instead of separate household/collector/admin apps (TD-07); phone+password
+admin login instead of email+2FA (TD-06). The Redis hot-path/Postgres cold-path split and the
+BullMQ job queue (originally TD-05, a deferred substitution: <code>node-cron</code> sweeps directly against
+Postgres, no Redis) were <strong>subsequently built as originally designed</strong> once the user provisioned
+a real Upstash Redis instance — the diagram above reflects the as-built state, not the interim
+substitution. See <code>Technical_Debt_Plan.md</code> TD-05 for what was verified.</p>
 <h3>9.2 Data design (ER overview)</h3>
 <p>The full schema is <code>server/migrations/001_init.sql</code> (12 tables). Core entities and their
 relationships:</p>
@@ -413,13 +418,13 @@ rolling rating_avg/rating_count recomputed for the reviewed party
 </tr>
 <tr>
 <td>Realtime</td>
-<td>Socket.IO</td>
-<td>JWT-authable, room-per-user, graceful fallback to polling already built into the protocol</td>
+<td>Socket.IO + Redis adapter</td>
+<td>JWT-authable, room-per-user, graceful fallback to polling; the Redis adapter makes cross-instance event delivery correct if scaled beyond one Node process</td>
 </tr>
 <tr>
-<td>Scheduling</td>
-<td><code>node-cron</code></td>
-<td>No extra infrastructure (Redis) for a single-instance deploy</td>
+<td>Cache/queue</td>
+<td>Redis (Upstash) + BullMQ</td>
+<td>Live presence/geo (<code>GEOSEARCH</code>), pin/rate-limit keys, and a real job queue (retries, backoff, repeatable schedulers) replacing the original <code>node-cron</code> sweeps — Technical_Debt_Plan.md TD-05</td>
 </tr>
 <tr>
 <td>Frontend</td>
@@ -469,34 +474,44 @@ the full request plane (create/seen/accept/reject/auto-timeout with idempotent t
 reveal-on-accept masked contact; two-sided reviews with real-interaction enforcement;
 AI-or-manual moderation; one capped public reply; double-blind release with rolling rating
 aggregates; the full admin console (verify/suspend/reinstate, moderation queue, audit log, live
-stats, live ops map, live config tuning); and a real installable PWA (manifest, icons, a
+stats, live ops map, live config tuning); a real installable PWA (manifest, icons, a
 Workbox service worker precaching the app shell, an explicit &quot;Update available&quot; prompt, and a
 native &quot;Install app&quot; button) — verified by checking <code>navigator.serviceWorker.getRegistrations()</code>
-against the actual production build, not just trusting the plugin.</p>
+against the actual production build, not just trusting the plugin; and, since Technical_Debt_Plan.md
+TD-05 was resolved, a Redis-backed hot path for presence/geo-matching/rate-limiting plus a real
+BullMQ job queue (broadcast fan-out and AI moderation both run as retryable background jobs
+rather than inline in the request handler) and a Socket.IO Redis adapter.</p>
 <h3>10.3 Code organisation</h3>
 <pre><code>server/src/modules/{auth,presence,broadcasts,requests,reviews,admin}/routes.ts   — one router per domain
-server/src/jobs/index.ts                                                        — all 4 cron sweeps
-server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours}.ts        — isolated, unit-testable logic
+server/src/redis/{client,presence,rateLimit}.ts                                 — Redis hot-path (TD-05)
+server/src/jobs/{queues,scheduler,workers,index}.ts                             — BullMQ queues/schedulers/workers
+server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours,phone}.ts  — isolated, unit-testable logic
 client/src/pages/{Login,HouseholdHome,CollectorHome,AdminDashboard,Profile}.tsx  — one screen per role/concern
 client/src/components/{MapView,ReviewForm,ProtectedRoute}.tsx                    — shared, reusable
 </code></pre>
 <h3>10.4 Security controls actually implemented</h3>
 <p>JWT-gated routes with role middleware; bcrypt-hashed OTP codes and admin passwords;
-parameterised SQL everywhere (no injection surface); per-IP rate limiting on all <code>/api/</code>
-traffic plus a dedicated OTP-request cap; ownership checks on every mutating route (a household
-can only clear <em>its own</em> broadcast, etc.); phone numbers stripped from API responses until a
-request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).</p>
+parameterised SQL everywhere (no injection surface); a per-IP rate limiter on all <code>/api/</code>
+traffic plus Redis-backed, per-phone (<code>ratelimit:otp:{phone}</code>) and per-collector
+(<code>ratelimit:notif:{id}</code>) caps matching the original design&#39;s own rate-limit keys (TD-05);
+ownership checks on every mutating route (a household can only clear <em>its own</em> broadcast, etc.);
+phone numbers normalised to one canonical form before every lookup/insert (<code>utils/phone.ts</code>,
+D-07) and stripped from API responses until a request is accepted; fail-closed moderation (no
+verdict ⇒ stays hidden).</p>
 <h2>11. Testing (summary)</h2>
-<p>43/43 automated tests passing (39 server — unit + Supertest integration against a real
-PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
-scripted manual system/UAT pass and a security/usability review. Six real defects were caught
-and fixed during development — four in the automated suite (a broken first-time-signup code
-path, a review-reply status gap, and two others) plus two found only by treating the <em>live
-deployed app</em> as the actual object under test: the admin account was reachable via the weaker
-OTP flow, bypassing its intended phone+password requirement entirely; and once real SMS
-delivery started working, the two arbitrary seeded demo phone numbers would have silently
-&quot;succeeded&quot; into a gateway with no phone behind them, locking any examiner out of the graded
-accounts. Full detail, every test case, and all six defect write-ups are in <code>Testing_Report.md</code>.</p>
+<p>50/50 automated tests passing (46 server — unit + Supertest integration against a real
+PostgreSQL+PostGIS instance <em>and</em> a real Redis instance; 4 client — React Testing Library) at
+time of submission, plus a scripted manual system/UAT pass and a security/usability review.
+Seven real defects were caught and fixed during development — five in the automated suite (a
+broken first-time-signup code path, a review-reply status gap, and three others) plus two found
+only by treating the <em>live deployed app</em> as the actual object under test: the admin account was
+reachable via the weaker OTP flow, bypassing its intended phone+password requirement entirely
+(found by me, re-testing production); and an already-registered phone number typed without its
+leading <code>+</code> was treated as brand-new instead of logging straight in (found by the user,
+D-07) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone numbers would have
+silently &quot;succeeded&quot; into a gateway with no phone behind them, locking any examiner out of the
+graded accounts. Full detail, every test case, and all seven defect write-ups are in
+<code>Testing_Report.md</code>.</p>
 <h2>12. Technical debt</h2>
 <p>Thirteen tracked items (<code>Technical_Debt_Plan.md</code>), each with Debt→Cause→Impact→Priority→
 Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
@@ -519,10 +534,13 @@ from the managed database (<code>DATABASE_URL</code>, <code>fromDatabase</code>)
 exact redeploy/rollback steps.</p>
 <h2>14. User manual (summary)</h2>
 <p>Full walkthroughs for all three roles — including how to read the on-screen OTP fallback if SMS
-delivery isn&#39;t available — are in <code>User_Manual.md</code>. In short: pick a role at first login, a
-household broadcasts with one tap or searches nearby collectors to request directly, a
-collector toggles online and responds to what appears; an admin logs in with a phone+password
-at the same <code>/login</code> screen (toggle to &quot;Admin&quot;) and lands on <code>/admin</code>.</p>
+delivery isn&#39;t available — are in <code>User_Manual.md</code>. In short: sign-in is a single phone-number
+entry point on the <code>/login</code> screen; an already-registered number logs straight in, a genuinely
+new number is asked for a role (household/collector) and a name only after the OTP is verified,
+and a seeded admin&#39;s number is auto-detected and routed to a password prompt instead of an OTP
+— no manual role/admin toggle anywhere. Once in: a household broadcasts with one tap or
+searches nearby collectors to request directly; a collector toggles online and responds to
+what appears; an admin lands on <code>/admin</code> after the password step.</p>
 <h2>15. Maintenance strategy</h2>
 <table>
 <thead>
@@ -533,7 +551,7 @@ at the same <code>/login</code> screen (toggle to &quot;Admin&quot;) and lands o
 </thead>
 <tbody><tr>
 <td><strong>Corrective</strong></td>
-<td>GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 34 server tests are the regression net.</td>
+<td>GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 46 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with <code>phone.test.ts</code> added before the fix.</td>
 </tr>
 <tr>
 <td><strong>Adaptive</strong></td>
@@ -561,7 +579,7 @@ at the same <code>/login</code> screen (toggle to &quot;Admin&quot;) and lands o
 </tr>
 <tr>
 <td><strong>Scalability</strong></td>
-<td>The single-instance ceiling (TD-05) is the first thing to remove before real growth — Redis + BullMQ + Socket.IO Redis adapter, in that order.</td>
+<td>The single-instance ceiling is already removed at the code level — Redis-backed presence/rate-limiting, BullMQ jobs, and a Socket.IO Redis adapter are all in place (TD-05 resolved); the remaining step is operational (add a second Render instance and confirm behaviour under real concurrent load), not architectural.</td>
 </tr>
 <tr>
 <td><strong>New features / user feedback</strong></td>
@@ -580,8 +598,9 @@ adjusted for what this build already covers:</p>
 <li><strong>v1.2</strong>: Gemini key provisioned in production, CI pipeline on every push (TD-01, TD-13).</li>
 <li><strong>v1.3</strong>: native Capacitor collector app with background geolocation (TD-03) — tested on
 real low-end Android hardware, per the original design&#39;s own risk mitigation.</li>
-<li><strong>v2.0</strong>: Redis + BullMQ + Socket.IO Redis adapter for horizontal scale (TD-05), i18n in
-Twi/Ga (TD-09), offline PWA shell (TD-04), photo→waste-type classification (TD-11).</li>
+<li><strong>v2.0</strong>: i18n in Twi/Ga (TD-09), offline write queue to finish the PWA shell (TD-04),
+photo→waste-type classification (TD-11). (Redis + BullMQ + Socket.IO Redis adapter, originally
+slated for this phase as TD-05, was built ahead of schedule — see §9.1/§10.1.)</li>
 <li><strong>Beyond</strong>: the original design&#39;s own explicitly-deferred set — in-app payments/escrow, live
 turn-by-turn tracking, auto-fallback dispatch, provider call-masking, and expansion beyond a
 single pilot neighbourhood.</li>
@@ -615,7 +634,7 @@ reused directly in <code>client/src/styles/</code>).</li>
 <li>Express — <a href="https://expressjs.com">https://expressjs.com</a> · PostgreSQL/PostGIS — <a href="https://postgis.net">https://postgis.net</a> ·
 Socket.IO — <a href="https://socket.io">https://socket.io</a> · React/Vite — <a href="https://vitejs.dev">https://vitejs.dev</a> ·
 Leaflet/OpenStreetMap — <a href="https://leafletjs.com">https://leafletjs.com</a>, <a href="https://www.openstreetmap.org">https://www.openstreetmap.org</a> ·
-node-cron — <a href="https://www.npmjs.com/package/node-cron">https://www.npmjs.com/package/node-cron</a> ·
+BullMQ — <a href="https://docs.bullmq.io">https://docs.bullmq.io</a> · Redis/Upstash — <a href="https://upstash.com/docs/redis">https://upstash.com/docs/redis</a> ·
 Google Gemini API — <a href="https://ai.google.dev">https://ai.google.dev</a> · GiantSMS — <a href="https://giantsms.com/developer">https://giantsms.com/developer</a> ·
 Render — <a href="https://render.com/docs">https://render.com/docs</a>.</li>
 </ul>

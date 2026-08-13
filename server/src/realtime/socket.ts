@@ -1,22 +1,26 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { verifyAccessToken } from "../utils/jwt.js";
+import { redis } from "../redis/client.js";
 
 /**
  * Realtime layer per borla-technical-design.md §8: JWT-authed on connect, one private room
- * per user (`user:{id}`). No Redis adapter (Technical_Debt_Plan.md, TD-05) — this only scales
- * to a single Node instance, which is the correct trade-off for a single free-tier deploy.
+ * per user (`user:{id}`). The Redis adapter (Technical_Debt_Plan.md TD-05) means `emitToUser`
+ * correctly reaches a user connected to a *different* Node instance — required for any future
+ * horizontal scale-out; harmless with the single instance this still deploys as today.
  */
 
 let io: SocketIOServer | null = null;
 
-// userId -> Set of socket ids. In-memory replacement for the design's `socket:{userId}` Redis
-// key — lost on restart, which is acceptable because clients reconnect and resync via REST.
+// userId -> Set of socket ids, scoped to *this* instance. Only used for a same-instance
+// presence hint; the Redis adapter (not this map) is what makes cross-instance emit correct.
 const connectedUsers = new Map<string, Set<string>>();
 
 export function initSocket(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: { origin: "*" }, // same-origin in production; local dev serves client separately
+    adapter: createAdapter(redis.duplicate(), redis.duplicate()),
   });
 
   io.use((socket, next) => {
@@ -48,6 +52,8 @@ export function initSocket(httpServer: HttpServer): SocketIOServer {
   return io;
 }
 
+/** Same-instance hint only — with multiple instances, a user connected elsewhere still gets
+ *  the event via the Redis adapter even though this returns false for them locally. */
 export function isUserConnected(userId: string): boolean {
   return (connectedUsers.get(userId)?.size ?? 0) > 0;
 }

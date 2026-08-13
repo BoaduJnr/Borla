@@ -28,9 +28,12 @@ content moderation.
 
 This SRS covers the **web-only v1** that was actually built and deployed for this examination.
 A larger design (`borla-technical-design.md`, retained in the repository as a reference) covers
-a full production system with a native Android collector app, managed Redis/BullMQ, a real SMS
-gateway, and a separate admin application; §1.4 explains why that design was intentionally
-descoped, and the full delta is tracked in `Technical_Debt_Plan.md`.
+a full production system with a native Android collector app and a separate admin application;
+§1.4 explains why those two pieces were intentionally descoped, and the full delta is tracked in
+`Technical_Debt_Plan.md`. The design's Redis/BullMQ layer (live presence, per-collector
+notification rate limiting, job scheduling, Socket.IO horizontal-scale readiness) was originally
+descoped for the same reason but was **subsequently implemented against a real Upstash Redis
+instance** once the user provisioned one — see `Technical_Debt_Plan.md` TD-05.
 
 ### 1.3 Definitions
 | Term | Meaning |
@@ -43,13 +46,16 @@ descoped, and the full delta is tracked in `Technical_Debt_Plan.md`.
 | UCP | Use Case Points, the effort-estimation technique used in §7 |
 
 ### 1.4 Why the scope was reduced from the original design
-The original design assumed infrastructure and accounts that cannot be provisioned inside an
-individual, time-boxed examination: a native Capacitor Android build with a background-location
-plugin (needs an Android toolchain and a physical/emulated device, and produces an installable
-APK rather than a gradable "Live Application URL"); a paid Ghanaian SMS gateway account; a
-managed Redis instance for BullMQ; and a second admin web application. Building the full system
-would also cost roughly 3,800 person-hours by formal estimation (§7) — nowhere near
-appropriately scoped for this exam. The requirements below are the **Must-Have** slice that
+The original design assumed infrastructure and accounts that could not all be provisioned
+inside an individual, time-boxed examination: a native Capacitor Android build with a
+background-location plugin (needs an Android toolchain and a physical/emulated device, and
+produces an installable APK rather than a gradable "Live Application URL"); a paid Ghanaian SMS
+gateway account; a managed Redis instance for BullMQ; and a second admin web application.
+Building the full system would also cost roughly 3,800 person-hours by formal estimation (§7)
+— nowhere near appropriately scoped for this exam. Two of those four gaps were later closed
+once the user supplied real credentials mid-project: a funded GiantSMS account (TD-02) and an
+Upstash Redis instance (TD-05, Redis-backed presence/rate-limiting + BullMQ + Socket.IO Redis
+adapter). The native Android app and the separate admin application remain descoped. The requirements below are the **Must-Have** slice that
 *is* fully implemented, deployed, and tested; everything else is deliberately deferred and
 tracked as technical debt with a resolution plan (`Technical_Debt_Plan.md`).
 
@@ -87,11 +93,15 @@ and the explicit list of substitutions).
   confirmation on a real handset).
 - AI moderation is optional infrastructure: the system is fully functional with
   `GEMINI_API_KEY` unset, falling back to a manual admin-only moderation queue.
-- A single deployed Node process is assumed (no horizontal scaling) — acceptable at pilot scale.
+- A single deployed Node process is what's actually running for this exam, but the app is no
+  longer architecturally limited to one instance: Socket.IO uses a Redis adapter and presence/
+  rate-limiting/job state live in Redis rather than in-process memory, so a second Render
+  instance would receive and deliver events correctly (untested at real scale — TD-05).
 
 ### 2.5 Constraints
 - 48-hour-equivalent time-box for the examination → aggressive MoSCoW prioritisation (§6).
-- No budget for paid third-party services (SMS gateway, managed Redis, Vertex AI tier).
+- Free/low-cost tiers only for third-party services — GiantSMS (funded), Upstash Redis (free
+  tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.
 - Deployment target restricted to free-tier hosting (Render).
 
 ---
@@ -104,7 +114,7 @@ and the explicit list of substitutions).
 | Collector | Complex (human, GUI) | Web app |
 | Admin | Complex (human, GUI) | Web app (`/admin`) |
 | Gemini moderation API | Simple (external API) | Server-to-server HTTPS |
-| Scheduler (cron sweeps) | Simple (time-triggered) | In-process, drives system use cases |
+| Scheduler (BullMQ repeatable jobs) | Simple (time-triggered) | Redis-backed queue, drives system use cases |
 
 ---
 
@@ -128,12 +138,12 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-12 | A household sends a direct request to one specific online collector | Must | `server/src/modules/requests` |
 | FR-13 | A request moves `requested → seen` when the collector's client opens it | Must | `requests/routes.ts` |
 | FR-14 | A collector accepts or rejects a request; the transition is idempotent (a stale reject/accept after resolution is a no-op, not an error) | Must | `requests/routes.ts` conditional `WHERE status IN (...)` updates |
-| FR-15 | A request auto-times-out if the collector doesn't respond within a configurable window (default 90s) | Must | `jobs/index.ts` request-timeout sweep |
+| FR-15 | A request auto-times-out if the collector doesn't respond within a configurable window (default 90s) | Must | `jobs/workers.ts` request-timeout sweep, a repeatable BullMQ job (`jobs/scheduler.ts`) |
 | FR-16 | Phone numbers stay hidden until a request is accepted, then both sides can see and call each other | Must | `requests/routes.ts` `contact_revealed_at` |
 | FR-17 | A household confirms whether a collector actually came for a broadcast pickup ("Did they come?") | Should | `POST /confirmations` |
 | FR-18 | Either side of a resolved interaction (accepted request, or a confirmed broadcast) can leave a 1–5 rating + comment for the other | Must | `server/src/modules/reviews` |
 | FR-19 | A review/reply is screened (AI if configured, else queued for manual admin approval) before it can go public | Must | `server/src/ai/moderation.ts` |
-| FR-20 | A review is only shown once both sides have reviewed, or the review window has closed (double-blind release) | Must | `jobs/index.ts` review-release sweep |
+| FR-20 | A review is only shown once both sides have reviewed, or the review window has closed (double-blind release) | Must | `jobs/workers.ts` review-release sweep (BullMQ repeatable job) |
 | FR-21 | The reviewed party may post exactly one public reply | Must | `reviews/routes.ts` |
 | FR-22 | Any user can report a review for moderation | Should | `POST /reviews/:id/report` |
 | FR-23 | An admin can verify a collector, and suspend/reinstate any user | Must | `server/src/modules/admin` |
@@ -149,12 +159,12 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | NFR-2 (Security) | No SQL injection surface | 100% parameterised queries (`pg` placeholders), no string-concatenated SQL with user input |
 | NFR-3 (Authorization) | A user can only act within their role and only on their own resources | Role middleware + ownership checks (`WHERE household_id = $1`, etc.) on every mutating route |
 | NFR-4 (Privacy) | A household's contact stays hidden from a specific collector until that collector is chosen and accepts | `contact_revealed_at`; phone fields stripped from the API response pre-accept |
-| NFR-5 (Reliability under poor connectivity) | The app tolerates dropped connections and stale devices | Presence self-heals via TTL-style sweep; idempotent state transitions; polling fallback alongside sockets |
+| NFR-5 (Reliability under poor connectivity) | The app tolerates dropped connections and stale devices | Presence self-heals via a Redis-backed TTL/heartbeat sweep (`redis/presence.ts`, TD-05); idempotent state transitions; polling fallback alongside sockets |
 | NFR-6 (Usability) | Icon-first, large tap targets, minimal required text entry, mobile-first | Design tokens and component library lifted from the approved `borla_UI_design.html` |
 | NFR-7 (Availability) | The deployed instance stays reachable for grading | Render health check (`/api/health`) wired into `render.yaml` |
 | NFR-8 (Data integrity) | A review can never be posted about a fabricated interaction | DB-level `UNIQUE(author_id, request_id)` / `UNIQUE(author_id, broadcast_id)` plus application-level interaction checks |
 | NFR-9 (Fail-safe moderation) | Unmoderated content never goes public by default | Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue |
-| NFR-10 (Testability) | Core business logic is covered by automated tests | 31 server tests (unit + Supertest integration) + 4 client component tests, all passing — see `Testing_Report.md` |
+| NFR-10 (Testability) | Core business logic is covered by automated tests | 46 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see `Testing_Report.md` |
 
 ## 6. Requirement prioritisation (MoSCoW)
 
@@ -167,9 +177,9 @@ the admin console.
 depth as Must-Have items.
 
 **Could-have (explicitly deferred — see `Technical_Debt_Plan.md`)**: native background
-geolocation, real SMS OTP, Redis/BullMQ + Socket.IO Redis adapter, provider call-masking, photo
-→ waste-type AI classification, admin 2FA, notification rate-limiting nuance beyond a coarse
-per-IP limit, i18n beyond English.
+geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
+beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on
+this list too but were subsequently built — TD-02, TD-05.)
 
 **Won't-have (out of scope entirely, per the original design's own roadmap)**: in-app
 payments/escrow, live turn-by-turn tracking, auto-fallback dispatch, multi-neighbourhood
@@ -190,7 +200,7 @@ exercise where the reasoning must be shown, not just a number.
 | Collector | Complex (GUI/human) | 3 |
 | Admin | Complex (GUI/human) | 3 |
 | Gemini moderation API | Simple (API) | 1 |
-| Scheduler (cron) | Simple (time-triggered) | 1 |
+| Scheduler (BullMQ) | Simple (time-triggered) | 1 |
 | **UAW total** | | **11** |
 
 ### 7.2 Use-case weighting (UUCW)

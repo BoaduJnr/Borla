@@ -6,7 +6,7 @@ import { runMigrations } from "./db/migrate.js";
 import { seedDemoData } from "./seed.js";
 import { createApp } from "./app.js";
 import { initSocket } from "./realtime/socket.js";
-import { startJobs } from "./jobs/index.js";
+import { scheduleRepeatableJobs, startWorkers } from "./jobs/index.js";
 
 async function main() {
   await runMigrations();
@@ -17,7 +17,11 @@ async function main() {
   const app = createApp();
   const server = http.createServer(app);
   initSocket(server);
-  startJobs();
+
+  // BullMQ (Technical_Debt_Plan.md TD-05): workers must be running before jobs get enqueued,
+  // and the repeatable sweeps are registered once per boot (BullMQ dedupes identical repeats).
+  startWorkers();
+  await scheduleRepeatableJobs();
 
   server.listen(config.port, () => {
     console.log(`[server] Borla API listening on :${config.port} (${config.nodeEnv})`);

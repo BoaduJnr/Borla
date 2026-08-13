@@ -6,7 +6,8 @@ import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { emitToUser } from "../../realtime/socket.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
-import { inQuietHours } from "../../utils/quietHours.js";
+import * as presence from "../../redis/presence.js";
+import { fanoutQueue } from "../../jobs/queues.js";
 
 export const broadcastsRouter = Router();
 
@@ -20,6 +21,12 @@ const createSchema = z.object({
 /**
  * POST /broadcasts — the digital bell (design §3.1). No collector binding, no accept, no lock —
  * the row exists only to fan out one notification and show a pin until it's gone.
+ *
+ * The pin is registered in Redis (`pins:active`) synchronously so a collector's very next
+ * `/pins/nearby` poll sees it immediately; the actual candidate-matching + notification gauntlet
+ * (design §7) runs in a BullMQ `fanout` job (Technical_Debt_Plan.md TD-05) so a broadcast with
+ * many nearby collectors never blocks this response, and a transient failure retries with
+ * backoff instead of silently dropping notifications.
  */
 broadcastsRouter.post(
   "/broadcasts",
@@ -49,46 +56,21 @@ broadcastsRouter.post(
       [household.id, lon, lat, wasteType ?? null, note ?? null]
     );
 
-    // --- Fan-out gauntlet (design §7): online -> in-range -> waste-type match -> quiet hours ---
-    const candidates = await query<{
-      user_id: string;
-      waste_types: string[];
-      quiet_hours: { start: string; end: string } | null;
-    }>(
-      `SELECT c.user_id, c.waste_types, c.quiet_hours
-       FROM collectors c
-       JOIN users u ON u.id = c.user_id
-       WHERE c.online = true AND u.suspended = false
-         AND ST_DWithin(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)`,
-      [lon, lat, radiusM]
-    );
+    await presence.pinActive(broadcast!.id, lon, lat);
 
-    const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
-    const notified: string[] = [];
-    for (const c of candidates) {
-      if (wasteType && c.waste_types?.length && !c.waste_types.includes(wasteType)) continue;
-      if (c.quiet_hours && inQuietHours(nowMinutes, c.quiet_hours)) continue;
-      notified.push(c.user_id);
-    }
+    await fanoutQueue.add("fanout", {
+      broadcastId: broadcast!.id,
+      householdId: household.id,
+      lon,
+      lat,
+      wasteType: wasteType ?? null,
+      note: note ?? null,
+      householdName: household.display_name,
+      householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
+      radiusM,
+    });
 
-    for (const collectorId of notified) {
-      await query(
-        `INSERT INTO broadcast_notifications (broadcast_id, collector_id) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING`,
-        [broadcast!.id, collectorId]
-      );
-      emitToUser(collectorId, "broadcast:new", {
-        broadcastId: broadcast!.id,
-        lon,
-        lat,
-        wasteType: wasteType ?? null,
-        note: note ?? null,
-        householdName: household.display_name,
-        householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
-      });
-    }
-
-    res.status(201).json({ broadcast: { ...broadcast, status: "active" }, notifiedCollectors: notified.length });
+    res.status(201).json({ broadcast: { ...broadcast, status: "active" } });
   })
 );
 
@@ -105,6 +87,8 @@ broadcastsRouter.post(
       [req.params.id, req.user!.id]
     );
     if (!row) throw new ApiError(404, "No active broadcast found to clear");
+
+    await presence.pinCleared(row.id);
 
     const notifiedCollectors = await query<{ collector_id: string }>(
       `SELECT collector_id FROM broadcast_notifications WHERE broadcast_id = $1`,
@@ -138,7 +122,11 @@ const nearbySchema = z.object({
   radius: z.coerce.number().min(50).max(20000).default(1500),
 });
 
-/** GET /pins/nearby — collector's live map of nearby waste (design §5, Q2). */
+/**
+ * GET /pins/nearby — collector's live map of nearby waste (design §5, Q2). Candidate IDs come
+ * from Redis's `pins:active` GEO set (the hot path); details are joined from Postgres, the
+ * durable source of truth for the broadcast itself.
+ */
 broadcastsRouter.get(
   "/pins/nearby",
   requireAuth,
@@ -146,19 +134,26 @@ broadcastsRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const rows = await query(
-      `SELECT b.id, b.lon, b.lat, b.waste_type, b.note, b.created_at, b.expires_at,
-              u.display_name AS household_name, u.phone AS household_phone,
-              ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
-       FROM broadcasts b
-       JOIN users u ON u.id = b.household_id
-       WHERE b.status = 'active'
-         AND ST_DWithin(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-       ORDER BY distance_m ASC
-       LIMIT 100`,
-      [lon, lat, radius]
+    const hits = await presence.nearbyPinIds(lon, lat, radius);
+    if (hits.length === 0) return res.json({ pins: [] });
+
+    const rows = await query<{ id: string; waste_type: string | null; note: string | null; created_at: string; expires_at: string; household_name: string | null; household_phone: string }>(
+      `SELECT b.id, b.waste_type, b.note, b.created_at, b.expires_at,
+              u.display_name AS household_name, u.phone AS household_phone
+       FROM broadcasts b JOIN users u ON u.id = b.household_id
+       WHERE b.status = 'active' AND b.id = ANY($1)`,
+      [hits.map((h) => h.id)]
     );
-    res.json({ pins: rows });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    const pins = hits
+      .map((h) => {
+        const row = byId.get(h.id);
+        if (!row) return null; // cleared/expired in Postgres but the sweep hasn't evicted Redis yet
+        return { ...row, lon: h.lon, lat: h.lat, distance_m: h.distanceM };
+      })
+      .filter(Boolean);
+    res.json({ pins });
   })
 );
 
