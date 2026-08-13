@@ -395,6 +395,7 @@ rolling rating_avg/rating_count recomputed for the reviewed party
 | Cache/queue | Redis (Upstash) + BullMQ | Live presence/geo (`GEOSEARCH`), pin/rate-limit keys, and a real job queue (retries, backoff, repeatable schedulers) replacing the original `node-cron` sweeps — Technical_Debt_Plan.md TD-05 |
 | Frontend | React + Vite + TypeScript | Fast dev loop; one codebase serves all three roles via role-routing |
 | Maps | Leaflet + OpenStreetMap raster tiles | Zero-config, no tile-provider account |
+| Routing | OSRM public demo server (`router.project-osrm.org`) | Zero-config road route for FR-27's accepted-request route, same trade-off as the tile layer above; straight-line fallback if unreachable (Technical_Debt_Plan.md TD-14) |
 | AI | Google Gemini API (optional) | Free tier for moderation; degrades gracefully without a key |
 | SMS | GiantSMS (optional) | Real OTP delivery when configured; falls back safely (see Technical_Debt_Plan TD-02) |
 | Auth | JWT (access+refresh) + bcrypt | Stateless API auth; OTP/password hashes never stored in plaintext |
@@ -566,4 +567,5 @@ unfinished is not hidden — it is named, prioritised, and scheduled in `Technic
   Leaflet/OpenStreetMap — https://leafletjs.com, https://www.openstreetmap.org ·
   BullMQ — https://docs.bullmq.io · Redis/Upstash — https://upstash.com/docs/redis ·
   Google Gemini API — https://ai.google.dev · GiantSMS — https://giantsms.com/developer ·
+  OSRM (public routing demo server) — https://project-osrm.org ·
   Render — https://render.com/docs.
