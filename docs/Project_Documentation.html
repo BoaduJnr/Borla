@@ -487,14 +487,16 @@ traffic plus a dedicated OTP-request cap; ownership checks on every mutating rou
 can only clear <em>its own</em> broadcast, etc.); phone numbers stripped from API responses until a
 request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).</p>
 <h2>11. Testing (summary)</h2>
-<p>42/42 automated tests passing (38 server — unit + Supertest integration against a real
+<p>43/43 automated tests passing (39 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
-scripted manual system/UAT pass and a security/usability review. Five real defects were caught
+scripted manual system/UAT pass and a security/usability review. Six real defects were caught
 and fixed during development — four in the automated suite (a broken first-time-signup code
-path, a review-reply status gap, and two others) plus one found by manually testing the <em>live
-deployed app</em>: the admin account was reachable via the weaker OTP flow, bypassing its intended
-phone+password requirement entirely. Full detail, every test case, and all five defect
-write-ups are in <code>Testing_Report.md</code>.</p>
+path, a review-reply status gap, and two others) plus two found only by treating the <em>live
+deployed app</em> as the actual object under test: the admin account was reachable via the weaker
+OTP flow, bypassing its intended phone+password requirement entirely; and once real SMS
+delivery started working, the two arbitrary seeded demo phone numbers would have silently
+&quot;succeeded&quot; into a gateway with no phone behind them, locking any examiner out of the graded
+accounts. Full detail, every test case, and all six defect write-ups are in <code>Testing_Report.md</code>.</p>
 <h2>12. Technical debt</h2>
 <p>Thirteen tracked items (<code>Technical_Debt_Plan.md</code>), each with Debt→Cause→Impact→Priority→
 Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the

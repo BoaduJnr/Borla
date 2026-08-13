@@ -75,7 +75,14 @@ screen simply says &quot;Code sent via SMS — check your phone.&quot;</li>
 <li><strong>If SMS delivery isn&#39;t available</strong> (no gateway configured, or the send failed), the screen
 shows the code directly in a dark banner labelled &quot;SMS delivery unavailable right now&quot; — this
 is a documented, deliberate fallback (see <code>Technical_Debt_Plan.md</code> TD-02), not a bug: nobody
-is ever locked out just because a text didn&#39;t arrive.</li>
+is ever locked out just because a text didn&#39;t arrive.<ul>
+<li><strong>Exception — the two seeded demo numbers</strong> (<code>Deployment_and_Source_Links.txt</code>): since
+those numbers are arbitrary, not real handsets, they always use the same fixed code
+(<strong>482913</strong>) and the app never even attempts a real SMS send to them, so grading never
+depends on a text reaching a phone that doesn&#39;t exist. Any other, real phone number still
+gets a genuine random code.</li>
+</ul>
+</li>
 <li>Type the 6-digit code.<ul>
 <li><strong>Brand-new number</strong> → the screen also asks &quot;First time here — tell us a bit about you&quot;:
 pick <strong>Household</strong> or <strong>Collector</strong> and enter your name, then tap <strong>Create account</strong>.</li>

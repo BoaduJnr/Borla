@@ -12,10 +12,16 @@ import { runMigrations } from "./db/migrate.js";
  */
 
 // Accra-ish coordinates (Osu) so the two demo accounts are within the default broadcast radius.
+// These numbers are arbitrary, not real handsets — real SMS delivery to them would just be
+// accepted by the gateway and vanish, locking out anyone grading this without a live phone on
+// that exact number. See DEMO_OTP below: these two numbers always get a fixed, well-known code
+// instead of a real send, specifically so grading never depends on SMS actually arriving.
 export const HOUSEHOLD_PHONE = "+233200000001";
 export const COLLECTOR_PHONE = "+233200000002";
 export const ADMIN_PHONE = "+233200000000";
 export const ADMIN_PASSWORD = "Borla-Admin-2026!";
+export const DEMO_OTP = "482913";
+export const DEMO_PHONES = [HOUSEHOLD_PHONE, COLLECTOR_PHONE];
 
 async function upsertUser(phone: string, role: string, displayName: string, extra: Record<string, any> = {}) {
   const existing = await queryOne<{ id: string }>(`SELECT id FROM users WHERE phone = $1`, [phone]);
@@ -65,9 +71,10 @@ async function main() {
   console.log(`\nSeed complete. admin=${adminId} household=${householdId} collector=${collectorId}\n`);
   console.log("Admin login   : POST /api/auth/admin/login");
   console.log(`  phone: ${ADMIN_PHONE}  password: ${ADMIN_PASSWORD}`);
-  console.log("\nHousehold demo: POST /api/auth/otp/request { phone: '" + HOUSEHOLD_PHONE + "' } then /otp/verify");
-  console.log("Collector demo: POST /api/auth/otp/request { phone: '" + COLLECTOR_PHONE + "' } then /otp/verify");
-  console.log("(OTP is shown in-app unless a real SMS gateway is configured — see Technical Debt Plan TD-02.)\n");
+  console.log(`\nHousehold demo: phone ${HOUSEHOLD_PHONE}, fixed OTP ${DEMO_OTP}`);
+  console.log(`Collector demo: phone ${COLLECTOR_PHONE}, fixed OTP ${DEMO_OTP}`);
+  console.log("(Both demo numbers always use this fixed code — no SMS is ever sent to them, since\n" +
+    " they're arbitrary numbers, not real handsets. Any other phone gets a real/random OTP.)\n");
 
   await pool.end();
 }

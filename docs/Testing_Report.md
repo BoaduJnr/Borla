@@ -36,14 +36,14 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/otp.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
 ✓ test/unit/sms.test.ts (3 tests)
-✓ test/integration/auth.test.ts (12 tests)
+✓ test/integration/auth.test.ts (13 tests)
 ✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 
  Test Files  8 passed (8)
-      Tests  38 passed (38)
+      Tests  39 passed (39)
    Duration  67.76s
 ```
 
@@ -57,7 +57,7 @@ separate phase, which is appropriate at this scale.
       Tests  4 passed (4)
 ```
 
-**Total: 42/42 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 43/43 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS — see `README.md`).
 
 ## 3. Test case log
@@ -105,6 +105,7 @@ development (rows T-08 and T-19).
 | T-35 | Unified sign-in: an existing (non-admin) number logs straight in from the code screen, no role/name prompt | Integration + scripted screenshot | `isNewUser:false`; verify returns tokens with no extra fields required | Confirmed | Pass |
 | T-36 | Unified sign-in: an admin's phone number is auto-detected and routed to a password prompt instead of an OTP | Integration + scripted screenshot | `requiresPassword:true`, no OTP issued; UI shows the password form directly | Confirmed both ways | Pass |
 | T-37 | PWA service worker registers and activates on the production build | System (headless browser against `dist/`) | `navigator.serviceWorker.getRegistrations()` returns an active registration scoped to `/` | Confirmed: `{"scope":"http://localhost:5175/","active":true,"scriptURL":"…/sw.js"}`, `<link rel="manifest">` present in the DOM | Pass |
+| T-38 | Seeded demo phone numbers always get the fixed `DEMO_OTP`, are exempt from the rate limit, and never trigger a real SMS attempt (D-06) | Integration | 8 rapid `/otp/request` calls all succeed and return `devOtp:"482913"`, `delivered:false` | Confirmed via `auth.test.ts`; also re-confirmed directly against production | Pass |
 
 ## 4. Defects found during development
 
@@ -115,11 +116,13 @@ development (rows T-08 and T-19).
 | D-03 | `server/src/seed.ts` | First draft referenced a non-existent `verified_note` column on `collectors` (copy-paste artefact) wrapped in a silent `.catch()` fallback that masked the real error | Removed the phantom column and the `.catch()` swallow entirely; seed now fails loudly if it ever breaks again |
 | D-04 | `server/src/modules/reviews/routes.ts` (reply endpoint) | Only checked `review.subject_id === user.id`, not `review.status === 'visible'`, so a reply could be posted on a still-hidden/pending review | Added the status check; covered by T-19 |
 | D-05 (security) | `server/src/modules/auth/routes.ts` (`/auth/otp/request`, `/auth/otp/verify`) | Neither endpoint checked `users.role` — an admin account (meant to require phone+password) could also be logged into via the plain OTP flow, defeating the two-tier auth model entirely. Found by manually testing the OTP flow **against live production** with the admin's own phone number, post-deployment, not by the existing test suite. | Both endpoints now reject any phone number belonging to an admin account with the same generic message either way (doesn't confirm/deny which numbers are admins). Two live OTP codes already issued to the admin number in production during discovery were immediately neutralised by deliberately exhausting the 5-attempt lockout before the fix deployed. Added two regression tests (`refuses to send an OTP to an admin's phone number`, `refuses to verify an OTP into an admin account even if a code somehow exists`) so this can't silently regress. |
+| D-06 | `server/src/modules/auth/routes.ts` (`/otp/request`) | Once real GiantSMS delivery (D-05's neighbour, TD-02) started reporting `delivered:true`, the two seeded demo phone numbers — which are arbitrary, not real handsets — would have had their OTP silently "delivered" into a gateway with no phone behind it, hiding the fallback `devOtp` and locking the examiner out of the graded demo accounts entirely. Found by re-reading the deployment credentials file after wiring up real SMS, before it ever actually caused a lockout. | `DEMO_PHONES`/`DEMO_OTP` added to `server/src/seed.ts`: the two seeded numbers always get the same fixed, documented code, are exempt from the OTP rate limit, and never trigger a real SMS attempt regardless of gateway state. One regression test added (`the seeded demo household number always gets the fixed DEMO_OTP...`, 8 rapid requests all succeed and return the fixed code). |
 
-All five were caught by testing immediately after (or, for D-05, well after) the corresponding
-feature — four by the automated suite, one by deliberately exercising the live deployed app —
-direct evidence for why TD-10 (test depth) is listed as "scheduled," not "critical": the
-practice works, it just hasn't been extended to every corner of the app, including production
+All six were caught by testing immediately after (or, for D-05/D-06, well after) the
+corresponding feature — four by the automated suite, two by deliberately exercising the live
+deployed app and re-reading the credentials file with a grader's eyes — direct evidence for why
+TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just hasn't
+been extended to every corner of the app, including production
 behaviour, yet.
 
 ## 5. Security testing

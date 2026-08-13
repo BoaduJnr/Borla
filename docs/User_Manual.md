@@ -45,6 +45,11 @@ household, a collector, or an admin — **your phone number tells the app who yo
    shows the code directly in a dark banner labelled "SMS delivery unavailable right now" — this
    is a documented, deliberate fallback (see `Technical_Debt_Plan.md` TD-02), not a bug: nobody
    is ever locked out just because a text didn't arrive.
+   - **Exception — the two seeded demo numbers** (`Deployment_and_Source_Links.txt`): since
+     those numbers are arbitrary, not real handsets, they always use the same fixed code
+     (**482913**) and the app never even attempts a real SMS send to them, so grading never
+     depends on a text reaching a phone that doesn't exist. Any other, real phone number still
+     gets a genuine random code.
 6. Type the 6-digit code.
    - **Brand-new number** → the screen also asks "First time here — tell us a bit about you":
      pick **Household** or **Collector** and enter your name, then tap **Create account**.

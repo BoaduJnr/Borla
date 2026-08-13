@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { createApp } from "../../src/app.js";
 import { testPhone, signup, auth } from "../helpers.js";
 import { query } from "../../src/db/pool.js";
+import { HOUSEHOLD_PHONE, DEMO_OTP } from "../../src/seed.js";
 
 const app = createApp();
 
@@ -121,5 +122,22 @@ describe("auth: OTP signup/login", () => {
     ]);
     const res = await request(app).post("/api/auth/otp/verify").send({ phone: adminPhone, code });
     expect(res.status).toBe(400);
+  });
+
+  it("the seeded demo household number always gets the fixed DEMO_OTP, never a real SMS attempt, and is exempt from rate limiting", async () => {
+    let last;
+    for (let i = 0; i < 8; i++) {
+      last = await request(app).post("/api/auth/otp/request").send({ phone: HOUSEHOLD_PHONE });
+      expect(last.status).toBe(200); // 8 > the normal 5-per-10-min cap, but demo numbers are exempt
+    }
+    expect(last!.body.requiresPassword).toBe(false);
+    expect(last!.body.delivered).toBe(false); // never a real SMS attempt for this number
+    expect(last!.body.devOtp).toBe(DEMO_OTP);
+
+    const verify = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: HOUSEHOLD_PHONE, code: DEMO_OTP, role: "household", displayName: "Demo" });
+    expect(verify.status).toBe(200);
+    expect(verify.body.access).toBeTruthy();
   });
 });

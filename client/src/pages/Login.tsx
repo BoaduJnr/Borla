@@ -27,6 +27,7 @@ export default function Login() {
   const [displayName, setDisplayName] = useState("");
   const [code, setCode] = useState("");
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [otpMessage, setOtpMessage] = useState<string>("");
   const [smsDelivered, setSmsDelivered] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [password, setPassword] = useState("");
@@ -53,6 +54,7 @@ export default function Login() {
     try {
       const data = await api<{
         requiresPassword: boolean;
+        message: string;
         devOtp?: string;
         delivered: boolean;
         isNewUser: boolean;
@@ -66,6 +68,7 @@ export default function Login() {
         return;
       }
       setDevOtp(data.devOtp ?? null);
+      setOtpMessage(data.message);
       setSmsDelivered(data.delivered);
       setIsNewUser(data.isNewUser);
       setStep("code");
@@ -228,7 +231,7 @@ export default function Login() {
             ) : (
               devOtp && (
                 <div className="otp-dev-banner">
-                  🔧 SMS delivery unavailable right now (see Technical Debt Plan, TD-02).
+                  {otpMessage || "SMS delivery unavailable right now (see Technical Debt Plan, TD-02)."}
                   <br />
                   Your one-time code is: <b>{devOtp}</b>
                 </div>

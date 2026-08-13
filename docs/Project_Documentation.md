@@ -431,14 +431,16 @@ request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-42/42 automated tests passing (38 server — unit + Supertest integration against a real
+43/43 automated tests passing (39 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
-scripted manual system/UAT pass and a security/usability review. Five real defects were caught
+scripted manual system/UAT pass and a security/usability review. Six real defects were caught
 and fixed during development — four in the automated suite (a broken first-time-signup code
-path, a review-reply status gap, and two others) plus one found by manually testing the *live
-deployed app*: the admin account was reachable via the weaker OTP flow, bypassing its intended
-phone+password requirement entirely. Full detail, every test case, and all five defect
-write-ups are in `Testing_Report.md`.
+path, a review-reply status gap, and two others) plus two found only by treating the *live
+deployed app* as the actual object under test: the admin account was reachable via the weaker
+OTP flow, bypassing its intended phone+password requirement entirely; and once real SMS
+delivery started working, the two arbitrary seeded demo phone numbers would have silently
+"succeeded" into a gateway with no phone behind them, locking any examiner out of the graded
+accounts. Full detail, every test case, and all six defect write-ups are in `Testing_Report.md`.
 
 ## 12. Technical debt
 
