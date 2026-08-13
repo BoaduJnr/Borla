@@ -16,6 +16,7 @@ export default function Login() {
   const [displayName, setDisplayName] = useState("");
   const [code, setCode] = useState("");
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [smsDelivered, setSmsDelivered] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +27,13 @@ export default function Login() {
     setError(null);
     setBusy(true);
     try {
-      const data = await api<{ devOtp: string; isNewUser: boolean }>("/auth/otp/request", {
+      const data = await api<{ devOtp?: string; delivered: boolean; isNewUser: boolean }>("/auth/otp/request", {
         method: "POST",
         auth: false,
         body: { phone, role: role },
       });
-      setDevOtp(data.devOtp);
+      setDevOtp(data.devOtp ?? null);
+      setSmsDelivered(data.delivered);
       setIsNewUser(data.isNewUser);
       setStep("code");
     } catch (err) {
@@ -154,12 +156,16 @@ export default function Login() {
 
         {mode === "otp" && step === "code" && (
           <form className="stack card" onSubmit={verifyOtp}>
-            {devOtp && (
-              <div className="otp-dev-banner">
-                🔧 No SMS gateway is wired up for this build (see Technical Debt Plan, TD-02).
-                <br />
-                Your one-time code is: <b>{devOtp}</b>
-              </div>
+            {smsDelivered ? (
+              <div className="banner ok">📱 Code sent via SMS — check your phone.</div>
+            ) : (
+              devOtp && (
+                <div className="otp-dev-banner">
+                  🔧 SMS delivery unavailable right now (see Technical Debt Plan, TD-02).
+                  <br />
+                  Your one-time code is: <b>{devOtp}</b>
+                </div>
+              )
             )}
             <div>
               <label>Enter the 6-digit code</label>

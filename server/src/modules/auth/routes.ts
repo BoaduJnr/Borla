@@ -7,6 +7,7 @@ import { validateBody } from "../../middleware/validate.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { generateOtp, hashOtp, verifyOtp, OTP_TTL_MINUTES, OTP_MAX_ATTEMPTS } from "../../utils/otp.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../../utils/jwt.js";
+import { sendSms, isSmsConfigured } from "../../utils/sms.js";
 import type { Role } from "../../types.js";
 
 export const authRouter = Router();
@@ -61,9 +62,21 @@ authRouter.post(
       [phone, codeHash]
     );
 
+    // Real SMS via GiantSMS (Technical_Debt_Plan.md TD-02) when configured; best-effort — a
+    // failed/unconfigured send falls back to returning the code so no one is ever locked out.
+    let delivered = false;
+    if (isSmsConfigured()) {
+      const result = await sendSms(phone, `Your Borla verification code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.`);
+      delivered = result.ok;
+      if (!result.ok) console.error(`[auth] SMS delivery failed for ${phone}: ${result.error} — falling back to devOtp`);
+    }
+
     res.json({
-      message: "OTP generated. (No SMS gateway is configured for this build — see Technical Debt Plan TD-02.)",
-      devOtp: code,
+      message: delivered
+        ? "OTP sent via SMS."
+        : "OTP generated. (SMS delivery unavailable or not configured — see Technical Debt Plan TD-02.)",
+      devOtp: delivered ? undefined : code,
+      delivered,
       expiresInMinutes: OTP_TTL_MINUTES,
       isNewUser: !existing,
     });

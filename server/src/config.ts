@@ -19,6 +19,10 @@ export const config = {
   refreshTokenTtl: "30d",
   clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  giantSms: {
+    token: process.env.GIANTSMS_API_TOKEN ?? "",
+    senderId: process.env.GIANTSMS_SENDER_ID ?? "",
+  },
   // Business tuning defaults — mirrored in app_config so admins can retune without redeploy
   // (borla-technical-design.md §17 "Neighbourhood & config management")
   defaults: {
