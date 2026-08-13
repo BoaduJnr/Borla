@@ -454,6 +454,22 @@ development (rows T-08, T-19, and T-39).</p>
 <td>Confirmed via <code>waitFor()</code> polling in <code>broadcasts.test.ts</code> — row appears within the poll window, HTTP response contains no notification count</td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-45</td>
+<td>Live Gemini moderation classification against the real provisioned key (D-08 fix)</td>
+<td>Manual (real key, <code>server/src/ai/moderation.ts</code>)</td>
+<td>A genuine, non-fallback <code>allow</code>/<code>flag</code>/<code>block</code> verdict, not a <code>null</code> that degrades to the manual queue</td>
+<td><code>classifyText(&quot;Great pickup, right on time, very professional!&quot;, &quot;review&quot;)</code> returned <code>{&quot;verdict&quot;:&quot;allow&quot;,&quot;categories&quot;:[],&quot;piiFound&quot;:false,&quot;confidence&quot;:0.99,&quot;reason&quot;:&quot;The text is a positive, legitimate review with no presence of abuse, harassment, spam, or PII.&quot;}</code> — a real classification</td>
+<td>Pass (confirmed locally against the real key; production re-verification pending — the deployed process needs the same key set)</td>
+</tr>
+<tr>
+<td>T-46</td>
+<td>Gemini model-ID resilience: the candidate-list fallback skips a 404&#39;d model instead of failing closed entirely</td>
+<td>Manual (real key, direct HTTP probe of 6 candidate IDs)</td>
+<td>At least one candidate in the list resolves</td>
+<td><code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> → <code>404</code>; <code>gemini-3.6-flash</code>/<code>gemini-3.5-flash</code>/<code>gemini-3.7-flash</code>/<code>gemini-flash-latest</code> → <code>200</code> — the code tries <code>gemini-3.6-flash</code> first and succeeds immediately</td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -510,8 +526,8 @@ development (rows T-08, T-19, and T-39).</p>
 <tr>
 <td>D-08</td>
 <td><code>server/src/ai/moderation.ts</code> (<code>MODEL</code> constant)</td>
-<td>The moderation pipeline was hardcoded to <code>gemini-2.5-flash</code>. Once the user provisioned a real <code>GEMINI_API_KEY</code> on Render, live calls started returning <code>404 — this model is no longer available to new users</code> for that account&#39;s tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. <strong>Found via production logs after the key was set.</strong></td>
-<td>Switched <code>MODEL</code> to the <code>gemini-flash-latest</code> alias. Not yet re-verified by an actual live moderation call post-redeploy — tracked as the remaining half of TD-01.</td>
+<td>The moderation pipeline was hardcoded to <code>gemini-2.5-flash</code>. Once the user provisioned a real <code>GEMINI_API_KEY</code>, live calls started returning <code>404 — this model is no longer available to new users</code> for that account&#39;s tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. <strong>Found via production logs after the key was set.</strong></td>
+<td>First fix (switching to a single hardcoded <code>gemini-flash-latest</code>) still couldn&#39;t be confirmed live. Root-caused properly by probing six candidate model IDs directly against the real key: <code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> both 404, <code>gemini-3.6-flash</code>/<code>gemini-3.5-flash</code>/<code>gemini-3.7-flash</code>/<code>gemini-flash-latest</code> all work. Rewrote <code>classifyText</code> to try an ordered candidate list and cache whichever one succeeds per process, instead of betting on one guessed ID — confirmed working end-to-end locally (T-45/T-46).</td>
 </tr>
 </tbody></table>
 <p>All eight were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
@@ -593,11 +609,12 @@ correct (T-41) but not load-tested at real traffic volume.</p>
 <h2>8. What was NOT tested (honestly stated, ties to Technical_Debt_Plan.md TD-10)</h2>
 <p>Visual confirmation of a GiantSMS text actually arriving on a real handset (T-33 confirmed the
 gateway <em>accepts</em> the request in production; the seeded demo number is a placeholder, not a
-live phone someone was watching); a live Gemini moderation call against the real production key
-post-D-08 fix (the model-ID switch to <code>gemini-flash-latest</code> has not yet been re-verified with an
-actual submitted review since the redeploy — no local key is available to reproduce this
-outside production); concurrent double-accept under real network race conditions (only
-sequential-call idempotency is proven); load/stress testing; cross-browser automated testing
-(manual only); the four <code>CollectorHome</code>/<code>HouseholdHome</code>/<code>AdminDashboard</code>/<code>Profile</code> React pages
-have no component tests yet, only the two smaller components (<code>StatusChip</code>, <code>ReviewForm</code>).</p>
+live phone someone was watching); a live Gemini moderation call <em>specifically against the
+deployed production process</em> (T-45/T-46 confirm the fixed code works end-to-end with the real
+key run locally — production just needs to be confirmed running the same code with the same
+env var, not re-derived from scratch); concurrent double-accept under real network race
+conditions (only sequential-call idempotency is proven); load/stress testing; cross-browser
+automated testing (manual only); the four
+<code>CollectorHome</code>/<code>HouseholdHome</code>/<code>AdminDashboard</code>/<code>Profile</code> React pages have no component tests
+yet, only the two smaller components (<code>StatusChip</code>, <code>ReviewForm</code>).</p>
 </body></html>

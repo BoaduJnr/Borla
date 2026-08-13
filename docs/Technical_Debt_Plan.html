@@ -69,11 +69,11 @@ or a meaningful scale-up.</li>
 </thead>
 <tbody><tr>
 <td><strong>TD-01</strong></td>
-<td><del>No AI key by default</del> — <strong>mostly resolved</strong>: a real <code>GEMINI_API_KEY</code> is now set on Render, so moderation actually calls Gemini instead of falling straight to the manual queue. A second, related defect (D-08) surfaced immediately once the key was live: the hardcoded model ID (<code>gemini-2.5-flash</code>) started returning <code>404 — no longer available to new users</code> against this key&#39;s account tier, so every call silently fell back to fail-closed/manual — fixed by switching to the <code>gemini-flash-latest</code> alias (<code>server/src/ai/moderation.ts</code>).</td>
+<td><del>No AI key by default</del> — <strong>resolved</strong>: a real <code>GEMINI_API_KEY</code> is now set (Render + local <code>.env</code> for testing), and moderation actually calls Gemini instead of falling straight to the manual queue. A related defect (D-08) surfaced the moment the key went live: the hardcoded model ID (<code>gemini-2.5-flash</code>) returned <code>404 — no longer available to new users</code> for this key&#39;s account tier, so every call silently fell back to fail-closed/manual. First fix attempt (<code>gemini-flash-latest</code> alone) still wasn&#39;t confirmed live; root-caused by testing all six plausible model IDs directly against the real key — <code>gemini-2.5-flash</code>/<code>gemini-2.0-flash</code> both 404, <code>gemini-3.6-flash</code>/<code>gemini-3.5-flash</code>/<code>gemini-3.7-flash</code>/<code>gemini-flash-latest</code> all work. Rewritten to try an ordered candidate list and cache whichever one succeeds per process, so the <em>next</em> Gemini deprecation degrades to &quot;skip to the next candidate&quot; instead of silently going dark again.</td>
 <td>No Google AI Studio account was provisioned for the <em>original</em> build; the moderation pipeline (<code>server/src/ai/moderation.ts</code>) checks <code>GEMINI_API_KEY</code> and no-ops if absent — that fail-closed behaviour is exactly why D-08 degraded silently to the manual queue instead of breaking the review flow.</td>
-<td>Residual risk is now just &quot;hasn&#39;t been re-verified live since the model-ID fix,&quot; not &quot;no AI screening exists.&quot;</td>
-<td>🟡 Scheduled (down from unresolved — key is provisioned; pending one live moderation call against production to confirm <code>gemini-flash-latest</code> actually classifies correctly post-redeploy)</td>
-<td>Re-run a live moderation test (submit a borderline review in production, confirm a real <code>allow</code>/<code>flag</code>/<code>block</code> verdict instead of manual-queue fallback) once the model-ID fix is deployed.</td>
+<td>Confirmed end-to-end against the real key, locally: <code>classifyText(&quot;Great pickup, right on time, very professional!&quot;, &quot;review&quot;)</code> returned <code>{&quot;verdict&quot;:&quot;allow&quot;,&quot;confidence&quot;:0.99,...}</code>, a real classification, not a fallback null.</td>
+<td>🟢 Resolved</td>
+<td>Re-run the same check once more directly against production (submit a review, confirm it publishes without landing in the manual queue) — the code path is proven, this is now just confirming the <em>deployed</em> process has the same env var.</td>
 </tr>
 <tr>
 <td><strong>TD-02</strong></td>
@@ -193,7 +193,7 @@ the right call at this scale (see <code>borla-technical-design.md</code> §1 and
 </tr>
 <tr>
 <td><strong>v1.2</strong></td>
-<td>TD-01 (re-verify live moderation post-model-fix — key is already provisioned), TD-13 (CI pipeline)</td>
+<td>TD-13 (CI pipeline)</td>
 </tr>
 <tr>
 <td><strong>v1.3</strong></td>

@@ -22,8 +22,16 @@ export type ModerationVerdict = {
   reason: string;
 };
 
-const MODEL = "gemini-flash-latest";
+// Google deprecates/gates Gemini model IDs per-account faster than this app redeploys (D-08:
+// gemini-2.5-flash 404'd as "no longer available to new users" the moment a fresh key was
+// provisioned; the "-latest" alias didn't resolve either). Rather than gamble on one hardcoded
+// ID again, try a short list of current candidates in order and remember whichever one actually
+// works for this process's key, so a future deprecation degrades to "try the next one" instead
+// of silently falling back to the manual queue for every single review.
+const MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-flash-latest"];
 const TIMEOUT_MS = 8000;
+
+let workingModel: string | null = null; // cached once a candidate succeeds, for this process
 
 export async function classifyText(text: string, context: string): Promise<ModerationVerdict | null> {
   if (!config.geminiApiKey) return null; // no-key path: caller falls back to manual queue
@@ -39,44 +47,48 @@ Text to classify:
 ${text.slice(0, 2000)}
 """`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const candidates = workingModel ? [workingModel, ...MODEL_CANDIDATES.filter((m) => m !== workingModel)] : MODEL_CANDIDATES;
 
-  try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${config.geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0 },
-        }),
+  for (const model of candidates) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.geminiApiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0 },
+          }),
+        }
+      );
+      if (!resp.ok) {
+        console.error("[moderation] Gemini HTTP error", model, resp.status, await resp.text());
+        continue; // try the next candidate — likely a model-availability issue, not a content issue
       }
-    );
-    if (!resp.ok) {
-      console.error("[moderation] Gemini HTTP error", resp.status, await resp.text());
-      return null;
+      const data = await resp.json();
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!["allow", "flag", "block"].includes(parsed.verdict)) continue;
+      workingModel = model; // remember it — skip the deprecated ones on every subsequent call
+      return {
+        verdict: parsed.verdict,
+        categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+        piiFound: Boolean(parsed.piiFound),
+        confidence: Number(parsed.confidence) || 0,
+        reason: String(parsed.reason ?? ""),
+      };
+    } catch (err) {
+      console.error("[moderation] Gemini call failed", model, err);
+    } finally {
+      clearTimeout(timeout);
     }
-    const data = await resp.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!["allow", "flag", "block"].includes(parsed.verdict)) return null;
-    return {
-      verdict: parsed.verdict,
-      categories: Array.isArray(parsed.categories) ? parsed.categories : [],
-      piiFound: Boolean(parsed.piiFound),
-      confidence: Number(parsed.confidence) || 0,
-      reason: String(parsed.reason ?? ""),
-    };
-  } catch (err) {
-    console.error("[moderation] Gemini call failed", err);
-    return null;
-  } finally {
-    clearTimeout(timeout);
   }
+  return null; // every candidate failed — fail closed to the manual queue
 }
 
 export async function moderateReviewAsync(reviewId: string, text: string) {

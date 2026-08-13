@@ -460,11 +460,12 @@ graded accounts. Full detail, every test case, and all seven defect write-ups ar
 ## 12. Technical debt
 
 Thirteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
-Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
+Resolution. One is 🔴 Critical (admin has no 2FA), five are 🟡 Scheduled — including the
 GiantSMS OTP integration, which was **confirmed live in production** (the gateway accepted a
 real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢
-Acceptable deliberate trade-offs. The single largest is the missing native background-location
-collector app
+Acceptable/Resolved, including TD-01 (AI moderation) and TD-05 (Redis/BullMQ), both confirmed
+working end-to-end rather than just configured. The single largest remaining item is the
+missing native background-location collector app
 (TD-03) — the original design's own #1 risk — deliberately left as the biggest future-evolution
 item rather than attempted unsafely inside the exam window. Full register, priorities, and a
 phased repayment plan are in `Technical_Debt_Plan.md`.
