@@ -1,4 +1,3 @@
-import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { pool, query, queryOne } from "./db/pool.js";
 import { runMigrations } from "./db/migrate.js";
@@ -8,14 +7,15 @@ import { runMigrations } from "./db/migrate.js";
  *   - one admin (phone + password login)
  *   - one household, one collector (both phone+OTP — request an OTP and read the devOtp
  *     returned by the API; these accounts have no fixed password by design, see User_Manual.md)
- * Idempotent: safe to run repeatedly.
+ * Idempotent: safe to run repeatedly, and called automatically on every server boot
+ * (server/src/index.ts) so the graded demo credentials always exist, redeploys included.
  */
 
 // Accra-ish coordinates (Osu) so the two demo accounts are within the default broadcast radius.
-const HOUSEHOLD_PHONE = "+233200000001";
-const COLLECTOR_PHONE = "+233200000002";
-const ADMIN_PHONE = "+233200000000";
-const ADMIN_PASSWORD = "Borla-Admin-2026!";
+export const HOUSEHOLD_PHONE = "+233200000001";
+export const COLLECTOR_PHONE = "+233200000002";
+export const ADMIN_PHONE = "+233200000000";
+export const ADMIN_PASSWORD = "Borla-Admin-2026!";
 
 async function upsertUser(phone: string, role: string, displayName: string, extra: Record<string, any> = {}) {
   const existing = await queryOne<{ id: string }>(`SELECT id FROM users WHERE phone = $1`, [phone]);
@@ -28,9 +28,7 @@ async function upsertUser(phone: string, role: string, displayName: string, extr
   return user!.id;
 }
 
-async function main() {
-  await runMigrations();
-
+export async function seedDemoData() {
   const adminId = await upsertUser(ADMIN_PHONE, "admin", "Ops Admin", {
     verified: true,
     passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 10),
@@ -55,17 +53,29 @@ async function main() {
   // Collectors also need `users.verified = true` to go online — set explicitly for the demo account.
   await query(`UPDATE users SET verified = true WHERE id = $1`, [collectorId]);
 
+  return { adminId, householdId, collectorId };
+}
+
+// CLI entrypoint for `npm run seed -w server` — not used by the server's own boot path, which
+// calls seedDemoData() directly (see index.ts).
+async function main() {
+  await runMigrations();
+  const { adminId, householdId, collectorId } = await seedDemoData();
+
   console.log(`\nSeed complete. admin=${adminId} household=${householdId} collector=${collectorId}\n`);
   console.log("Admin login   : POST /api/auth/admin/login");
   console.log(`  phone: ${ADMIN_PHONE}  password: ${ADMIN_PASSWORD}`);
   console.log("\nHousehold demo: POST /api/auth/otp/request { phone: '" + HOUSEHOLD_PHONE + "' } then /otp/verify");
   console.log("Collector demo: POST /api/auth/otp/request { phone: '" + COLLECTOR_PHONE + "' } then /otp/verify");
-  console.log("(OTP has no real SMS gateway — the code is returned in the request response.)\n");
+  console.log("(OTP is shown in-app unless a real SMS gateway is configured — see Technical Debt Plan TD-02.)\n");
 
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const isMain = process.argv[1]?.endsWith("seed.ts");
+if (isMain) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
