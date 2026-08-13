@@ -4,27 +4,31 @@ Project Title: Borla — a real-time matchmaker connecting Ghanaian households w
                 roaming waste collectors
 
 Live Application: https://borla.onrender.com
-Admin URL: https://borla.onrender.com/login  (tap the "Admin" toggle, then sign in — you land
-                on https://borla.onrender.com/admin)
+Admin URL: https://borla.onrender.com/login  (there is no separate admin URL/toggle — enter the
+                admin phone number below at the normal sign-in screen and the app detects it's
+                an admin number automatically, then prompts for the password; you land on
+                https://borla.onrender.com/admin)
+
+All three accounts below are seeded automatically on every server boot (server/src/seed.ts,
+idempotent), so they always exist even after a redeploy.
 
 --- Household / Collector test accounts (phone + one-time code, no fixed password) ---
-These two accounts are seeded automatically on every server boot (idempotent), so they always
-exist even after a redeploy.
-
 Test Username (Household): +233200000001   (display name "Ama (Osu)")
 Test Username (Collector): +233200000002   (display name "Kwame the Collector", pre-verified
                                              and pre-set online at Osu, Accra)
-Test Password: N/A — there is no password for these roles. At the login screen, enter the
-                phone number above and tap "Send OTP". If real SMS delivery is configured and
-                working, the code arrives by text. If not (or the send fails), the screen shows
-                the code directly in an on-screen banner — this is a documented, deliberate
-                fallback (see Technical_Debt_Plan.md, item TD-02), not a bug. Enter that code to
-                log in.
+Test Password: N/A — there is no password for these roles. At the sign-in screen (tap "Get
+                started" on the welcome splash first), enter the phone number above and tap
+                "Continue". If real SMS delivery is configured and working, the code arrives by
+                text. If not (or the send fails), the screen shows the code directly in an
+                on-screen banner — this is a documented, deliberate fallback (see
+                Technical_Debt_Plan.md, item TD-02), not a bug. Enter that code to log in.
 
 --- Admin account ---
 Admin Username: +233200000000
 Admin Password: Borla-Admin-2026!
-(At /login, tap the "Admin" toggle instead of Household/Collector, then enter the above.)
+(At the same sign-in screen, enter this phone number and tap "Continue" — the app recognises
+it as an admin number and shows a password field instead of sending an OTP. Enter the password
+above and tap "Sign in".)
 
 Source Code Repository: https://github.com/BoaduJnr/Borla
 

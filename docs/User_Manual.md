@@ -88,10 +88,13 @@ household, a collector, or an admin — **your phone number tells the app who yo
 
 ## 5. Admin walkthrough
 
-1. At the login screen, tap the **Admin** toggle instead of Household/Collector.
-2. Enter the admin phone number and password (see `Deployment_and_Source_Links.txt` for the
-   seeded demo admin credentials).
-3. You land on **Admin — Ops console** with five tabs:
+1. At the sign-in screen, enter the admin's phone number and tap **Continue** — there is no
+   separate admin toggle to find; the app recognises the number and shows a password field
+   instead of sending an OTP ("This number is registered as an admin — sign in with your
+   password").
+2. Enter the password (see `Deployment_and_Source_Links.txt` for the seeded demo admin
+   credentials) and tap **Sign in**.
+3. You land on **Admin — Ops console** with six tabs:
    - **Stats**: online collectors, users by role, broadcasts/requests by status, moderation
      backlog.
    - **Map**: live view of active pins (gold) and online collectors (green).
