@@ -208,6 +208,9 @@ export default function Login() {
               <label>Phone number</label>
               <input
                 className="field"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 placeholder="+233200000001"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}

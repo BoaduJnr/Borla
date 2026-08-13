@@ -41,11 +41,14 @@ interface RequestRow {
   collector_lat: number | null;
 }
 
+type Tab = "home" | "requests";
+
 export default function HouseholdHome() {
   const { coords } = useGeolocation(false);
   const center = coords ?? FALLBACK_COORDS;
   const socket = useSocket();
   const { user } = useAuth();
+  const [tab, setTab] = useState<Tab>("home");
 
   const [collectors, setCollectors] = useState<any[]>([]);
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
@@ -198,9 +201,20 @@ export default function HouseholdHome() {
         Hi{user?.display_name ? `, ${user.display_name}` : ""} 👋
       </h2>
 
+      <div className="row">
+        <button className={`btn btn-sm ${tab === "home" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("home")}>
+          Home
+        </button>
+        <button className={`btn btn-sm ${tab === "requests" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("requests")}>
+          My requests{requests.length > 0 ? ` (${requests.length})` : ""}
+        </button>
+      </div>
+
       {error && <div className="banner err">{error}</div>}
       {info && <div className="banner ok">{info}</div>}
 
+      {tab === "home" && (
+        <>
       <div className="map-wrap">
         <MapView center={center} points={points} className="map-wrap" />
       </div>
@@ -282,10 +296,10 @@ export default function HouseholdHome() {
           </div>
         ))}
       </div>
+        </>
+      )}
 
-      <h3 className="h-disp" style={{ fontSize: 16, marginTop: 10 }}>
-        My requests
-      </h3>
+      {tab === "requests" && (
       <div className="stack">
         {requests.length === 0 && <p className="muted">No requests yet.</p>}
         {requests.map((r) => (
@@ -325,6 +339,7 @@ export default function HouseholdHome() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

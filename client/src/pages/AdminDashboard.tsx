@@ -314,6 +314,36 @@ function AuditTab() {
   );
 }
 
+// Plain-English labels for the raw app_config keys (server/migrations/001_init.sql) — an admin
+// tuning these live shouldn't need to know the underlying column name to know what it does.
+const CONFIG_META: Record<string, { label: string; description: string; unit: string }> = {
+  broadcast_radius_m: {
+    label: "Broadcast radius",
+    description: "How far a household's pin reaches nearby online collectors.",
+    unit: "metres",
+  },
+  pin_ttl_minutes: {
+    label: "Pin expiry",
+    description: "How long an uncleared broadcast pin stays active before it auto-expires.",
+    unit: "minutes",
+  },
+  request_timeout_seconds: {
+    label: "Request timeout",
+    description: "How long a collector has to respond before a direct request times out.",
+    unit: "seconds",
+  },
+  review_window_days: {
+    label: "Review window",
+    description: "How long to wait for both sides to review before releasing a solo review anyway.",
+    unit: "days",
+  },
+  notif_cap_per_10min: {
+    label: "Notification cap",
+    description: "The most broadcast alerts one collector can receive in a 10-minute window.",
+    unit: "per 10 min",
+  },
+};
+
 function ConfigTab() {
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => {
@@ -330,17 +360,30 @@ function ConfigTab() {
       <p className="muted" style={{ fontSize: 12.5 }}>
         Live-tunable settings — changes apply without a redeploy.
       </p>
-      {rows.map((r) => (
-        <div key={r.key} className="card row" style={{ justifyContent: "space-between" }}>
-          <span>{r.key}</span>
-          <input
-            className="field"
-            style={{ width: 120 }}
-            defaultValue={r.value}
-            onBlur={(e) => update(r.key, e.target.value)}
-          />
-        </div>
-      ))}
+      {rows.map((r) => {
+        const meta = CONFIG_META[r.key];
+        return (
+          <div key={r.key} className="card row" style={{ justifyContent: "space-between" }}>
+            <div>
+              <b>{meta?.label ?? r.key}</b>
+              {meta && (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {meta.description}
+                </div>
+              )}
+            </div>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                className="field"
+                style={{ width: 90 }}
+                defaultValue={r.value}
+                onBlur={(e) => update(r.key, e.target.value)}
+              />
+              {meta && <span className="muted" style={{ fontSize: 12 }}>{meta.unit}</span>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
