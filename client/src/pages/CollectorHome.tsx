@@ -6,7 +6,7 @@ import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
 import { MapView, type MapPoint } from "../components/MapView";
 import { RoutePanel } from "../components/RoutePanel";
 import { StatusChip } from "./HouseholdHome";
-import { ReviewForm } from "../components/ReviewForm";
+import { RequestReviews } from "../components/RequestReviews";
 import { IconPower, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
 
@@ -27,6 +27,8 @@ interface RequestRow {
   waste_type: string | null;
   note: string | null;
   requested_at: string;
+  arrived_at: string | null;
+  cancelled_by: string | null;
   household_id: string;
   household_name: string | null;
   household_lon: number | null;
@@ -35,7 +37,8 @@ interface RequestRow {
 
 const HEARTBEAT_MS = 25_000;
 
-type Tab = "home" | "requests";
+type Tab = "home" | "requests" | "history";
+const TERMINAL = ["rejected", "timed_out", "cancelled"];
 
 export default function CollectorHome() {
   const { user, profile, refreshProfile } = useAuth();
@@ -48,7 +51,9 @@ export default function CollectorHome() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [reveal, setReveal] = useState<Record<string, string>>({});
+  const [routeDistances, setRouteDistances] = useState<Record<string, number>>({});
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function loadPins() {
@@ -93,13 +98,25 @@ export default function CollectorHome() {
     const onNew = () => loadRequests();
     const onCleared = (payload: { broadcastId: string }) =>
       setPins((p) => p.filter((pin) => pin.id !== payload.broadcastId));
+    const onArrived = () => {
+      setInfo("🎉 You've arrived — the household has been notified.");
+      loadRequests();
+    };
+    const onCancelled = (payload: { cancelledBy: string }) => {
+      setInfo(payload.cancelledBy === "household" ? "The household cancelled this request." : "Request cancelled.");
+      loadRequests();
+    };
     socket.on("request:new", onNew);
     socket.on("broadcast:new", onNew); // cheap: just triggers a pin refresh via loadPins on next tick
     socket.on("broadcast:cleared", onCleared);
+    socket.on("request:arrived", onArrived);
+    socket.on("request:cancelled", onCancelled);
     return () => {
       socket.off("request:new", onNew);
       socket.off("broadcast:new", onNew);
       socket.off("broadcast:cleared", onCleared);
+      socket.off("request:arrived", onArrived);
+      socket.off("request:cancelled", onCancelled);
     };
   }, [socket]);
 
@@ -136,6 +153,15 @@ export default function CollectorHome() {
     loadRequests();
   }
 
+  async function cancelRequest(requestId: string) {
+    try {
+      await api(`/requests/${requestId}/cancel`, { method: "POST" });
+      loadRequests();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not cancel");
+    }
+  }
+
   async function revealContact(requestId: string) {
     const data = await api<{ request: any }>(`/requests/${requestId}`);
     setReveal((r) => ({ ...r, [requestId]: data.request.household_phone }));
@@ -151,7 +177,13 @@ export default function CollectorHome() {
   }));
 
   const pending = requests.filter((r) => r.status === "requested" || r.status === "seen");
-  const resolved = requests.filter((r) => !["requested", "seen"].includes(r.status));
+  // Closest household first, kept current as the collector (or household) moves — see
+  // RoutePanel's onDistanceChange, HouseholdHome has the same pattern for its own request list.
+  const active = requests
+    .filter((r) => r.status === "accepted" && !r.arrived_at)
+    .slice()
+    .sort((a, b) => (routeDistances[a.id] ?? Infinity) - (routeDistances[b.id] ?? Infinity));
+  const history = requests.filter((r) => TERMINAL.includes(r.status) || (r.status === "accepted" && r.arrived_at));
 
   return (
     <div className="content stack">
@@ -170,11 +202,15 @@ export default function CollectorHome() {
           Home
         </button>
         <button className={`btn btn-sm ${tab === "requests" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("requests")}>
-          Requests{requests.length > 0 ? ` (${requests.length})` : ""}
+          Requests{pending.length + active.length > 0 ? ` (${pending.length + active.length})` : ""}
+        </button>
+        <button className={`btn btn-sm ${tab === "history" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("history")}>
+          History
         </button>
       </div>
 
       {error && <div className="banner err">{error}</div>}
+      {info && <div className="banner ok">{info}</div>}
       {!user?.verified && (
         <div className="banner">Your collector account is awaiting admin verification before you can go online.</div>
       )}
@@ -259,48 +295,93 @@ export default function CollectorHome() {
         </>
       )}
 
-      {resolved.length > 0 && (
+      {active.length > 0 && (
         <>
           <h3 className="h-disp" style={{ fontSize: 16 }}>
-            Recent requests
+            On the way
           </h3>
           <div className="stack">
-            {resolved.map((r) => (
-              <div key={r.id} className="card stack">
-                <div className="spread">
-                  <b>{r.household_name ?? "Household"}</b>
-                  <StatusChip status={r.status} />
-                </div>
-                {r.status === "accepted" && (
-                  <div>
-                    {reveal[r.id] ? (
-                      <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id]}`}>
-                        <IconPhone size={16} color="#fff" /> Call {reveal[r.id]}
-                      </a>
-                    ) : (
-                      <button className="btn btn-green btn-sm" onClick={() => revealContact(r.id)}>
-                        Show contact
-                      </button>
-                    )}
-                    {r.household_lon != null && r.household_lat != null && (
-                      <RoutePanel
-                        from={center}
-                        to={{ lon: r.household_lon, lat: r.household_lat }}
-                        label={r.household_name ?? "household"}
-                      />
-                    )}
-                    <div style={{ marginTop: 8 }}>
-                      <ReviewForm requestId={r.id} subjectId={r.household_id} />
-                    </div>
-                  </div>
-                )}
-              </div>
+            {active.map((r) => (
+              <CollectorRequestCard
+                key={r.id}
+                r={r}
+                center={center}
+                reveal={reveal}
+                onRevealContact={revealContact}
+                onCancel={cancelRequest}
+                onDistanceChange={(m) => setRouteDistances((d) => ({ ...d, [r.id]: m }))}
+              />
             ))}
           </div>
         </>
       )}
-      {pending.length === 0 && resolved.length === 0 && <p className="muted">No requests yet.</p>}
+      {pending.length === 0 && active.length === 0 && <p className="muted">No active requests.</p>}
         </>
+      )}
+
+      {tab === "history" && (
+        <div className="stack">
+          {history.length === 0 && <p className="muted">Nothing here yet.</p>}
+          {history.map((r) => (
+            <CollectorRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollectorRequestCard({
+  r,
+  center,
+  reveal,
+  onRevealContact,
+  onCancel,
+  onDistanceChange,
+}: {
+  r: RequestRow;
+  center: { lon: number; lat: number };
+  reveal: Record<string, string>;
+  onRevealContact: (id: string) => void;
+  onCancel?: (id: string) => void;
+  onDistanceChange?: (distanceM: number) => void;
+}) {
+  const arrived = Boolean(r.arrived_at);
+  return (
+    <div className="card stack">
+      <div className="spread">
+        <b>{r.household_name ?? "Household"}</b>
+        <StatusChip status={r.status} arrived={arrived} />
+      </div>
+      {r.status === "accepted" && (
+        <div>
+          {reveal[r.id] ? (
+            <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id]}`}>
+              <IconPhone size={16} color="#fff" /> Call {reveal[r.id]}
+            </a>
+          ) : (
+            <button className="btn btn-green btn-sm" onClick={() => onRevealContact(r.id)}>
+              Show contact
+            </button>
+          )}
+          {r.household_lon != null && r.household_lat != null && (
+            <RoutePanel
+              from={center}
+              to={{ lon: r.household_lon, lat: r.household_lat }}
+              label={r.household_name ?? "household"}
+              onDistanceChange={onDistanceChange}
+            />
+          )}
+          <RequestReviews requestId={r.id} subjectId={r.household_id} canReview />
+          {onCancel && (
+            <button className="btn btn-coral btn-sm" style={{ marginTop: 8 }} onClick={() => onCancel(r.id)}>
+              Cancel request
+            </button>
+          )}
+        </div>
+      )}
+      {r.status === "cancelled" && (
+        <p className="muted">{r.cancelled_by === "household" ? "The household cancelled this." : "You cancelled this."}</p>
       )}
     </div>
   );

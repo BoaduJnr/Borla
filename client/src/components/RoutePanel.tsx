@@ -6,7 +6,20 @@ import { MapView, type RouteEndpoint, type RouteInfo } from "./MapView";
  * collector's target household (design intent: "introduce a route" once both sides have a
  * concrete match; the broadcast plane has no equivalent binding, so this only applies here).
  */
-export function RoutePanel({ from, to, label }: { from: RouteEndpoint; to: RouteEndpoint; label: string }) {
+export function RoutePanel({
+  from,
+  to,
+  label,
+  onDistanceChange,
+}: {
+  from: RouteEndpoint;
+  to: RouteEndpoint;
+  label: string;
+  /** Reported every time the route's distance updates — e.g. so a list of several active
+   * requests can sort itself by "closest first" and keep that order current as either side
+   * moves, instead of only ever reflecting distance at the moment the list was loaded. */
+  onDistanceChange?: (distanceM: number) => void;
+}) {
   const [info, setInfo] = useState<RouteInfo | null>(null);
 
   return (
@@ -16,7 +29,10 @@ export function RoutePanel({ from, to, label }: { from: RouteEndpoint; to: Route
           center={from}
           points={[{ id: "target", lon: to.lon, lat: to.lat, color: "#0E6E4E", label }]}
           route={{ from, to }}
-          onRouteInfo={setInfo}
+          onRouteInfo={(i) => {
+            setInfo(i);
+            onDistanceChange?.(i.distanceM);
+          }}
           className="map-wrap"
         />
       </div>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
-import { signup, auth } from "../helpers.js";
+import { signup, auth, makeAdmin } from "../helpers.js";
 import { query } from "../../src/db/pool.js";
 
 const app = createApp();
@@ -112,5 +112,58 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
     // A stranger's "mine" list never contains someone else's authored review.
     const strangerMine = await request(app).get("/api/reviews/mine").set(auth(collector.access));
     expect(strangerMine.body.reviews.find((r: any) => r.id === reviewId)).toBeUndefined();
+  });
+
+  it("GET /requests/:id/reviews shows the review + reply on the request they belong to, not just in a flat list", async () => {
+    const { household, collector, requestId } = await acceptedRequest();
+    const review = await request(app)
+      .post("/api/reviews")
+      .set(auth(household.access))
+      .send({ subjectId: collector.user.id, requestId, rating: 5, comment: "Great!" });
+    const reviewId = review.body.review.id;
+
+    // Before release: the author sees `mine` regardless of status; the subject sees no `theirs`
+    // at all (same reveal-on-visible rule as everywhere else).
+    const collectorView = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(collector.access));
+    expect(collectorView.body.mine).toBeNull();
+    expect(collectorView.body.theirs).toBeNull();
+
+    const householdView = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(household.access));
+    expect(householdView.body.mine.id).toBe(reviewId);
+    expect(householdView.body.mine.status).toBe("pending");
+    expect(householdView.body.theirs).toBeNull(); // no one has reviewed the household back
+
+    await query(`UPDATE reviews SET status = 'visible', moderation_passed = true, visible_at = now() WHERE id = $1`, [reviewId]);
+
+    const collectorAfter = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(collector.access));
+    expect(collectorAfter.body.theirs.id).toBe(reviewId);
+    expect(collectorAfter.body.theirs.comment).toBe("Great!");
+    expect(collectorAfter.body.theirs.reply_body).toBeNull();
+
+    // Someone not part of this request gets a clean 403, not a leak of either side's review.
+    const outsider = await signup(app, "household");
+    const outsiderAttempt = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(outsider.access));
+    expect(outsiderAttempt.status).toBe(403);
+  });
+
+  it("removing a previously-visible review recomputes the subject's rating instead of leaving it stale", async () => {
+    const { household, collector, requestId } = await acceptedRequest();
+    const review = await request(app)
+      .post("/api/reviews")
+      .set(auth(household.access))
+      .send({ subjectId: collector.user.id, requestId, rating: 5, comment: "Five stars" });
+    await query(`UPDATE reviews SET status = 'visible', moderation_passed = true, visible_at = now() WHERE id = $1`, [review.body.review.id]);
+    await query(`UPDATE collectors SET rating_avg = 5.00, rating_count = 1 WHERE user_id = $1`, [collector.user.id]);
+
+    const admin = await makeAdmin(app);
+    const remove = await request(app).post(`/api/admin/reviews/${review.body.review.id}/remove`).set(auth(admin.access));
+    expect(remove.status).toBe(200);
+
+    const rows = await query<{ rating_avg: string | null; rating_count: number }>(
+      `SELECT rating_avg, rating_count FROM collectors WHERE user_id = $1`,
+      [collector.user.id]
+    );
+    expect(rows[0].rating_count).toBe(0); // not left at the stale count from before removal
+    expect(rows[0].rating_avg).toBeNull();
   });
 });

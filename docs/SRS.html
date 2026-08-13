@@ -381,6 +381,36 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <td>Should</td>
 <td><code>client/src/components/{MapView,RoutePanel}.tsx</code>; collector&#39;s live position is reveal-on-accept, same timing as FR-16&#39;s phone number</td>
 </tr>
+<tr>
+<td>FR-28</td>
+<td>Either party can cancel a direct request any time before the collector arrives (a household previously had no way to withdraw one at all)</td>
+<td>Should</td>
+<td><code>POST /requests/:id/cancel</code>; conditional <code>WHERE status IN (...) AND arrived_at IS NULL</code> update, same idempotency pattern as accept/reject</td>
+</tr>
+<tr>
+<td>FR-29</td>
+<td>The system detects a collector&#39;s arrival at the pickup point automatically — server-side, from the same position updates already sent for presence — and notifies both parties in real time</td>
+<td>Should</td>
+<td><code>presence/routes.ts</code> <code>checkArrivals()</code> (<code>ST_DWithin</code> against <code>requests.location</code>), <code>request:arrived</code> socket event to both sides</td>
+</tr>
+<tr>
+<td>FR-30</td>
+<td>Resolved requests (arrived, cancelled, rejected, timed out) move out of the active Requests view into a separate History view</td>
+<td>Should</td>
+<td><code>client/src/pages/{HouseholdHome,CollectorHome}.tsx</code> three-tab layout (Home / Requests / History)</td>
+</tr>
+<tr>
+<td>FR-31</td>
+<td>A review and its reply are shown in the context of the request they belong to, not only in a flat profile list</td>
+<td>Should</td>
+<td><code>GET /requests/:id/reviews</code>, <code>client/src/components/RequestReviews.tsx</code></td>
+</tr>
+<tr>
+<td>FR-32</td>
+<td>Active requests are ordered closest-first by live route distance, re-sorting as either party&#39;s position updates</td>
+<td>Should</td>
+<td><code>RoutePanel</code>&#39;s <code>onDistanceChange</code> callback feeding a sort in <code>HouseholdHome</code>/<code>CollectorHome</code></td>
+</tr>
 </tbody></table>
 <h2>5. Non-functional requirements</h2>
 <table>
@@ -439,7 +469,7 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <tr>
 <td>NFR-10 (Testability)</td>
 <td>Core business logic is covered by automated tests</td>
-<td>48 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
+<td>53 server tests (unit + Supertest integration, against real Postgres+Redis) + 5 client component tests, all passing — see <code>Testing_Report.md</code></td>
 </tr>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
@@ -447,8 +477,9 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 two-plane matching engine, masked contact, the full review/moderation/double-blind pipeline, and
 the admin console.</p>
 <p><strong>Should-have (built, lighter-touch)</strong>: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning), FR-27 (accepted-request route) — all present, but
-not stress-tested to the same depth as Must-Have items.</p>
+(user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
+server-side arrival detection, active/history split, review-in-context, closest-first sort) —
+all present, but not stress-tested to the same depth as Must-Have items.</p>
 <p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
 beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on

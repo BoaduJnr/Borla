@@ -81,8 +81,17 @@ async function reviewReleaseSweep() {
   if (released.length) console.log(`[jobs] review release: ${released.length} review(s) made visible`);
 }
 
-async function recomputeRatingAggregate(userId: string) {
-  const agg = await query<{ avg: string; count: string; role: string }>(
+/**
+ * Recomputes one user's rating_avg/rating_count from scratch against currently-visible reviews.
+ * `UNIQUE(author_id, request_id)`/`UNIQUE(author_id, broadcast_id)` already guarantee at most
+ * one rating per author per interaction, so this can never double-count — but it must be
+ * re-run any time a review's visibility changes, not just at release time: an admin removing a
+ * previously-visible review (moderation_flags resolve, or a direct remove) changes the same
+ * aggregate this function computes, and was previously left stale until the next unrelated
+ * release swept past the same subject. Exported so `admin/routes.ts` can call it directly.
+ */
+export async function recomputeRatingAggregate(userId: string) {
+  const agg = await query<{ avg: string | null; count: string; role: string }>(
     `SELECT AVG(rating)::numeric(3,2) AS avg, COUNT(*) AS count, u.role
      FROM reviews r JOIN users u ON u.id = r.subject_id
      WHERE r.subject_id = $1 AND r.status = 'visible'
@@ -90,9 +99,13 @@ async function recomputeRatingAggregate(userId: string) {
     [userId]
   );
   const row = agg[0];
-  if (!row) return;
-  const table = row.role === "collector" ? "collectors" : "households";
-  await query(`UPDATE ${table} SET rating_avg = $1, rating_count = $2 WHERE user_id = $3`, [row.avg, row.count, userId]);
+  // No row at all means the subject has zero visible reviews (e.g. their only one was just
+  // removed) — still reset to zero rather than leaving a stale avg/count from before.
+  const roleRow = await query<{ role: string }>(`SELECT role FROM users WHERE id = $1`, [userId]);
+  const role = row?.role ?? roleRow[0]?.role;
+  if (!role) return;
+  const table = role === "collector" ? "collectors" : "households";
+  await query(`UPDATE ${table} SET rating_avg = $1, rating_count = $2 WHERE user_id = $3`, [row?.avg ?? null, row?.count ?? 0, userId]);
 }
 
 const sweepHandlers: Record<string, () => Promise<void>> = {

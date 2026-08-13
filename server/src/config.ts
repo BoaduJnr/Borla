@@ -32,5 +32,6 @@ export const config = {
     requestTimeoutSeconds: 90,
     reviewWindowDays: 7,
     notifCapPer10Min: 10,
+    arrivalRadiusM: 40,
   },
 };

@@ -5,7 +5,7 @@ import { useSocket } from "../hooks/SocketContext";
 import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
 import { MapView, type MapPoint } from "../components/MapView";
 import { RoutePanel } from "../components/RoutePanel";
-import { ReviewForm } from "../components/ReviewForm";
+import { RequestReviews } from "../components/RequestReviews";
 import { IconTrash, IconRecycle, IconLeaf, IconBox, IconPin, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
@@ -35,13 +35,16 @@ interface RequestRow {
   note: string | null;
   requested_at: string;
   responded_at: string | null;
+  arrived_at: string | null;
+  cancelled_by: string | null;
   collector_id: string;
   collector_name: string | null;
   collector_lon: number | null;
   collector_lat: number | null;
 }
 
-type Tab = "home" | "requests";
+type Tab = "home" | "requests" | "history";
+const TERMINAL = ["rejected", "timed_out", "cancelled"];
 
 export default function HouseholdHome() {
   const { coords } = useGeolocation(false);
@@ -60,6 +63,7 @@ export default function HouseholdHome() {
   const [info, setInfo] = useState<string | null>(null);
   const [confirmPrompt, setConfirmPrompt] = useState<{ broadcastId: string } | null>(null);
   const [reveal, setReveal] = useState<Record<string, { phone: string; name: string | null }>>({});
+  const [routeDistances, setRouteDistances] = useState<Record<string, number>>({});
   const lastBroadcastId = useRef<string | null>(null);
 
   async function loadNearbyCollectors() {
@@ -122,16 +126,28 @@ export default function HouseholdHome() {
     const onFannedOut = (payload: { broadcastId: string; notified: number }) => {
       setInfo(`Pin is live — ${payload.notified} nearby collector(s) notified.`);
     };
+    const onArrived = () => {
+      setInfo("🎉 Your collector has arrived!");
+      loadRequests();
+    };
+    const onCancelled = (payload: { cancelledBy: string }) => {
+      setInfo(payload.cancelledBy === "collector" ? "The collector cancelled this request." : "Request cancelled.");
+      loadRequests();
+    };
     socket.on("request:seen", onUpdate);
     socket.on("request:accepted", onUpdate);
     socket.on("request:rejected", onUpdate);
     socket.on("request:timed_out", onUpdate);
+    socket.on("request:arrived", onArrived);
+    socket.on("request:cancelled", onCancelled);
     socket.on("broadcast:fanned_out", onFannedOut);
     return () => {
       socket.off("request:seen", onUpdate);
       socket.off("request:accepted", onUpdate);
       socket.off("request:rejected", onUpdate);
       socket.off("request:timed_out", onUpdate);
+      socket.off("request:arrived", onArrived);
+      socket.off("request:cancelled", onCancelled);
       socket.off("broadcast:fanned_out", onFannedOut);
     };
   }, [socket]);
@@ -172,6 +188,15 @@ export default function HouseholdHome() {
     }
   }
 
+  async function cancelRequest(requestId: string) {
+    try {
+      await api(`/requests/${requestId}/cancel`, { method: "POST" });
+      loadRequests();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not cancel");
+    }
+  }
+
   async function revealContact(requestId: string) {
     const data = await api<{ request: any }>(`/requests/${requestId}`);
     setReveal((r) => ({ ...r, [requestId]: { phone: data.request.collector_phone, name: data.request.collector_name } }));
@@ -185,6 +210,15 @@ export default function HouseholdHome() {
     }).catch(() => null);
     setConfirmPrompt(null);
   }
+
+  // Closest collector first — and kept current as collectors move, not just sorted once at load:
+  // each card's RoutePanel reports its live road-route distance back up via onDistanceChange, so
+  // this re-sorts on every route update rather than only reflecting distance at page-load time.
+  const activeRequests = requests
+    .filter((r) => !TERMINAL.includes(r.status) && !r.arrived_at)
+    .slice()
+    .sort((a, b) => (routeDistances[a.id] ?? Infinity) - (routeDistances[b.id] ?? Infinity));
+  const historyRequests = requests.filter((r) => TERMINAL.includes(r.status) || r.arrived_at);
 
   const points: MapPoint[] = collectors.map((c) => ({
     id: c.id,
@@ -206,7 +240,10 @@ export default function HouseholdHome() {
           Home
         </button>
         <button className={`btn btn-sm ${tab === "requests" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("requests")}>
-          My requests{requests.length > 0 ? ` (${requests.length})` : ""}
+          My requests{activeRequests.length > 0 ? ` (${activeRequests.length})` : ""}
+        </button>
+        <button className={`btn btn-sm ${tab === "history" ? "btn-dark" : "btn-ghost"}`} onClick={() => setTab("history")}>
+          History
         </button>
       </div>
 
@@ -301,44 +338,94 @@ export default function HouseholdHome() {
 
       {tab === "requests" && (
       <div className="stack">
-        {requests.length === 0 && <p className="muted">No requests yet.</p>}
-        {requests.map((r) => (
-          <div key={r.id} className="card stack">
-            <div className="spread">
-              <div className="row">
-                <Avatar name={r.collector_name} role="collector" size={32} />
-                <b>{r.collector_name ?? "Collector"}</b>
-              </div>
-              <StatusChip status={r.status} />
-            </div>
-            {r.status === "accepted" && (
-              <div>
-                {reveal[r.id] ? (
-                  <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id].phone}`}>
-                    <IconPhone size={16} color="#fff" /> Call {reveal[r.id].phone}
-                  </a>
-                ) : (
-                  <button className="btn btn-green btn-sm" onClick={() => revealContact(r.id)}>
-                    Show contact
-                  </button>
-                )}
-                {r.collector_lon != null && r.collector_lat != null && (
-                  <RoutePanel
-                    from={center}
-                    to={{ lon: r.collector_lon, lat: r.collector_lat }}
-                    label={r.collector_name ?? "collector"}
-                  />
-                )}
-                <div style={{ marginTop: 8 }}>
-                  <ReviewForm requestId={r.id} subjectId={r.collector_id} />
-                </div>
-              </div>
-            )}
-            {r.status === "rejected" && <p className="muted">Try another collector.</p>}
-            {r.status === "timed_out" && <p className="muted">No response — try another collector.</p>}
-          </div>
+        {activeRequests.length === 0 && <p className="muted">No active requests.</p>}
+        {activeRequests.map((r) => (
+          <HouseholdRequestCard
+            key={r.id}
+            r={r}
+            center={center}
+            reveal={reveal}
+            onRevealContact={revealContact}
+            onCancel={cancelRequest}
+            onDistanceChange={(m) => setRouteDistances((d) => ({ ...d, [r.id]: m }))}
+          />
         ))}
       </div>
+      )}
+
+      {tab === "history" && (
+      <div className="stack">
+        {historyRequests.length === 0 && <p className="muted">Nothing here yet.</p>}
+        {historyRequests.map((r) => (
+          <HouseholdRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} />
+        ))}
+      </div>
+      )}
+    </div>
+  );
+}
+
+function HouseholdRequestCard({
+  r,
+  center,
+  reveal,
+  onRevealContact,
+  onCancel,
+  onDistanceChange,
+}: {
+  r: RequestRow;
+  center: { lon: number; lat: number };
+  reveal: Record<string, { phone: string; name: string | null }>;
+  onRevealContact: (id: string) => void;
+  onCancel?: (id: string) => void;
+  onDistanceChange?: (distanceM: number) => void;
+}) {
+  const arrived = Boolean(r.arrived_at);
+  return (
+    <div className="card stack">
+      <div className="spread">
+        <div className="row">
+          <Avatar name={r.collector_name} role="collector" size={32} />
+          <b>{r.collector_name ?? "Collector"}</b>
+        </div>
+        <StatusChip status={r.status} arrived={arrived} />
+      </div>
+      {r.status === "accepted" && (
+        <div>
+          {reveal[r.id] ? (
+            <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id].phone}`}>
+              <IconPhone size={16} color="#fff" /> Call {reveal[r.id].phone}
+            </a>
+          ) : (
+            <button className="btn btn-green btn-sm" onClick={() => onRevealContact(r.id)}>
+              Show contact
+            </button>
+          )}
+          {r.collector_lon != null && r.collector_lat != null && (
+            <RoutePanel
+              from={center}
+              to={{ lon: r.collector_lon, lat: r.collector_lat }}
+              label={r.collector_name ?? "collector"}
+              onDistanceChange={onDistanceChange}
+            />
+          )}
+          <RequestReviews requestId={r.id} subjectId={r.collector_id} canReview />
+          {onCancel && (
+            <button className="btn btn-coral btn-sm" style={{ marginTop: 8 }} onClick={() => onCancel(r.id)}>
+              Cancel request
+            </button>
+          )}
+        </div>
+      )}
+      {(r.status === "requested" || r.status === "seen") && onCancel && (
+        <button className="btn btn-coral btn-sm" onClick={() => onCancel(r.id)}>
+          Cancel request
+        </button>
+      )}
+      {r.status === "rejected" && <p className="muted">Try another collector.</p>}
+      {r.status === "timed_out" && <p className="muted">No response — try another collector.</p>}
+      {r.status === "cancelled" && (
+        <p className="muted">{r.cancelled_by === "collector" ? "The collector cancelled this." : "You cancelled this."}</p>
       )}
     </div>
   );
@@ -373,13 +460,15 @@ function ConfirmPickup({ broadcastId, onDone }: { broadcastId: string; onDone: (
   );
 }
 
-export function StatusChip({ status }: { status: string }) {
+export function StatusChip({ status, arrived }: { status: string; arrived?: boolean }) {
+  if (status === "accepted" && arrived) return <span className="tag-chip t-green">Arrived</span>;
   const map: Record<string, [string, string]> = {
     requested: ["t-gold", "Sent"],
     seen: ["t-gold", "Seen"],
-    accepted: ["t-green", "Accepted"],
+    accepted: ["t-green", "On the way"],
     rejected: ["t-coral", "Rejected"],
     timed_out: ["t-coral", "No response"],
+    cancelled: ["t-coral", "Cancelled"],
   };
   const [cls, label] = map[status] ?? ["t-gold", status];
   return <span className={`tag-chip ${cls}`}>{label}</span>;

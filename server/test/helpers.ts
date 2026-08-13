@@ -1,5 +1,7 @@
 import request from "supertest";
 import type { Express } from "express";
+import bcrypt from "bcryptjs";
+import { query } from "../src/db/pool.js";
 
 let counter = 0;
 
@@ -20,6 +22,19 @@ export async function signup(app: Express, role: "household" | "collector", phon
 
 export function auth(token: string) {
   return { Authorization: `Bearer ${token}` };
+}
+
+/** A fresh admin account (own random phone, bcrypt-hashed password) — the seeded production
+ * admin (Deployment_and_Source_Links.txt) doesn't exist in this isolated test database. */
+export async function makeAdmin(app: Express) {
+  const phone = testPhone();
+  const password = "Test-Admin-Pw-1!";
+  await query(`INSERT INTO users (phone, role, display_name, verified, password_hash) VALUES ($1,'admin','Test Admin', true, $2)`, [
+    phone,
+    await bcrypt.hash(password, 10),
+  ]);
+  const login = await request(app).post("/api/auth/admin/login").send({ phone, password });
+  return { phone, access: login.body.access as string };
 }
 
 /**

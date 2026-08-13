@@ -170,8 +170,11 @@ substitution. See `Technical_Debt_Plan.md` TD-05 for what was verified.
 
 ### 9.2 Data design (ER overview)
 
-The full schema is `server/migrations/001_init.sql` (12 tables). Core entities and their
-relationships:
+The full schema is `server/migrations/001_init.sql` (12 tables) plus `002_request_lifecycle.sql`
+(adds `requests.arrived_at`/`cancelled_by` and the `cancelled` status, for FR-28/FR-29 — a
+second, separately-tracked migration file rather than editing the first, since `001_init.sql`
+had already been applied in production; `server/src/db/migrate.ts` tracks applied files by name
+in `_migrations` so it only ever runs a new one once). Core entities and their relationships:
 
 <svg viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
   <style>
@@ -420,11 +423,20 @@ native "Install app" button) — verified by checking `navigator.serviceWorker.g
 against the actual production build, not just trusting the plugin; a Redis-backed hot path for
 presence/geo-matching/rate-limiting plus a real BullMQ job queue (broadcast fan-out and AI
 moderation both run as retryable background jobs rather than inline in the request handler) and
-a Socket.IO Redis adapter, since Technical_Debt_Plan.md TD-05 was resolved; and FR-27, a
+a Socket.IO Redis adapter, since Technical_Debt_Plan.md TD-05 was resolved; FR-27, a
 collector-to-household / household-to-collector **route** once a direct request is accepted —
 a road-following route where the routing service resolves, a straight line otherwise, with
 distance/ETA — respecting the same reveal-on-accept timing as the phone number (TD-14 covers
-the third-party routing dependency this introduces).
+the third-party routing dependency this introduces); and a fuller **request lifecycle**
+(FR-28–FR-32): either party can **cancel** a request any time before arrival (a household
+previously had no way to withdraw one at all); the server itself detects a collector's
+**arrival** at the pickup point from the same position updates already used for presence
+(`ST_DWithin` against the request's stored location, no client self-reporting to trust) and
+notifies both sides in real time; resolved requests (arrived/cancelled/rejected/timed-out) move
+into a separate **History** tab so the active Requests view stays focused on what needs
+attention; a review and its reply now show **on the request they belong to**, not only in a
+flat Profile list; and the active-requests list sorts **closest-first by live route distance**,
+re-sorting as either side's position updates rather than only reflecting distance at load time.
 
 ### 10.3 Code organisation
 ```
@@ -433,7 +445,8 @@ server/src/redis/{client,presence,rateLimit}.ts                                 
 server/src/jobs/{queues,scheduler,workers,index}.ts                             — BullMQ queues/schedulers/workers
 server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours,phone}.ts  — isolated, unit-testable logic
 client/src/pages/{Login,HouseholdHome,CollectorHome,AdminDashboard,Profile}.tsx  — one screen per role/concern
-client/src/components/{MapView,RoutePanel,ReviewForm,ProtectedRoute}.tsx         — shared, reusable
+client/src/components/{MapView,RoutePanel,RequestReviews,ReviewForm,ProtectedRoute}.tsx — shared, reusable
+client/src/utils/reviewStatus.ts                                                — one status→label mapping, shared by Profile and RequestReviews
 ```
 
 ### 10.4 Security controls actually implemented
@@ -448,21 +461,22 @@ verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-52/52 automated tests passing (48 server — unit + Supertest integration against a real
-PostgreSQL+PostGIS instance *and* a real Redis instance; 4 client — React Testing Library) at
+58/58 automated tests passing (53 server — unit + Supertest integration against a real
+PostgreSQL+PostGIS instance *and* a real Redis instance; 5 client — React Testing Library) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
-Nine real defects were caught and fixed during development — five in the automated suite (a
-broken first-time-signup code path, a review-reply status gap, and three others), one in a
-scripted screenshot pass (missing avatar CSS + broken initials logic, D-09), and three found
-only by treating the *live deployed app or its logs* as the actual object under test: the admin
-account was reachable via the weaker OTP flow, bypassing its intended phone+password requirement
-entirely (found by me, re-testing production); an already-registered phone number typed without
-its leading `+` was treated as brand-new instead of logging straight in (found by the user,
-D-07); and a hardcoded Gemini model ID started 404ing the moment a real key went live in
-production (D-08) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone
-numbers would have silently "succeeded" into a gateway with no phone behind them, locking any
-examiner out of the graded accounts. Full detail, every test case, and all nine defect write-ups
-are in `Testing_Report.md`.
+Eleven real defects were caught and fixed during development — seven in the automated suite (a
+broken first-time-signup code path, a review-reply status gap, a rating-aggregate staleness bug
+found by reasoning through every path that touches a review's visibility (D-11), and four
+others), one in a scripted screenshot pass (missing avatar CSS + broken initials logic, D-09),
+and three found only by treating the *live deployed app or its logs* as the actual object under
+test: the admin account was reachable via the weaker OTP flow, bypassing its intended
+phone+password requirement entirely (found by me, re-testing production); an already-registered
+phone number typed without its leading `+` was treated as brand-new instead of logging straight
+in (found by the user, D-07); and a hardcoded Gemini model ID started 404ing the moment a real
+key went live in production (D-08) — plus, adjacent to the SMS defect, the two arbitrary seeded
+demo phone numbers would have silently "succeeded" into a gateway with no phone behind them,
+locking any examiner out of the graded accounts. Full detail, every test case, and all eleven
+defect write-ups are in `Testing_Report.md`.
 
 ## 12. Technical debt
 

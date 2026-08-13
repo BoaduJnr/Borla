@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
 import { InstallButton } from "../pwa/InstallButton";
+import { givenStatusLabel, givenStatusChipClass } from "../utils/reviewStatus";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
@@ -169,23 +170,6 @@ export default function Profile() {
       </div>
     </div>
   );
-}
-
-// A review the current user authored is never itself hidden from them — but its public
-// visibility depends on the double-blind release gate (jobs/workers.ts reviewReleaseSweep), so
-// "submitted" and "visible to the other person" are different moments worth naming clearly.
-function givenStatusLabel(r: { status: string; moderation_passed: boolean }): string {
-  if (r.status === "visible") return "Public";
-  if (r.status === "removed") return "Removed by admin";
-  if (r.status === "flagged") return "Flagged — awaiting admin review";
-  if (r.moderation_passed) return "Approved — waiting on the other side (or the review window to close)";
-  return "Awaiting moderation";
-}
-
-function givenStatusChipClass(r: { status: string; moderation_passed: boolean }): string {
-  if (r.status === "visible") return "t-green";
-  if (r.status === "removed" || r.status === "flagged") return "t-coral";
-  return "t-gold";
 }
 
 function ReplyBox({ reviewId, onSent }: { reviewId: string; onSent: () => void }) {

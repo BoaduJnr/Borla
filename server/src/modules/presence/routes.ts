@@ -5,8 +5,34 @@ import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import * as presence from "../../redis/presence.js";
+import { emitToUser } from "../../realtime/socket.js";
+import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
 
 export const presenceRouter = Router();
+
+/**
+ * "Collector reaches the end of the route trail" (design intent for FR-28): every position
+ * update a collector reports is checked against every accepted-but-not-yet-arrived request of
+ * theirs — Postgres/PostGIS is the right tool here (`ST_DWithin` on the same `geography` column
+ * already used for the fan-out radius query), not a client-side distance check, since a client
+ * reporting its own arrival can't be trusted and this piggy-backs on presence updates the
+ * collector already has to send. `arrived_at` is a fact recorded on the (still `accepted`)
+ * request, not a new status, so review-eligibility logic elsewhere needs no change.
+ */
+async function checkArrivals(collectorId: string, lon: number, lat: number) {
+  const radiusM = await getConfigNumber(AppConfigKeys.arrivalRadiusM, defaults.arrivalRadiusM);
+  const arrived = await query<{ id: string; household_id: string }>(
+    `UPDATE requests SET arrived_at = now()
+     WHERE collector_id = $1 AND status = 'accepted' AND arrived_at IS NULL
+       AND ST_DWithin(location, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4)
+     RETURNING id, household_id`,
+    [collectorId, lon, lat, radiusM]
+  );
+  for (const r of arrived) {
+    emitToUser(r.household_id, "request:arrived", { requestId: r.id });
+    emitToUser(collectorId, "request:arrived", { requestId: r.id });
+  }
+}
 
 const toggleSchema = z.object({
   online: z.boolean(),
@@ -47,6 +73,7 @@ presenceRouter.post(
          WHERE user_id = $3`,
         [lon, lat, user.id]
       );
+      await checkArrivals(user.id, lon, lat);
     } else {
       await presence.goOffline(user.id);
       await query(`UPDATE collectors SET online = false WHERE user_id = $1`, [user.id]);
@@ -86,6 +113,7 @@ presenceRouter.post(
        WHERE user_id = $3`,
       [lon, lat, req.user!.id]
     );
+    await checkArrivals(req.user!.id, lon, lat);
     res.json({ ok: true });
   })
 );

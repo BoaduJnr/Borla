@@ -92,31 +92,45 @@ and you&#39;re straight in.</li>
 </li>
 </ol>
 <h2>3. Household walkthrough</h2>
+<p>Three tabs run across the top: <strong>Home</strong> (map + broadcast + nearby collectors), <strong>My requests</strong>
+(anything still active/in progress), and <strong>History</strong> (arrived, cancelled, rejected, or timed
+out — out of the way once there&#39;s nothing left to do).</p>
 <ol>
-<li>After login you land on your <strong>Home</strong> screen: a map centred on your current location (allow
-location access when the browser asks), with green dots for nearby online collectors.</li>
+<li><strong>Home tab</strong>: a map centred on your current location (allow location access when the browser
+asks), with green dots for nearby online collectors.</li>
 <li><strong>To broadcast</strong>: tap the big gold <strong>&quot;🔔 I HAVE WASTE&quot;</strong> button, optionally pick a waste type
 and add a short note, then <strong>Confirm — I have waste</strong>. A banner shows how many collectors
 were notified. The pin auto-expires after 45 minutes if you forget it.</li>
 <li><strong>The moment someone comes for it</strong>: tap <strong>Clear pin</strong> on the sticky banner — this removes
 it from every collector&#39;s map immediately, so nobody else wastes a trip.</li>
 <li><strong>To request one specific collector</strong>: scroll to &quot;Nearby collectors,&quot; pick one, and tap
-<strong>Request</strong>. Your request appears under &quot;My requests&quot; with a status chip: <em>Sent</em> → <em>Seen</em> →
-<em>Accepted</em>/<em>Rejected</em>/<em>No response</em>.</li>
+<strong>Request</strong>. It shows up under <strong>My requests</strong> with a status chip: <em>Sent</em> → <em>Seen</em> →
+<em>On the way</em> → <em>Arrived</em>. If you&#39;ve requested more than one collector at once, the list
+automatically re-orders itself <strong>closest-first</strong>, live, as each collector&#39;s actual route
+distance changes — not just once when the page loads.</li>
+<li><strong>Changed your mind?</strong> Tap <strong>Cancel request</strong> any time before the collector arrives —
+whether it&#39;s still awaiting a response or already accepted. Once the collector has arrived
+there&#39;s nothing left to cancel.</li>
 <li><strong>Once accepted</strong>: tap <strong>Show contact</strong> to reveal the collector&#39;s phone number and call them
 directly. A small map also appears showing the <strong>route to your collector</strong> with distance and
 an estimated time — a straight line if the routing service is briefly unreachable, a real
-road route otherwise. You&#39;ll also see a <strong>⭐ Leave a review</strong> option — rate 1–5 and
-optionally comment; it stays private until it passes moderation <em>and</em> the other side has
-also reviewed (or the review window closes) — check its status any time under Profile →
-Reviews I&#39;ve given.</li>
+road route otherwise.</li>
+<li><strong>Arrival</strong>: the moment the collector&#39;s live position reaches the pickup point, you get a
+&quot;🎉 Your collector has arrived!&quot; banner automatically — no need to refresh or ask. The
+request then moves to <strong>History</strong>.</li>
+<li><strong>Reviews</strong>: rate 1–5 and optionally comment, right there on the request card — you&#39;ll also
+see the collector&#39;s review of you (once visible) and can reply to it in the same place, not
+a separate screen. Your own review stays private until it passes moderation <em>and</em> the other
+side has also reviewed (or the review window closes); its exact status shows inline.</li>
 <li><strong>Profile tab</strong>: adjust your alert radius and whether standing alerts are on; see <strong>Reviews
 received</strong> (visible ones, from collectors) and <strong>Reviews I&#39;ve given</strong> (every review you&#39;ve
-written, with its current status — awaiting moderation, approved-and-waiting, or public).</li>
+written, across every request, with its current status).</li>
 </ol>
 <h2>4. Collector walkthrough</h2>
+<p>Three tabs: <strong>Home</strong> (online toggle + map + nearby waste), <strong>Requests</strong> (incoming + on-the-way),
+and <strong>History</strong> (arrived, cancelled, rejected, or timed out).</p>
 <ol>
-<li>After login you land on your <strong>Home</strong> screen, offline by default.</li>
+<li><strong>Home tab</strong>: offline by default.</li>
 <li><strong>New collector accounts start unverified</strong> — you&#39;ll see a banner saying an admin must
 approve you before you can go online. This is a deliberate anti-abuse gate (only verified
 collectors ever receive broadcasts); ask an admin to verify your account (§5).</li>
@@ -126,9 +140,15 @@ locking your phone or switching apps pauses updates (documented in <code>Technic
 TD-03; keep the tab open and the screen on while actively collecting).</li>
 <li><strong>Nearby waste</strong>: active pins appear on your map and in the list below it, closest first,
 with a one-tap <strong>📞 Call</strong> button.</li>
-<li><strong>Incoming direct requests</strong>: appear as a card with <strong>Accept</strong>/<strong>Reject</strong>. Accepting reveals
-the household&#39;s phone number to both of you, shows a small map with the <strong>route to that
-household</strong> (distance + estimated time), and lets you leave a review afterwards.</li>
+<li><strong>Requests tab</strong>: incoming direct requests appear as a card with <strong>Accept</strong>/<strong>Reject</strong>.
+Accepting reveals the household&#39;s phone number to both of you and moves it into &quot;On the
+way,&quot; with a small map showing the <strong>route to that household</strong> (distance + estimated time).
+If you have more than one on the way, they sort <strong>closest-first</strong>, live, as you move.</li>
+<li><strong>Cancel</strong> is available on anything you&#39;ve accepted but haven&#39;t reached yet — use it if
+you&#39;re no longer able to make the pickup.</li>
+<li><strong>Arrival is automatic</strong>: once your live position reaches the household&#39;s pickup point, you
+get a &quot;🎉 You&#39;ve arrived&quot; banner and the household is notified at the same moment — nothing
+to tap. The request then moves to <strong>History</strong>, where you can leave (and see) a review.</li>
 <li><strong>Go offline</strong> when you&#39;re done — this immediately removes you from the matchable set.</li>
 </ol>
 <h2>5. Admin walkthrough</h2>
@@ -150,7 +170,8 @@ still awaiting moderation entirely (shown here whenever no <code>GEMINI_API_KEY<
 with a one-click <strong>Approve</strong>.</li>
 <li><strong>Audit</strong>: every privileged action taken by any admin, with a timestamp.</li>
 <li><strong>Config</strong>: live-editable operational settings (pin TTL, broadcast radius, request
-timeout, review window) — changes apply immediately, no redeploy.</li>
+timeout, review window, notification cap, arrival radius) — changes apply immediately, no
+redeploy.</li>
 </ul>
 </li>
 </ol>

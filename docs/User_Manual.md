@@ -58,30 +58,46 @@ household, a collector, or an admin — **your phone number tells the app who yo
 
 ## 3. Household walkthrough
 
-1. After login you land on your **Home** screen: a map centred on your current location (allow
-   location access when the browser asks), with green dots for nearby online collectors.
+Three tabs run across the top: **Home** (map + broadcast + nearby collectors), **My requests**
+(anything still active/in progress), and **History** (arrived, cancelled, rejected, or timed
+out — out of the way once there's nothing left to do).
+
+1. **Home tab**: a map centred on your current location (allow location access when the browser
+   asks), with green dots for nearby online collectors.
 2. **To broadcast**: tap the big gold **"🔔 I HAVE WASTE"** button, optionally pick a waste type
    and add a short note, then **Confirm — I have waste**. A banner shows how many collectors
    were notified. The pin auto-expires after 45 minutes if you forget it.
 3. **The moment someone comes for it**: tap **Clear pin** on the sticky banner — this removes
    it from every collector's map immediately, so nobody else wastes a trip.
 4. **To request one specific collector**: scroll to "Nearby collectors," pick one, and tap
-   **Request**. Your request appears under "My requests" with a status chip: *Sent* → *Seen* →
-   *Accepted*/*Rejected*/*No response*.
-5. **Once accepted**: tap **Show contact** to reveal the collector's phone number and call them
+   **Request**. It shows up under **My requests** with a status chip: *Sent* → *Seen* →
+   *On the way* → *Arrived*. If you've requested more than one collector at once, the list
+   automatically re-orders itself **closest-first**, live, as each collector's actual route
+   distance changes — not just once when the page loads.
+5. **Changed your mind?** Tap **Cancel request** any time before the collector arrives —
+   whether it's still awaiting a response or already accepted. Once the collector has arrived
+   there's nothing left to cancel.
+6. **Once accepted**: tap **Show contact** to reveal the collector's phone number and call them
    directly. A small map also appears showing the **route to your collector** with distance and
    an estimated time — a straight line if the routing service is briefly unreachable, a real
-   road route otherwise. You'll also see a **⭐ Leave a review** option — rate 1–5 and
-   optionally comment; it stays private until it passes moderation *and* the other side has
-   also reviewed (or the review window closes) — check its status any time under Profile →
-   Reviews I've given.
-6. **Profile tab**: adjust your alert radius and whether standing alerts are on; see **Reviews
+   road route otherwise.
+7. **Arrival**: the moment the collector's live position reaches the pickup point, you get a
+   "🎉 Your collector has arrived!" banner automatically — no need to refresh or ask. The
+   request then moves to **History**.
+8. **Reviews**: rate 1–5 and optionally comment, right there on the request card — you'll also
+   see the collector's review of you (once visible) and can reply to it in the same place, not
+   a separate screen. Your own review stays private until it passes moderation *and* the other
+   side has also reviewed (or the review window closes); its exact status shows inline.
+9. **Profile tab**: adjust your alert radius and whether standing alerts are on; see **Reviews
    received** (visible ones, from collectors) and **Reviews I've given** (every review you've
-   written, with its current status — awaiting moderation, approved-and-waiting, or public).
+   written, across every request, with its current status).
 
 ## 4. Collector walkthrough
 
-1. After login you land on your **Home** screen, offline by default.
+Three tabs: **Home** (online toggle + map + nearby waste), **Requests** (incoming + on-the-way),
+and **History** (arrived, cancelled, rejected, or timed out).
+
+1. **Home tab**: offline by default.
 2. **New collector accounts start unverified** — you'll see a banner saying an admin must
    approve you before you can go online. This is a deliberate anti-abuse gate (only verified
    collectors ever receive broadcasts); ask an admin to verify your account (§5).
@@ -91,10 +107,16 @@ household, a collector, or an admin — **your phone number tells the app who yo
    TD-03; keep the tab open and the screen on while actively collecting).
 4. **Nearby waste**: active pins appear on your map and in the list below it, closest first,
    with a one-tap **📞 Call** button.
-5. **Incoming direct requests**: appear as a card with **Accept**/**Reject**. Accepting reveals
-   the household's phone number to both of you, shows a small map with the **route to that
-   household** (distance + estimated time), and lets you leave a review afterwards.
-6. **Go offline** when you're done — this immediately removes you from the matchable set.
+5. **Requests tab**: incoming direct requests appear as a card with **Accept**/**Reject**.
+   Accepting reveals the household's phone number to both of you and moves it into "On the
+   way," with a small map showing the **route to that household** (distance + estimated time).
+   If you have more than one on the way, they sort **closest-first**, live, as you move.
+6. **Cancel** is available on anything you've accepted but haven't reached yet — use it if
+   you're no longer able to make the pickup.
+7. **Arrival is automatic**: once your live position reaches the household's pickup point, you
+   get a "🎉 You've arrived" banner and the household is notified at the same moment — nothing
+   to tap. The request then moves to **History**, where you can leave (and see) a review.
+8. **Go offline** when you're done — this immediately removes you from the matchable set.
 
 ## 5. Admin walkthrough
 
@@ -115,7 +137,8 @@ household, a collector, or an admin — **your phone number tells the app who yo
      with a one-click **Approve**.
    - **Audit**: every privileged action taken by any admin, with a timestamp.
    - **Config**: live-editable operational settings (pin TTL, broadcast radius, request
-     timeout, review window) — changes apply immediately, no redeploy.
+     timeout, review window, notification cap, arrival radius) — changes apply immediately, no
+     redeploy.
 
 ## 6. Redeploying / rolling back
 

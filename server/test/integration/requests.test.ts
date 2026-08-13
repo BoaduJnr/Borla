@@ -104,4 +104,72 @@ describe("request plane (design §3.2 state machine)", () => {
     expect(hRowAfter.collector_lon).toBeCloseTo(POINT.lon);
     expect(hRowAfter.collector_lat).toBeCloseTo(POINT.lat);
   });
+
+  it("a household can cancel its own pending request — something neither accept nor reject covered before", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+    const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    const requestId = created.body.request.id;
+
+    const cancel = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(household.access));
+    expect(cancel.status).toBe(200);
+
+    const check = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
+    expect(check.body.request.status).toBe("cancelled");
+    expect(check.body.request.cancelled_by).toBe("household");
+
+    // Idempotency guard: already resolved, not a silent no-op success.
+    const again = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(household.access));
+    expect(again.status).toBe(409);
+  });
+
+  it("a collector can cancel an accepted request; a stranger cannot cancel someone else's", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+    const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    const requestId = created.body.request.id;
+    await request(app).post(`/api/requests/${requestId}/accept`).set(auth(collector.access));
+
+    const stranger = await signup(app, "household");
+    const strangerAttempt = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(stranger.access));
+    expect(strangerAttempt.status).toBe(409); // not a party to this request — matches zero rows either way
+
+    const cancel = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(collector.access));
+    expect(cancel.status).toBe(200);
+
+    const check = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
+    expect(check.body.request.status).toBe("cancelled");
+    expect(check.body.request.cancelled_by).toBe("collector");
+  });
+
+  it("a collector's live position reaching the pickup point marks the request arrived, without a new status", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+    const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    const requestId = created.body.request.id;
+    await request(app).post(`/api/requests/${requestId}/accept`).set(auth(collector.access));
+
+    // A heartbeat reported well outside the arrival radius must NOT mark it arrived.
+    const farHeartbeat = await request(app)
+      .post("/api/presence/heartbeat")
+      .set(auth(collector.access))
+      .send({ lon: POINT.lon + 0.05, lat: POINT.lat + 0.05 }); // ~5-7km away
+    expect(farHeartbeat.status).toBe(200);
+    const stillOnTheWay = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
+    expect(stillOnTheWay.body.request.arrived_at).toBeNull();
+    expect(stillOnTheWay.body.request.status).toBe("accepted");
+
+    // A heartbeat right at the pickup point marks it arrived — status stays 'accepted' (arrival
+    // is a fact recorded on the request, not a new terminal status), so review eligibility is
+    // untouched.
+    const closeHeartbeat = await request(app).post("/api/presence/heartbeat").set(auth(collector.access)).send({ ...POINT });
+    expect(closeHeartbeat.status).toBe(200);
+    const arrived = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
+    expect(arrived.body.request.status).toBe("accepted");
+    expect(arrived.body.request.arrived_at).not.toBeNull();
+
+    // Once arrived, cancel is no longer offered — there's nothing left to back out of.
+    const cancelAfterArrival = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(household.access));
+    expect(cancelAfterArrival.status).toBe(409);
+  });
 });

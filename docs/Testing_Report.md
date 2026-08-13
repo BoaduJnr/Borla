@@ -34,8 +34,8 @@ separate phase, which is appropriate at this scale.
 
 ```
 ✓ test/integration/broadcasts.test.ts (4 tests)
-✓ test/integration/reviews.test.ts (5 tests)
-✓ test/integration/requests.test.ts (5 tests)
+✓ test/integration/reviews.test.ts (7 tests)
+✓ test/integration/requests.test.ts (8 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
@@ -45,26 +45,28 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  48 passed (48)
-   Duration  49.31s
+      Tests  53 passed (53)
+   Duration  ~50s
 ```
 
 `redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); `broadcasts.test.ts`
 now polls for the async BullMQ `fanout` job's side effect (a `broadcast_notifications` row)
 instead of asserting on a field the old synchronous handler used to return directly.
+`requests.test.ts` grew again for the cancel/arrival lifecycle (FR-28/FR-29); `reviews.test.ts`
+for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-11).
 
 ### 2.2 Client (`npm run test -w client`)
 
 ```
-✓ src/pages/StatusChip.test.tsx (2 tests)
+✓ src/pages/StatusChip.test.tsx (3 tests)
 ✓ src/components/ReviewForm.test.tsx (2 tests)
 
  Test Files  2 passed (2)
-      Tests  4 passed (4)
+      Tests  5 passed (5)
 ```
 
-**Total: 52/52 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 58/58 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
 
 ## 3. Test case log
@@ -124,6 +126,13 @@ development (rows T-08, T-19, and T-39).
 | T-47 | FR-27: `GET /requests/mine` exposes the right location to the right side, gated the same way as contact reveal | Integration | Collector always sees the household's pickup point (already shared at request creation); household sees no collector location before acceptance, then the real one after | Confirmed in `requests.test.ts` — `collector_lon/lat` are `null` pre-accept and match the collector's position post-accept; `household_lon/lat` present in both cases | Pass |
 | T-48 | **(defect)** `GET /reviews/mine` — an author can see their own review regardless of visibility, distinct from `GET /users/:id/reviews` (visible-only) | Integration + manual (D-10, reported by the user) | Author sees the review immediately with an honest status (`pending`/`visible`); a stranger's "mine" list never contains someone else's review | Confirmed live: a fresh review submitted, then approved and released end-to-end via a real double-blind pairing (~15s in production, well under the 2-minute sweep interval) — the mechanism works; the gap was that neither side had any way to *see* that it was working | Fail → **Fixed**, now Pass |
 | T-49 | Double-blind release fires quickly once both sides have genuinely reviewed each other on the same request | System (live, production) | Both reviews become visible to each other shortly after the second side submits | Two fresh reviews submitted on the same accepted request in production; both passed AI moderation within ~10s and were mutually visible within one release-sweep cycle (~15s observed) | Pass |
+| T-50 | FR-28: a household can cancel its own pending request (previously impossible — only accept/reject existed, both collector-only actions) | Integration | `200`, status becomes `cancelled` with `cancelled_by:'household'`; a second cancel attempt is `409` | Confirmed in `requests.test.ts` | Pass |
+| T-51 | FR-28: a collector can cancel an accepted request; a stranger cannot cancel a request they're not part of | Integration | Collector cancel `200`; stranger cancel `409` (conditional update matches zero rows, same idempotency pattern as accept/reject) | Confirmed | Pass |
+| T-52 | FR-29: a collector's live position reaching the pickup radius marks the request arrived; a position well outside it does not | Integration | Heartbeat ~5-7km away leaves `arrived_at` null; a heartbeat at the exact pickup point sets it, `status` stays `'accepted'` | Confirmed via direct `ST_DWithin` check against `requests.location` | Pass |
+| T-53 | FR-29: once arrived, cancel is no longer offered — there's nothing left to back out of | Integration | Cancel attempt after `arrived_at` is set returns `409` | Confirmed | Pass |
+| T-54 | FR-31: `GET /requests/:id/reviews` shows both directions of review in the context of the request they belong to | Integration | Author sees `mine` regardless of status; the subject sees `theirs` only once visible; a non-party gets `403` | Confirmed in `reviews.test.ts` | Pass |
+| T-55 | **(defect)** Removing a previously-visible review recomputes the subject's `rating_avg`/`rating_count` instead of leaving them stale | Integration (found while implementing FR-31, D-11) | Admin `POST /reviews/:id/remove` on a visible 5-star review drops the subject's `rating_count` back to 0, not left at the pre-removal value | **First implementation only updated the aggregate when the review-release sweep itself made a review visible — an admin removing one afterwards never re-ran the computation** — see §4 | Fail → **Fixed**, now Pass |
+| T-56 | `StatusChip` renders `'On the way'`/`'Arrived'` distinctly for an accepted request, and a label for `cancelled` | Component | Each status/arrived combination shows its own label | 3/3 cases correct (`StatusChip.test.tsx`) | Pass |
 
 ## 4. Defects found during development
 
@@ -139,18 +148,21 @@ development (rows T-08, T-19, and T-39).
 | D-08 | `server/src/ai/moderation.ts` (`MODEL` constant) | The moderation pipeline was hardcoded to `gemini-2.5-flash`. Once the user provisioned a real `GEMINI_API_KEY`, live calls started returning `404 — this model is no longer available to new users` for that account's tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. **Found via production logs after the key was set.** | First fix (switching to a single hardcoded `gemini-flash-latest`) still couldn't be confirmed live. Root-caused properly by probing six candidate model IDs directly against the real key: `gemini-2.5-flash`/`gemini-2.0-flash` both 404, `gemini-3.6-flash`/`gemini-3.5-flash`/`gemini-3.7-flash`/`gemini-flash-latest` all work. Rewrote `classifyText` to try an ordered candidate list and cache whichever one succeeds per process, instead of betting on one guessed ID — confirmed working end-to-end locally (T-45/T-46). |
 | D-09 | `client/src/components/Avatar.tsx`, `client/src/styles/tokens.css` | Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the `Avatar` component referenced `.avatar`/`.avatar.g` classes that had never actually been added to `tokens.css`, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the *last* whitespace-separated token without checking it started with a letter, so `"Ama (Osu)"` produced `"A("`. | Added the missing `.avatar`/`.avatar.g` rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes. |
 | D-10 | `client/src/pages/Profile.tsx`, `client/src/components/ReviewForm.tsx` | The double-blind release mechanism itself was working correctly (confirmed by T-49), but nothing in the UI *said* so: `GET /users/:id/reviews` only ever returns `status='visible'` rows by design, and there was no way for the author of a review to see their own submission anywhere — not on Profile, not after the initial "submitted" moment. A one-sided review (the common case until the other party also reviews) looked indistinguishable from a silently-broken or lost one. **Reported by the user** ("why is approved reviews and given reviews not seen by either party") after testing the flow themselves. | Added `GET /reviews/mine` (any status, author-only) and a "Reviews I've given" section on Profile showing each review's real status (`Awaiting moderation` / `Approved — waiting on the other side…` / `Public` / etc.); reworded `ReviewForm`'s post-submit message to explain the hold instead of a bare "thanks". |
+| D-11 | `server/src/jobs/workers.ts` (`recomputeRatingAggregate`), `server/src/modules/admin/routes.ts` | `rating_avg`/`rating_count` were only ever recomputed from inside the review-release sweep, for the reviews *it* just released. Admin actions that change a review's status outside that sweep — removing a visible review directly, or resolving a moderation flag as "remove"/"clear" — updated `reviews.status` but never touched the subject's aggregate, leaving it stale (e.g. a removed 5-star review would keep inflating `rating_count` forever). **Found while adding FR-31's review-in-context view**, reasoning through every path that changes review visibility rather than just the sweep. | Exported `recomputeRatingAggregate` from `jobs/index.ts`; both `/admin/reviews/:id/remove` and `/admin/moderation/flags/:id/resolve` now call it for the affected subject after updating status. Also hardened the function itself to reset to zero (not leave the previous value) when a subject ends up with no visible reviews at all. Regression test added (T-55). |
 
-All ten were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well after)
-the corresponding feature — five by the automated suite, four by deliberately exercising the
-live deployed app or reading its logs (D-05 by me re-testing production myself; D-07 and D-10
-reported back by the user; D-08 surfaced in production logs once the Gemini key went live), and
-D-09 by a scripted screenshot pass rather than by reading the code — direct evidence for why
-TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just hasn't
-been extended to every corner of the app, including production behaviour, yet. D-10 in
-particular is a reminder that a *correctly working* backend mechanism (the double-blind release
-sweep, confirmed by T-49) can still fail users entirely if the UI never surfaces its state —
-functional correctness and observability are different bars, and this build's automated tests
-only ever checked the former.
+All eleven were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well
+after) the corresponding feature — six by the automated suite (D-11 by reasoning through the
+code while building an unrelated feature, not by a user report or production incident), four by
+deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
+production myself; D-07 and D-10 reported back by the user; D-08 surfaced in production logs
+once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading
+the code — direct evidence for why TD-10 (test depth) is listed as "scheduled," not "critical":
+the practice works, it just hasn't been extended to every corner of the app, including
+production behaviour, yet. D-10 and D-11 both make the same point from different angles: a
+*correctly working* backend mechanism (the double-blind release sweep; the rating aggregate)
+can still fail users if either its state is never surfaced (D-10) or it's only kept correct
+along one of several paths that touch it (D-11) — functional correctness on the happy path and
+correctness everywhere the same data can change are different bars.
 
 ## 5. Security testing
 

@@ -128,6 +128,44 @@ reviewsRouter.get(
   })
 );
 
+/**
+ * GET /requests/:id/reviews — both directions of review for one specific interaction, so a
+ * review + its reply live where the user actually experiences them: on the request itself, not
+ * only in a flat Profile list. `mine` is visible to its own author regardless of moderation
+ * state (same rule as GET /reviews/mine); `theirs` (the review *about* the caller) only appears
+ * once genuinely visible (same reveal rule as GET /users/:id/reviews) — one query, the WHERE
+ * clause itself enforces both privacy rules at once.
+ */
+reviewsRouter.get(
+  "/requests/:id/reviews",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const request = await queryOne<{ household_id: string; collector_id: string }>(
+      `SELECT household_id, collector_id FROM requests WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!request) throw new ApiError(404, "Request not found");
+    const user = req.user!;
+    if (request.household_id !== user.id && request.collector_id !== user.id) {
+      throw new ApiError(403, "Not part of this request");
+    }
+
+    const rows = await query<any>(
+      `SELECT r.id, r.author_id, r.subject_id, r.rating, r.comment, r.status, r.moderation_passed,
+              a.display_name AS author_name, rr.id AS reply_id, rr.body AS reply_body
+       FROM reviews r
+       JOIN users a ON a.id = r.author_id
+       LEFT JOIN review_replies rr ON rr.review_id = r.id AND rr.status = 'visible'
+       WHERE r.request_id = $1 AND (r.author_id = $2 OR (r.subject_id = $2 AND r.status = 'visible'))`,
+      [req.params.id, user.id]
+    );
+    res.json({
+      mine: rows.find((r) => r.author_id === user.id) ?? null,
+      theirs: rows.find((r) => r.subject_id === user.id) ?? null,
+    });
+  })
+);
+
 /** POST /reviews/:id/reply — the reviewed party gets exactly one public reply. */
 reviewsRouter.post(
   "/reviews/:id/reply",

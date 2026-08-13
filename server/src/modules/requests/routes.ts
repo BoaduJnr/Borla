@@ -74,6 +74,7 @@ requestsRouter.get(
       user.role === "household"
         ? await query(
             `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
+                    r.arrived_at, r.cancelled_by,
                     u.id AS collector_id, u.display_name AS collector_name,
                     CASE WHEN r.status = 'accepted' THEN c.last_lon END AS collector_lon,
                     CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat
@@ -85,6 +86,7 @@ requestsRouter.get(
           )
         : await query(
             `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
+                    r.arrived_at, r.cancelled_by,
                     r.lon AS household_lon, r.lat AS household_lat,
                     u.id AS household_id, u.display_name AS household_name
              FROM requests r JOIN users u ON u.id = r.household_id
@@ -175,6 +177,33 @@ requestsRouter.post(
     );
     if (!row) throw new ApiError(409, "This request is no longer pending (already resolved or timed out)");
     emitToUser(row.household_id, "request:rejected", { requestId: row.id });
+    res.json({ ok: true });
+  })
+);
+
+/**
+ * POST /requests/:id/cancel — either party can back out any time before the collector arrives.
+ * Before this, a household had no way to withdraw a request it sent (only the collector could
+ * act, via accept/reject) — same idempotency pattern as accept/reject: a conditional
+ * `WHERE ... status IN (...) AND arrived_at IS NULL` update, zero-rows-affected means "already
+ * resolved" rather than an error. Once `arrived_at` is set there is nothing left to cancel.
+ */
+requestsRouter.post(
+  "/:id/cancel",
+  requireAuth,
+  requireRole("household", "collector"),
+  asyncHandler(async (req, res) => {
+    const user = req.user!;
+    const row = await queryOne<{ id: string; household_id: string; collector_id: string }>(
+      `UPDATE requests SET status = 'cancelled', cancelled_by = $2, responded_at = COALESCE(responded_at, now())
+       WHERE id = $1 AND (household_id = $3 OR collector_id = $3)
+         AND status IN ('requested','seen','accepted') AND arrived_at IS NULL
+       RETURNING id, household_id, collector_id`,
+      [req.params.id, user.role, user.id]
+    );
+    if (!row) throw new ApiError(409, "This request can no longer be cancelled (already resolved, or the collector has arrived)");
+    const otherPartyId = user.role === "household" ? row.collector_id : row.household_id;
+    emitToUser(otherPartyId, "request:cancelled", { requestId: row.id, cancelledBy: user.role });
     res.json({ ok: true });
   })
 );

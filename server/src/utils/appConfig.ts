@@ -19,6 +19,7 @@ export const AppConfigKeys = {
   requestTimeoutSeconds: "request_timeout_seconds",
   reviewWindowDays: "review_window_days",
   notifCapPer10Min: "notif_cap_per_10min",
+  arrivalRadiusM: "arrival_radius_m",
 } as const;
 
 export const defaults = config.defaults;

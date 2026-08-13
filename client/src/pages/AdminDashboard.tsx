@@ -342,6 +342,11 @@ const CONFIG_META: Record<string, { label: string; description: string; unit: st
     description: "The most broadcast alerts one collector can receive in a 10-minute window.",
     unit: "per 10 min",
   },
+  arrival_radius_m: {
+    label: "Arrival radius",
+    description: "How close a collector's live position must get to the pickup point to be marked arrived.",
+    unit: "metres",
+  },
 };
 
 function ConfigTab() {

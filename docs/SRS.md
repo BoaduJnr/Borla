@@ -151,6 +151,11 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-25 | An admin can view live stats, a live ops map, and the full audit log of privileged actions | Must | `admin/routes.ts` |
 | FR-26 | An admin can retune operational config (pin TTL, radius, timeouts, review window) without a redeploy | Should | `admin/routes.ts` `app_config` |
 | FR-27 | Once a direct request is accepted, each side sees a route to the other (road route where available, straight-line otherwise) with distance/ETA — a collector's target household, and a household's accepted collector | Should | `client/src/components/{MapView,RoutePanel}.tsx`; collector's live position is reveal-on-accept, same timing as FR-16's phone number |
+| FR-28 | Either party can cancel a direct request any time before the collector arrives (a household previously had no way to withdraw one at all) | Should | `POST /requests/:id/cancel`; conditional `WHERE status IN (...) AND arrived_at IS NULL` update, same idempotency pattern as accept/reject |
+| FR-29 | The system detects a collector's arrival at the pickup point automatically — server-side, from the same position updates already sent for presence — and notifies both parties in real time | Should | `presence/routes.ts` `checkArrivals()` (`ST_DWithin` against `requests.location`), `request:arrived` socket event to both sides |
+| FR-30 | Resolved requests (arrived, cancelled, rejected, timed out) move out of the active Requests view into a separate History view | Should | `client/src/pages/{HouseholdHome,CollectorHome}.tsx` three-tab layout (Home / Requests / History) |
+| FR-31 | A review and its reply are shown in the context of the request they belong to, not only in a flat profile list | Should | `GET /requests/:id/reviews`, `client/src/components/RequestReviews.tsx` |
+| FR-32 | Active requests are ordered closest-first by live route distance, re-sorting as either party's position updates | Should | `RoutePanel`'s `onDistanceChange` callback feeding a sort in `HouseholdHome`/`CollectorHome` |
 
 ## 5. Non-functional requirements
 
@@ -165,7 +170,7 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | NFR-7 (Availability) | The deployed instance stays reachable for grading | Render health check (`/api/health`) wired into `render.yaml` |
 | NFR-8 (Data integrity) | A review can never be posted about a fabricated interaction | DB-level `UNIQUE(author_id, request_id)` / `UNIQUE(author_id, broadcast_id)` plus application-level interaction checks |
 | NFR-9 (Fail-safe moderation) | Unmoderated content never goes public by default | Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue |
-| NFR-10 (Testability) | Core business logic is covered by automated tests | 48 server tests (unit + Supertest integration, against real Postgres+Redis) + 4 client component tests, all passing — see `Testing_Report.md` |
+| NFR-10 (Testability) | Core business logic is covered by automated tests | 53 server tests (unit + Supertest integration, against real Postgres+Redis) + 5 client component tests, all passing — see `Testing_Report.md` |
 
 ## 6. Requirement prioritisation (MoSCoW)
 
@@ -174,8 +179,9 @@ two-plane matching engine, masked contact, the full review/moderation/double-bli
 the admin console.
 
 **Should-have (built, lighter-touch)**: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning), FR-27 (accepted-request route) — all present, but
-not stress-tested to the same depth as Must-Have items.
+(user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
+server-side arrival detection, active/history split, review-in-context, closest-first sort) —
+all present, but not stress-tested to the same depth as Must-Have items.
 
 **Could-have (explicitly deferred — see `Technical_Debt_Plan.md`)**: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n

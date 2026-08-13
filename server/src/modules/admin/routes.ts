@@ -4,6 +4,7 @@ import { query, queryOne } from "../../db/pool.js";
 import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { recomputeRatingAggregate } from "../../jobs/index.js";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("admin"));
@@ -148,6 +149,13 @@ adminRouter.post(
     await query(`UPDATE ${table} SET status = $1, moderation_passed = true WHERE id = $2`, [newStatus, flag.target_id]);
     await query(`UPDATE moderation_flags SET resolved = true, resolution = $1 WHERE id = $2`, [req.body.action, req.params.id]);
     await logAudit(req.user!.id, `moderation_${req.body.action}`, flag.target_id, { flagId: req.params.id, note: req.body.note });
+    // A review's status changing to/from 'visible' outside the review-release sweep (an admin
+    // acting on a flag, here) must recompute rating_avg/rating_count itself — the sweep only
+    // ever runs the aggregate for reviews *it* just released, so this was previously left stale.
+    if (flag.target_type === "review") {
+      const review = await queryOne<{ subject_id: string }>(`SELECT subject_id FROM reviews WHERE id = $1`, [flag.target_id]);
+      if (review) await recomputeRatingAggregate(review.subject_id);
+    }
     res.json({ ok: true });
   })
 );
@@ -169,8 +177,12 @@ adminRouter.post(
 adminRouter.post(
   "/reviews/:id/remove",
   asyncHandler(async (req, res) => {
-    const row = await queryOne(`UPDATE reviews SET status = 'removed' WHERE id = $1 RETURNING id`, [req.params.id]);
+    const row = await queryOne<{ id: string; subject_id: string }>(
+      `UPDATE reviews SET status = 'removed' WHERE id = $1 RETURNING id, subject_id`,
+      [req.params.id]
+    );
     if (!row) throw new ApiError(404, "Review not found");
+    await recomputeRatingAggregate(row.subject_id); // removing a visible review must not leave a stale rating_avg/count
     await logAudit(req.user!.id, "remove_review", req.params.id);
     res.json({ ok: true });
   })

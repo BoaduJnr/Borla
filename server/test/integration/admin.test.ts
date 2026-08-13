@@ -1,22 +1,9 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
-import bcrypt from "bcryptjs";
 import { createApp } from "../../src/app.js";
-import { signup, auth, testPhone } from "../helpers.js";
-import { query } from "../../src/db/pool.js";
+import { signup, auth, makeAdmin } from "../helpers.js";
 
 const app = createApp();
-
-async function makeAdmin() {
-  const phone = testPhone();
-  const password = "Test-Admin-Pw-1!";
-  await query(`INSERT INTO users (phone, role, display_name, verified, password_hash) VALUES ($1,'admin','Test Admin', true, $2)`, [
-    phone,
-    await bcrypt.hash(password, 10),
-  ]);
-  const login = await request(app).post("/api/auth/admin/login").send({ phone, password });
-  return { phone, access: login.body.access as string };
-}
 
 describe("admin portal (design §17)", () => {
   it("non-admin roles cannot reach /admin/* routes", async () => {
@@ -26,7 +13,7 @@ describe("admin portal (design §17)", () => {
   });
 
   it("verify flips a collector from blocked-to-go-online to allowed, and logs to audit_log", async () => {
-    const admin = await makeAdmin();
+    const admin = await makeAdmin(app);
     const collector = await signup(app, "collector");
 
     const blocked = await request(app)
@@ -49,7 +36,7 @@ describe("admin portal (design §17)", () => {
   });
 
   it("suspend blocks login-adjacent access; reinstate restores it", async () => {
-    const admin = await makeAdmin();
+    const admin = await makeAdmin(app);
     const household = await signup(app, "household");
 
     const suspend = await request(app)
@@ -69,7 +56,7 @@ describe("admin portal (design §17)", () => {
   });
 
   it("config values are live-tunable and rejects unknown keys", async () => {
-    const admin = await makeAdmin();
+    const admin = await makeAdmin(app);
     const ok = await request(app).patch("/api/admin/config/pin_ttl_minutes").set(auth(admin.access)).send({ value: 30 });
     expect(ok.status).toBe(200);
     expect(ok.body.config.value).toBe(30);
