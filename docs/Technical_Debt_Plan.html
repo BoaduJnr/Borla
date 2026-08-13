@@ -1,0 +1,211 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 12.5px;
+    max-width: 100%;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI", Arial, sans-serif; color: #0a5239; page-break-after: avoid; }
+  h1 { font-size: 22px; border-bottom: 3px solid #0e6e4e; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #dbd9ce; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin-top: 20px; color: #16241c; }
+  h4 { font-size: 12.5px; margin-top: 14px; color: #3e4a43; }
+  p, li { font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 11px; page-break-inside: auto; }
+  th, td { border: 1px solid #c9c7bb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e4f1ea; color: #0a5239; font-family: "Segoe UI", Arial, sans-serif; }
+  tr:nth-child(even) td { background: #fafaf6; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f1f0e8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  pre { background: #16241c; color: #dce7e0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 10px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #f5a208; margin: 12px 0; padding: 4px 14px; background: #fff1d2; color: #6b4e00; }
+  a { color: #0a5239; }
+  hr { border: none; border-top: 2px solid #dbd9ce; margin: 24px 0; }
+  .cover { text-align: center; padding-top: 20%; page-break-after: always; }
+  .cover h1 { font-size: 32px; border: none; }
+  .cover .sub { font-size: 15px; color: #3e4a43; margin-top: 6px; }
+  .cover .meta { margin-top: 60px; font-size: 13px; line-height: 2; }
+  ul, ol { padding-left: 22px; }
+  img, svg { max-width: 100%; }
+  .badge { display: inline-block; background: #e4f1ea; color: #0a5239; border-radius: 10px; padding: 2px 9px; font-size: 10.5px; font-weight: bold; font-family: Arial, sans-serif; }
+</style></head><body><div class="cover">
+<h1>Borla</h1>
+<div class="sub">Technical Debt Plan</div>
+<div class="meta">
+Student: <b>George Boadu Junior</b><br>
+Student ID: <b>22427354</b><br>
+Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
+Document: Technical_Debt_Plan.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+</div>
+</div><h2>1. How debt was tracked during the build</h2>
+<p>Every deliberate shortcut was written down <strong>as the decision was made</strong>, not reconstructed
+afterwards — most of the items below are quoted almost verbatim from code comments left at the
+exact line where the trade-off was taken (e.g. <code>server/src/jobs/index.ts</code>,
+<code>server/src/modules/auth/routes.ts</code>). This is the practice the course asks for: technical debt
+as a first-class, visible decision, not a silent shortcut discovered later.</p>
+<p>Each item below follows <strong>Debt → Cause → Impact → Priority → Proposed Resolution</strong>, and is
+labelled as one of:</p>
+<ul>
+<li>🟢 <strong>Acceptable temporarily</strong> — correct trade-off for a graded demo at pilot scale; revisit
+only if the project continues past this exam.</li>
+<li>🟡 <strong>Scheduled for future resolution</strong> — fine for now, but must be fixed before real users
+or a meaningful scale-up.</li>
+<li>🔴 <strong>Critical</strong> — must not reach real users in its current form.</li>
+</ul>
+<h2>2. Debt register</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Debt</th>
+<th>Cause</th>
+<th>Impact</th>
+<th>Priority</th>
+<th>Proposed resolution</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>TD-01</strong></td>
+<td>Review/reply moderation runs with <strong>no AI key by default</strong> — everything lands in a manual admin queue instead of being auto-screened.</td>
+<td>No Google AI Studio account was provisioned for this build; the moderation pipeline (<code>server/src/ai/moderation.ts</code>) checks <code>GEMINI_API_KEY</code> and no-ops if absent.</td>
+<td>Every review needs a human click before publishing; fine at demo volume (a handful of reviews), would not scale to real usage — but is explicitly the <em>safer</em> failure direction (fail-closed, not fail-open).</td>
+<td>🟡 Scheduled</td>
+<td>Provision a Gemini API key on Render (<code>GEMINI_API_KEY</code> env var, sync:false in <code>render.yaml</code> so it must be set manually) — the code path is already written and tested; this is a config change, not a code change.</td>
+</tr>
+<tr>
+<td><strong>TD-02</strong></td>
+<td><del>No real SMS gateway</del> — <strong>mostly resolved</strong>: <code>server/src/utils/sms.ts</code> sends the OTP via GiantSMS when <code>GIANTSMS_API_TOKEN</code>/<code>GIANTSMS_SENDER_ID</code> are configured, falling back to the in-app <code>devOtp</code> display only if the send fails or isn&#39;t configured. <strong>Confirmed live in production</strong>: <code>POST /api/auth/otp/request</code> against <code>https://borla.onrender.com</code> returned <code>{&quot;delivered&quot;:true}</code> — GiantSMS accepted the reconstructed request shape (auth header, <code>from</code>/<code>to</code>/<code>msg</code> body) for real, not just in theory.</td>
+<td>The HTTP contract was reconstructed from published third-party client libraries, not a first-party OpenAPI spec. Production accepted the request; actual handset delivery to a real number (the seeded demo number is a placeholder, not a live handset) has still not been visually confirmed.</td>
+<td>Low residual risk: the gateway accepting the request end-to-end (not just returning a generic 200) is strong evidence the integration is correct, but &quot;accepted by the gateway&quot; and &quot;arrived on a phone&quot; are not identical.</td>
+<td>🟡 Scheduled (down from 🔴 Critical — a real send now provably works at the HTTP layer)</td>
+<td>Confirm one delivery to a real handset, then remove the <code>devOtp</code> fallback field entirely so a failed send surfaces as a retryable error instead of a security bypass.</td>
+</tr>
+<tr>
+<td><strong>TD-03</strong></td>
+<td><strong>Native background geolocation was not built.</strong> Collectors only report position while their browser tab is open and in the foreground (<code>useGeolocation</code> <code>watchPosition</code>, no Capacitor/native service).</td>
+<td>Requires an Android toolchain, a background-location plugin (commercial or complex to configure), and a physical/emulated device to validate &quot;screen-off roaming&quot; — none available, and a native APK isn&#39;t gradable as a &quot;Live Application URL&quot; per the exam&#39;s own submission format.</td>
+<td>This is the single biggest gap from the original design&#39;s own risk register (<code>borla-technical-design.md</code> §14, risk #1) — a collector who backgrounds the app or locks their phone stops updating position, which is exactly the failure mode that erodes trust in the map.</td>
+<td>🔴 Critical (for any real pilot) / 🟢 Acceptable for this exam</td>
+<td>Wrap the existing shared React screens in Capacitor, add <code>@capacitor-community/background-geolocation</code>, and test on real low-end Android hardware (Tecno/Infinix/itel) per the original risk mitigation — no server-side change needed, since the API already accepts position updates from any authenticated client.</td>
+</tr>
+<tr>
+<td><strong>TD-04</strong></td>
+<td>Geolocation is <strong>on-demand/foreground only</strong> for households too, and the whole app requires a live network round-trip on every screen — no offline shell/service worker.</td>
+<td>Time-boxed build prioritised functional depth over the PWA offline story described in the original design (§11).</td>
+<td>App shows a blank/broken state with zero signal, instead of &quot;something&quot; (cached shell + last map view). Lower severity than TD-03 since households use the app briefly and on-demand.</td>
+<td>🟡 Scheduled</td>
+<td>Add a Vite/Workbox service worker caching the app shell + last known map view + saved home location; queue &quot;clear pin&quot; actions locally and flush on reconnect.</td>
+</tr>
+<tr>
+<td><strong>TD-05</strong></td>
+<td><strong>No Redis/BullMQ.</strong> Presence TTL, pin expiry, request timeout, and double-blind review release are all <code>node-cron</code> sweeps against Postgres directly; rate-limiting is a coarse in-memory per-IP limiter (<code>express-rate-limit</code>), not the design&#39;s per-collector notification cap.</td>
+<td>Provisioning a managed Redis instance is an extra account/service with no functional benefit at this traffic volume; BullMQ adds retry/backoff semantics that matter only once notification volume is real.</td>
+<td>All scheduled-job state is <strong>lost on process restart</strong> (a mid-flight sweep just re-runs on the next tick — acceptable, since every sweep is idempotent by construction) and <strong>cannot scale past one Node instance</strong> (Socket.IO has no Redis adapter either, so multi-instance deployments would silently drop events to users connected to a different instance).</td>
+<td>🟡 Scheduled</td>
+<td>Add Upstash/Render Redis, move the four cron sweeps to BullMQ repeatable/delayed jobs, wire the Socket.IO Redis adapter, and replace the per-IP limiter with the design&#39;s per-collector <code>ratelimit:notif:{id}</code> counter — all four sweeps already have clean, small, idempotent bodies (<code>server/src/jobs/index.ts</code>) so the migration is mostly infrastructure, not logic rewrite.</td>
+</tr>
+<tr>
+<td><strong>TD-06</strong></td>
+<td><strong>Admin auth has no 2FA</strong> — phone + password only (<code>bcrypt</code>-hashed), same JWT mechanism as household/collector, instead of the original design&#39;s &quot;stronger auth than the field apps.&quot;</td>
+<td>Full 2FA (TOTP/SMS) needs either the same missing SMS gateway (TD-02) or a new TOTP flow — both extra scope for an account class that, in this build, is a single seeded demo user.</td>
+<td>An admin account compromise is higher blast radius than a household/collector one (can suspend users, remove content) — acceptable only because there is exactly one demo admin account behind a strong generated password, never exposed publicly except in the graded credentials file.</td>
+<td>🔴 Critical (before real ops staff use it)</td>
+<td>Add TOTP (e.g. <code>otplib</code>) gated behind the existing <code>role=&#39;admin&#39;</code> check; store a <code>totp_secret</code> column already anticipated by the schema&#39;s extensibility (JSONB <code>app_config</code> pattern could hold it, or a dedicated column).</td>
+</tr>
+<tr>
+<td><strong>TD-07</strong></td>
+<td>The standalone <code>admins</code> table from the original design was <strong>folded into <code>users.role = &#39;admin&#39;</code></strong> with a nullable <code>password_hash</code> column that only admins use.</td>
+<td>Reduces schema surface for a single-admin demo; avoids a parallel user model.</td>
+<td>Slight modelling smell — <code>password_hash</code> is <code>NULL</code> for 99% of rows (households/collectors) — and there is no dedicated <code>admins.role</code> tier (<code>ops</code>/<code>moderator</code>/<code>superadmin</code> from the original design).</td>
+<td>🟢 Acceptable</td>
+<td>If multiple admin tiers are ever needed, split back into a dedicated <code>admins</code> table with its own role enum, migrated via a straightforward <code>INSERT ... SELECT</code> from <code>users WHERE role=&#39;admin&#39;</code>.</td>
+</tr>
+<tr>
+<td><strong>TD-08</strong></td>
+<td><strong>Leaflet + raw OpenStreetMap raster tiles</strong> instead of the original design&#39;s MapLibre GL + vector tiles.</td>
+<td>Zero-config: no tile-provider account/key needed, which matters when nobody is provisioning new accounts mid-exam.</td>
+<td>Slightly less crisp rendering and no offline vector caching; functionally equivalent for markers/popups/radius visualisation, which is all this build needs.</td>
+<td>🟢 Acceptable</td>
+<td>Swap the <code>MapView</code> component&#39;s tile layer for a MapLibre + vector source once a tile provider (e.g. MapTiler free tier) is chosen — the component&#39;s public interface (<code>center</code>, <code>points</code>) would not need to change.</td>
+</tr>
+<tr>
+<td><strong>TD-09</strong></td>
+<td><strong>No i18n beyond English</strong>, despite the original design and the low-literacy design brief calling for Twi/Ga from day one.</td>
+<td>Time-boxed; English-only was the fastest path to a fully functional, testable app across every screen.</td>
+<td>Directly works against the stated accessibility goal for the target users.</td>
+<td>🟡 Scheduled</td>
+<td>The UI already isolates copy inside JSX rather than scattering it — introduce <code>react-i18next</code> (or the originally-planned <code>packages/shared/i18n</code>) and extract strings; start with Twi and Ga per the pilot-neighbourhood plan.</td>
+</tr>
+<tr>
+<td><strong>TD-10</strong></td>
+<td><strong>Automated test coverage is broad, not deep.</strong> 31 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
+<td>A time-boxed exam favoured &quot;every module has real integration tests&quot; over &quot;one module is exhaustively tested&quot; — a deliberate breadth-over-depth call, consistent with §7.7 of the SRS.</td>
+<td>Edge cases in less-tested paths (e.g. concurrent double-accept races under real network latency, malformed geo payloads) are not proven safe, only reasoned about.</td>
+<td>🟡 Scheduled</td>
+<td>Add property-based tests for the geospatial radius math, a concurrency test that fires accept+reject simultaneously against the same request to prove the conditional-update guard under real contention (not just sequential calls), and React Testing Library coverage for <code>HouseholdHome</code>/<code>CollectorHome</code>.</td>
+</tr>
+<tr>
+<td><strong>TD-11</strong></td>
+<td><strong>Photo → waste-type AI classification was not built</strong> (§18 Job B in the original design).</td>
+<td>Explicitly deprioritised behind moderation (Job A) per the original design&#39;s own value ranking — moderation is the safety-critical one; photo classification is a UX nicety.</td>
+<td>Households still pick a waste-type tile manually instead of snapping a photo — a real but non-blocking gap for low-literacy accessibility.</td>
+<td>🟡 Scheduled</td>
+<td>Reuse the existing <code>aiClient</code>-shaped moderation module&#39;s pattern: a second thin wrapper calling Gemini&#39;s multimodal endpoint, wired to a new <code>POST /broadcasts</code> image field, client-side downscaled before upload.</td>
+</tr>
+<tr>
+<td><strong>TD-12</strong></td>
+<td><strong>Provider call-masking was not built</strong> — accepted requests reveal each party&#39;s real phone number (&quot;reveal-on-accept&quot;, the original design&#39;s own recommended v1 approach, §10 option 1).</td>
+<td>This <em>is</em> the design&#39;s own recommended v1 trade-off, not a shortcut taken under exam pressure — kept as-is deliberately.</td>
+<td>Real phone numbers are exchanged between two people who chose each other via an accepted request — acceptable given the low stakes described in the original design.</td>
+<td>🟢 Acceptable</td>
+<td>Add provider number-masking (e.g. via Hubtel) only if abuse reports or scale warrant the added per-call cost, exactly as the original design already prescribes.</td>
+</tr>
+<tr>
+<td><strong>TD-13</strong></td>
+<td><strong>Single Render Web Service, no staging environment, no CI pipeline beyond local <code>npm test</code>.</strong></td>
+<td>Free-tier, single-service deploy was the fastest path to a real &quot;Live Application URL&quot; within the exam window.</td>
+<td>A bad commit reaches production directly; no automated gate before deploy.</td>
+<td>🟡 Scheduled</td>
+<td>Add a GitHub Actions workflow running <code>npm test</code> on every push (config-only change, no app-code change needed) and a second Render environment for staging before promoting to the graded URL.</td>
+</tr>
+</tbody></table>
+<h2>3. Debt NOT taken — deliberate design choices worth naming</h2>
+<p>To be explicit about the difference between <em>debt</em> (a shortcut that should eventually be paid
+down) and a <em>considered trade-off that stays</em>: the no-collector-binding broadcast plane, the
+absence of in-app payments, and reveal-on-accept-instead-of-provider-masking are not technical
+debt — they are the original design&#39;s own architecture, kept unchanged because they are still
+the right call at this scale (see <code>borla-technical-design.md</code> §1 and §10, and TD-12 above).</p>
+<h2>4. Repayment plan by phase</h2>
+<p>This maps directly onto <code>Project_Documentation.md</code> §15 (Maintenance &amp; Future Evolution):</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Items paid down</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>v1.1 (immediate post-submission, if continued)</strong></td>
+<td>TD-06 (admin 2FA) — the one remaining 🔴 Critical item, must land before any real admin touches the system; confirm one real GiantSMS handset delivery to fully close TD-02</td>
+</tr>
+<tr>
+<td><strong>v1.2</strong></td>
+<td>TD-01 (provision Gemini key in production), TD-13 (CI pipeline)</td>
+</tr>
+<tr>
+<td><strong>v1.3</strong></td>
+<td>TD-03 (native Capacitor collector app + background geolocation) — the single biggest lift, matched to the original design&#39;s own phased roadmap</td>
+</tr>
+<tr>
+<td><strong>v2.0</strong></td>
+<td>TD-05 (Redis/BullMQ + Socket.IO Redis adapter, needed once traffic outgrows one instance), TD-09 (i18n), TD-04 (offline PWA shell), TD-11 (photo classification)</td>
+</tr>
+<tr>
+<td><strong>Ongoing</strong></td>
+<td>TD-10 (expand test depth every time a new bug class is found in production)</td>
+</tr>
+</tbody></table>
+</body></html>

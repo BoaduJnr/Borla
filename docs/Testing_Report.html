@@ -1,0 +1,462 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 12.5px;
+    max-width: 100%;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI", Arial, sans-serif; color: #0a5239; page-break-after: avoid; }
+  h1 { font-size: 22px; border-bottom: 3px solid #0e6e4e; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #dbd9ce; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin-top: 20px; color: #16241c; }
+  h4 { font-size: 12.5px; margin-top: 14px; color: #3e4a43; }
+  p, li { font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 11px; page-break-inside: auto; }
+  th, td { border: 1px solid #c9c7bb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e4f1ea; color: #0a5239; font-family: "Segoe UI", Arial, sans-serif; }
+  tr:nth-child(even) td { background: #fafaf6; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f1f0e8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  pre { background: #16241c; color: #dce7e0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 10px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #f5a208; margin: 12px 0; padding: 4px 14px; background: #fff1d2; color: #6b4e00; }
+  a { color: #0a5239; }
+  hr { border: none; border-top: 2px solid #dbd9ce; margin: 24px 0; }
+  .cover { text-align: center; padding-top: 20%; page-break-after: always; }
+  .cover h1 { font-size: 32px; border: none; }
+  .cover .sub { font-size: 15px; color: #3e4a43; margin-top: 6px; }
+  .cover .meta { margin-top: 60px; font-size: 13px; line-height: 2; }
+  ul, ol { padding-left: 22px; }
+  img, svg { max-width: 100%; }
+  .badge { display: inline-block; background: #e4f1ea; color: #0a5239; border-radius: 10px; padding: 2px 9px; font-size: 10.5px; font-weight: bold; font-family: Arial, sans-serif; }
+</style></head><body><div class="cover">
+<h1>Borla</h1>
+<div class="sub">Testing Report</div>
+<div class="meta">
+Student: <b>George Boadu Junior</b><br>
+Student ID: <b>22427354</b><br>
+Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
+Document: Testing_Report.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+</div>
+</div><h2>1. Test strategy</h2>
+<p>Four layers, in the order they were actually run during the build:</p>
+<ol>
+<li><strong>Unit tests</strong> (Vitest) — pure functions with no I/O: OTP hashing/verification, the
+quiet-hours time-window predicate.</li>
+<li><strong>Integration tests</strong> (Vitest + Supertest) — the real Express app (<code>createApp()</code>) against a
+real PostgreSQL+PostGIS instance (a local Docker container running the exact same
+<code>postgis/postgis:16-3.4</code> image family Render uses), covering every route&#39;s happy path and its
+most important failure mode.</li>
+<li><strong>Component tests</strong> (Vitest + React Testing Library) — client-side rendering/interaction
+logic in isolation, with <code>fetch</code> mocked.</li>
+<li><strong>System / User Acceptance Testing</strong> — manual, scripted, end-to-end walkthroughs against the
+running application (server + Postgres + browser), exercising both roles and the admin
+console exactly as a real user would.</li>
+</ol>
+<p>Security and usability checks (§5, §6) were folded into the same passes rather than run as a
+separate phase, which is appropriate at this scale.</p>
+<h2>2. Automated test results</h2>
+<h3>2.1 Server (<code>npm run test -w server</code>)</h3>
+<pre><code>✓ test/unit/otp.test.ts (3 tests)
+✓ test/unit/quietHours.test.ts (4 tests)
+✓ test/unit/sms.test.ts (3 tests)
+✓ test/integration/auth.test.ts (8 tests)
+✓ test/integration/broadcasts.test.ts (4 tests)
+✓ test/integration/requests.test.ts (4 tests)
+✓ test/integration/reviews.test.ts (4 tests)
+✓ test/integration/admin.test.ts (4 tests)
+
+ Test Files  8 passed (8)
+      Tests  34 passed (34)
+   Duration  14.60s
+</code></pre>
+<h3>2.2 Client (<code>npm run test -w client</code>)</h3>
+<pre><code>✓ src/pages/StatusChip.test.tsx (2 tests)
+✓ src/components/ReviewForm.test.tsx (2 tests)
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+</code></pre>
+<p><strong>Total: 38/38 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
+repository root (requires a reachable Postgres+PostGIS — see <code>README.md</code>).</p>
+<h2>3. Test case log</h2>
+<p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
+&quot;Actual result&quot; reflects the real run, including two real defects caught and fixed during
+development (rows T-08 and T-19).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Test case</th>
+<th>Layer</th>
+<th>Expected result</th>
+<th>Actual result</th>
+<th>Pass/Fail</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T-01</td>
+<td>Request an OTP for a brand-new phone number with no <code>role</code></td>
+<td>Integration</td>
+<td><code>400</code> — role required to sign up</td>
+<td><code>400</code> returned with actionable message</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-02</td>
+<td>Request an OTP, verify with the correct code</td>
+<td>Integration</td>
+<td>New user created, <code>access</code>/<code>refresh</code> issued</td>
+<td>User created with <code>role=&#39;household&#39;</code>, tokens returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-03</td>
+<td>Verify with an incorrect 6-digit code</td>
+<td>Integration</td>
+<td><code>400</code>, attempt counter incremented</td>
+<td><code>400</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-04</td>
+<td>Re-use an already-consumed OTP code</td>
+<td>Integration</td>
+<td><code>400</code> — rejected as already used</td>
+<td><code>400</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-05</td>
+<td><code>GET /auth/me</code> with no bearer token</td>
+<td>Integration</td>
+<td><code>401</code></td>
+<td><code>401</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-06</td>
+<td><code>GET /auth/me</code> with a valid token</td>
+<td>Integration</td>
+<td><code>200</code> with role-specific profile</td>
+<td><code>200</code>, <code>profile.alert_radius_m</code> present for household</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-07</td>
+<td>Admin login with a non-admin phone number</td>
+<td>Integration</td>
+<td><code>401</code></td>
+<td><code>401</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-08</td>
+<td><strong>(defect)</strong> OTP-verify signup path for a brand-new number</td>
+<td>Integration (found while writing T-02)</td>
+<td>New user row created with the requested role</td>
+<td><strong>First implementation threw <code>role_missing</code> inside a dead transaction branch and never created the user</strong> — see §4</td>
+<td>Fail → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-09</td>
+<td>Collector attempts to go online before admin verification</td>
+<td>Integration</td>
+<td><code>403</code></td>
+<td><code>403</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-10</td>
+<td>Verified + online collector, household broadcasts nearby</td>
+<td>Integration</td>
+<td>Fan-out notifies ≥1 collector; pin appears in that collector&#39;s <code>/pins/nearby</code></td>
+<td><code>notifiedCollectors: 1</code>; pin present with correct <code>distance_m</code></td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-11</td>
+<td>Household creates a second broadcast while one is active</td>
+<td>Integration</td>
+<td><code>409</code></td>
+<td><code>409</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-12</td>
+<td>Collector role attempts to create a broadcast</td>
+<td>Integration</td>
+<td><code>403</code> (role guard)</td>
+<td><code>403</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-13</td>
+<td>Household requests an <strong>offline</strong> collector</td>
+<td>Integration</td>
+<td><code>409</code></td>
+<td><code>409</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-14</td>
+<td>Full request lifecycle: requested → seen → accepted, contact reveal timing</td>
+<td>Integration</td>
+<td>Phone numbers absent pre-accept, present post-accept</td>
+<td>Confirmed via direct field assertion pre/post</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-15</td>
+<td>Reject a request <strong>after</strong> it was already accepted</td>
+<td>Integration</td>
+<td><code>409</code>, status stays <code>accepted</code> (not resurrected to <code>rejected</code>)</td>
+<td><code>409</code> returned, status unchanged</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-16</td>
+<td>A collector who wasn&#39;t the request&#39;s target tries to accept it</td>
+<td>Integration</td>
+<td><code>409</code> (conditional update matches 0 rows)</td>
+<td><code>409</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-17</td>
+<td>Review submitted against a request that is <strong>not yet accepted</strong></td>
+<td>Integration</td>
+<td><code>400</code></td>
+<td><code>400</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-18</td>
+<td>Duplicate review on the same accepted request</td>
+<td>Integration</td>
+<td><code>409</code> (unique constraint)</td>
+<td><code>409</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-19</td>
+<td><strong>(defect)</strong> Reply to a review before it is moderation-visible</td>
+<td>Integration (found while writing this test)</td>
+<td><code>400</code> — cannot reply to a non-visible review</td>
+<td><strong>First implementation only checked <code>subject_id</code>, not <code>status</code>, allowing a reply on a still-pending review</strong> — see §4</td>
+<td>Fail → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-20</td>
+<td>Second reply attempt on an already-replied review</td>
+<td>Integration</td>
+<td><code>409</code> (one reply per review)</td>
+<td><code>409</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-21</td>
+<td>Admin verifies a collector; collector can now go online; action appears in audit log</td>
+<td>Integration</td>
+<td><code>200</code> → <code>200</code>; <code>audit_log</code> contains <code>verify_collector</code></td>
+<td>All three confirmed</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-22</td>
+<td>Admin suspends a household; suspended user&#39;s <code>/auth/me</code> is blocked; reinstate restores access</td>
+<td>Integration</td>
+<td><code>403</code> while suspended, <code>200</code> after reinstatement</td>
+<td>Confirmed</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-23</td>
+<td>Admin edits an unknown config key</td>
+<td>Integration</td>
+<td><code>404</code></td>
+<td><code>404</code> returned</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-24</td>
+<td>Full <strong>system walkthrough</strong>: household broadcast → collector sees pin on map → household clears it</td>
+<td>System/UAT (manual, live server)</td>
+<td>Pin visible then gone from collector&#39;s feed</td>
+<td>Verified against the running app with real curl/browser sessions</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-25</td>
+<td>Full <strong>system walkthrough</strong>: direct request → accept → contact reveal → review both sides → double-blind release fires within the 2-minute sweep window</td>
+<td>System/UAT (manual, live server)</td>
+<td>Both reviews become visible <strong>simultaneously</strong>, rating aggregates recompute correctly</td>
+<td><code>rating_avg</code>/<code>rating_count</code> confirmed via direct DB query after the sweep ran</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-26</td>
+<td>Manual moderation fallback (no <code>GEMINI_API_KEY</code> set)</td>
+<td>System/UAT</td>
+<td>Submitted reviews appear in <code>/admin/moderation/queue → awaitingManual</code>, not silently published</td>
+<td>Confirmed — both test reviews appeared, required explicit admin approval</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-27</td>
+<td>Quiet-hours predicate across a midnight-wrapping window</td>
+<td>Unit</td>
+<td>Inside/outside window classified correctly at boundaries</td>
+<td>4/4 boundary cases correct</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-28</td>
+<td>OTP hash/verify round-trip and mismatch rejection</td>
+<td>Unit</td>
+<td>Correct code verifies true, wrong code false</td>
+<td>Both confirmed</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-29</td>
+<td><code>StatusChip</code> renders the correct label for every request status + an unknown fallback</td>
+<td>Component</td>
+<td>Exact label text present for each of 5 statuses + fallback</td>
+<td>Confirmed</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-30</td>
+<td><code>ReviewForm</code> treats a <code>409</code> (already reviewed) the same as success</td>
+<td>Component</td>
+<td>Renders the thank-you state, not an error banner</td>
+<td>Confirmed</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-31</td>
+<td>Production client build (<code>vite build</code>) and server build (<code>tsc</code>) both compile clean</td>
+<td>Build/System</td>
+<td>Zero TypeScript errors, bundle produced</td>
+<td>Both confirmed (<code>tsc --noEmit</code> clean; <code>dist/</code> produced)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-32</td>
+<td>GiantSMS phone-number normalisation (<code>+233…</code> / <code>233…</code> → local <code>0…</code> form)</td>
+<td>Unit</td>
+<td>Both prefixes normalise to the same local number; an already-local number is untouched</td>
+<td>3/3 cases correct</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-33</td>
+<td>GiantSMS end-to-end request against the real funded account, production</td>
+<td>System (live)</td>
+<td>Gateway accepts the send request</td>
+<td><code>POST /api/auth/otp/request</code> against <code>https://borla.onrender.com</code> returned <code>{&quot;delivered&quot;:true}</code> — GiantSMS accepted the request at the HTTP layer. Actual handset receipt not visually confirmed (test number is a placeholder, not a live phone)</td>
+<td>Pass (partial — see Technical_Debt_Plan.md TD-02)</td>
+</tr>
+</tbody></table>
+<h2>4. Defects found during development</h2>
+<table>
+<thead>
+<tr>
+<th>Defect</th>
+<th>Where</th>
+<th>Root cause</th>
+<th>Corrective action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>D-01</td>
+<td><code>server/src/utils/jwt.ts</code></td>
+<td><code>jsonwebtoken</code>&#39;s TypeScript types don&#39;t accept a plain <code>string</code> for <code>expiresIn</code> (expects its own <code>StringValue</code> literal union)</td>
+<td>Cast through <code>jwt.SignOptions[&quot;expiresIn&quot;]</code> explicitly rather than loosening the type globally</td>
+</tr>
+<tr>
+<td>D-02</td>
+<td><code>server/src/modules/auth/routes.ts</code> (OTP verify)</td>
+<td>An early draft wrapped user-creation in a transaction block that threw a sentinel error (<code>role_missing</code>) to short-circuit — but the <code>catch</code> swallowed it without ever inserting the user, so first-time signup silently returned an &quot;unexpected signup state&quot; error</td>
+<td>Rewritten as a straight-line <code>if (!user) { ...INSERT... }</code> with no transaction/sentinel-error indirection; covered by T-02/T-08</td>
+</tr>
+<tr>
+<td>D-03</td>
+<td><code>server/src/seed.ts</code></td>
+<td>First draft referenced a non-existent <code>verified_note</code> column on <code>collectors</code> (copy-paste artefact) wrapped in a silent <code>.catch()</code> fallback that masked the real error</td>
+<td>Removed the phantom column and the <code>.catch()</code> swallow entirely; seed now fails loudly if it ever breaks again</td>
+</tr>
+<tr>
+<td>D-04</td>
+<td><code>server/src/modules/reviews/routes.ts</code> (reply endpoint)</td>
+<td>Only checked <code>review.subject_id === user.id</code>, not <code>review.status === &#39;visible&#39;</code>, so a reply could be posted on a still-hidden/pending review</td>
+<td>Added the status check; covered by T-19</td>
+</tr>
+</tbody></table>
+<p>All four were caught by writing the test suite immediately after the corresponding feature,
+not by separate manual QA — direct evidence for why TD-10 (test depth) is listed as
+&quot;scheduled,&quot; not &quot;critical&quot;: the practice worked, it just hasn&#39;t been extended to every corner
+of the app yet.</p>
+<h2>5. Security testing</h2>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Method</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Every mutating/reading-sensitive route requires a valid JWT</td>
+<td>Automated (T-05, T-12, T-16, T-22) + manual <code>curl</code> without a token</td>
+<td>Consistently <code>401</code>/<code>403</code></td>
+</tr>
+<tr>
+<td>SQL injection surface</td>
+<td>Code review — every query in <code>server/src/modules/**</code> uses parameterised <code>$1..$n</code> placeholders, none concatenate user input into SQL</td>
+<td>No string-built SQL found</td>
+</tr>
+<tr>
+<td>OTP brute-force / spam</td>
+<td>Code review + manual test</td>
+<td>5-per-10-minutes request cap and a 5-attempt verify cap are enforced (<code>otp/routes.ts</code>); acknowledged as coarse, see TD-05</td>
+</tr>
+<tr>
+<td>Role escalation (collector calling household-only routes, etc.)</td>
+<td>Automated (T-12) + manual <code>curl</code> across all role-gated routes</td>
+<td>Consistently <code>403</code></td>
+</tr>
+<tr>
+<td>Contact information leakage pre-accept</td>
+<td>Automated (T-14)</td>
+<td>Phone fields verified absent from the JSON payload itself (not just hidden in the UI) before acceptance</td>
+</tr>
+<tr>
+<td>Secrets handling</td>
+<td>Code review</td>
+<td>JWT secrets and the Gemini key are read from environment variables only, never committed (<code>.env</code> is git-ignored, <code>.env.example</code> has placeholders)</td>
+</tr>
+</tbody></table>
+<h2>6. Usability testing</h2>
+<p>A short heuristic pass against the approved <code>borla_UI_design.html</code> design system: tap targets
+≥44px (<code>.btn</code> padding), icon-first primary actions (&quot;🔔 I HAVE WASTE&quot;, &quot;🚛 Go online&quot;), a
+single primary action per screen, and colour contrast matching the approved palette (green/
+marigold/coral on a warm paper background). Confirmed manually in-browser at mobile viewport
+widths (390px, 414px) and desktop.</p>
+<h2>7. Performance testing</h2>
+<p>Out of scope at pilot scale by design (see SRS NFR discussion) — the one performance-relevant
+check performed was confirming the PostGIS <code>ST_DWithin</code>/<code>GEOSEARCH</code>-equivalent nearby queries
+use the <code>GIST</code> index created in <code>001_init.sql</code> (<code>EXPLAIN</code> on <code>broadcasts_loc_gix</code> confirmed an
+index scan, not a sequential scan, even against the small seeded dataset).</p>
+<h2>8. What was NOT tested (honestly stated, ties to Technical_Debt_Plan.md TD-10)</h2>
+<p>Visual confirmation of a GiantSMS text actually arriving on a real handset (T-33 confirmed the
+gateway <em>accepts</em> the request in production; the seeded demo number is a placeholder, not a
+live phone someone was watching); concurrent double-accept under real
+network race conditions (only sequential-call idempotency is proven); load/stress testing;
+cross-browser automated testing (manual only); the four
+<code>CollectorHome</code>/<code>HouseholdHome</code>/<code>AdminDashboard</code>/<code>Profile</code> React pages have no component tests
+yet, only the two smaller components (<code>StatusChip</code>, <code>ReviewForm</code>).</p>
+</body></html>

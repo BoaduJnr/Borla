@@ -100,7 +100,7 @@ development (rows T-08 and T-19).
 | T-30 | `ReviewForm` treats a `409` (already reviewed) the same as success | Component | Renders the thank-you state, not an error banner | Confirmed | Pass |
 | T-31 | Production client build (`vite build`) and server build (`tsc`) both compile clean | Build/System | Zero TypeScript errors, bundle produced | Both confirmed (`tsc --noEmit` clean; `dist/` produced) | Pass |
 | T-32 | GiantSMS phone-number normalisation (`+233…` / `233…` → local `0…` form) | Unit | Both prefixes normalise to the same local number; an already-local number is untouched | 3/3 cases correct | Pass |
-| T-33 | GiantSMS end-to-end SMS delivery against the real funded account | Not run | — | **Not exercised** — the HTTP contract was reconstructed from third-party client libraries, not confirmed with a real send (Technical_Debt_Plan.md TD-02) | N/A |
+| T-33 | GiantSMS end-to-end request against the real funded account, production | System (live) | Gateway accepts the send request | `POST /api/auth/otp/request` against `https://borla.onrender.com` returned `{"delivered":true}` — GiantSMS accepted the request at the HTTP layer. Actual handset receipt not visually confirmed (test number is a placeholder, not a live phone) | Pass (partial — see Technical_Debt_Plan.md TD-02) |
 
 ## 4. Defects found during development
 
@@ -144,9 +144,9 @@ index scan, not a sequential scan, even against the small seeded dataset).
 
 ## 8. What was NOT tested (honestly stated, ties to Technical_Debt_Plan.md TD-10)
 
-Real end-to-end SMS delivery via GiantSMS (T-33 — deliberately not fired against the funded
-account during this test pass to avoid burning real SMS credit on an unverified integration;
-the safe fallback to on-screen OTP was verified instead); concurrent double-accept under real
+Visual confirmation of a GiantSMS text actually arriving on a real handset (T-33 confirmed the
+gateway *accepts* the request in production; the seeded demo number is a placeholder, not a
+live phone someone was watching); concurrent double-accept under real
 network race conditions (only sequential-call idempotency is proven); load/stress testing;
 cross-browser automated testing (manual only); the four
 `CollectorHome`/`HouseholdHome`/`AdminDashboard`/`Profile` React pages have no component tests

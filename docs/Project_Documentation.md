@@ -265,45 +265,34 @@ Supporting tables not pictured: `otp_codes` (OTP hashes/expiry), `broadcast_noti
   </style>
   <rect x="150" y="10" width="600" height="460" class="sysbox"/>
   <text x="450" y="30" text-anchor="middle" font-size="13" fill="#6b7a70" font-weight="bold">Borla</text>
-
-  <!-- Household actor -->
   <circle cx="60" cy="90" r="14" class="actor"/>
   <line x1="60" y1="104" x2="60" y2="140" stroke="#16241c"/>
   <line x1="35" y1="115" x2="85" y2="115" stroke="#16241c"/>
   <line x1="60" y1="140" x2="40" y2="165" stroke="#16241c"/>
   <line x1="60" y1="140" x2="80" y2="165" stroke="#16241c"/>
   <text x="60" y="185" class="actorlbl">Household</text>
-
-  <!-- Collector actor -->
   <circle cx="60" cy="260" r="14" class="actor"/>
   <line x1="60" y1="274" x2="60" y2="310" stroke="#16241c"/>
   <line x1="35" y1="285" x2="85" y2="285" stroke="#16241c"/>
   <line x1="60" y1="310" x2="40" y2="335" stroke="#16241c"/>
   <line x1="60" y1="310" x2="80" y2="335" stroke="#16241c"/>
   <text x="60" y="355" class="actorlbl">Collector</text>
-
-  <!-- Admin actor -->
   <circle cx="60" cy="410" r="14" class="actor"/>
   <line x1="60" y1="424" x2="60" y2="450" stroke="#16241c"/>
   <text x="60" y="470" class="actorlbl">Admin</text>
-
-  <!-- use cases -->
   <ellipse cx="280" cy="55" rx="85" ry="24" class="uc"/><text x="280" y="59" class="uctxt">Register / Login (OTP)</text>
   <ellipse cx="280" cy="110" rx="85" ry="24" class="uc"/><text x="280" y="114" class="uctxt">Create / clear broadcast</text>
   <ellipse cx="280" cy="165" rx="85" ry="24" class="uc"/><text x="280" y="169" class="uctxt">Send direct request</text>
   <ellipse cx="280" cy="220" rx="85" ry="24" class="uc"/><text x="280" y="224" class="uctxt">Submit review / reply</text>
-
   <ellipse cx="280" cy="280" rx="85" ry="24" class="uc"/><text x="280" y="284" class="uctxt">Go online / heartbeat</text>
   <ellipse cx="280" cy="335" rx="85" ry="24" class="uc"/><text x="280" y="339" class="uctxt">View nearby pins / requests</text>
   <ellipse cx="280" cy="390" rx="85" ry="24" class="uc"/><text x="280" y="394" class="uctxt">Accept / reject request</text>
-
   <ellipse cx="620" cy="80" rx="95" ry="24" class="uc"/><text x="620" y="84" class="uctxt">Verify / suspend user</text>
   <ellipse cx="620" cy="135" rx="95" ry="24" class="uc"/><text x="620" y="139" class="uctxt">Resolve moderation queue</text>
   <ellipse cx="620" cy="190" rx="95" ry="24" class="uc"/><text x="620" y="194" class="uctxt">View live stats / map</text>
   <ellipse cx="620" cy="245" rx="95" ry="24" class="uc"/><text x="620" y="249" class="uctxt">Tune app config</text>
   <ellipse cx="480" cy="330" rx="95" ry="24" class="uc"/><text x="480" y="334" class="uctxt">Reveal contact (post-accept)</text>
   <ellipse cx="480" cy="390" rx="95" ry="24" class="uc"/><text x="480" y="394" class="uctxt">AI / manual moderation</text>
-
   <line class="link" x1="74" y1="90" x2="195" y2="55"/>
   <line class="link" x1="74" y1="90" x2="195" y2="110"/>
   <line class="link" x1="74" y1="90" x2="195" y2="165"/>
@@ -444,9 +433,11 @@ check gap) — full detail, every test case, and both defect write-ups are in `T
 ## 12. Technical debt
 
 Thirteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
-Resolution. Two are 🔴 Critical (admin has no 2FA; the GiantSMS integration is unverified
-against a live send), five are 🟡 Scheduled, and the rest are 🟢 Acceptable deliberate
-trade-offs. The single largest is the missing native background-location collector app
+Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
+GiantSMS OTP integration, which was **confirmed live in production** (the gateway accepted a
+real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢
+Acceptable deliberate trade-offs. The single largest is the missing native background-location
+collector app
 (TD-03) — the original design's own #1 risk — deliberately left as the biggest future-evolution
 item rather than attempted unsafely inside the exam window. Full register, priorities, and a
 phased repayment plan are in `Technical_Debt_Plan.md`.
@@ -507,7 +498,8 @@ adjusted for what this build already covers:
 This is a web-only build: collectors only report position while their browser tab is open and
 foregrounded (no native background service — TD-03), which the original design itself identifies
 as the single biggest reliability risk for a real deployment. OTP delivery via GiantSMS is
-real but unverified against a live send (TD-02). Admin authentication has no 2FA (TD-06). Test
+confirmed live in production at the HTTP layer but not yet confirmed to a real handset (TD-02).
+Admin authentication has no 2FA (TD-06). Test
 coverage is broad across every module but not exhaustive within any one of them (TD-10). The
 system has only ever run against a handful of seeded/manually-created accounts — it has not
 been load-tested.

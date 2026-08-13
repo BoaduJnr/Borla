@@ -1,0 +1,166 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 12.5px;
+    max-width: 100%;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI", Arial, sans-serif; color: #0a5239; page-break-after: avoid; }
+  h1 { font-size: 22px; border-bottom: 3px solid #0e6e4e; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #dbd9ce; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin-top: 20px; color: #16241c; }
+  h4 { font-size: 12.5px; margin-top: 14px; color: #3e4a43; }
+  p, li { font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 11px; page-break-inside: auto; }
+  th, td { border: 1px solid #c9c7bb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e4f1ea; color: #0a5239; font-family: "Segoe UI", Arial, sans-serif; }
+  tr:nth-child(even) td { background: #fafaf6; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f1f0e8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  pre { background: #16241c; color: #dce7e0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 10px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #f5a208; margin: 12px 0; padding: 4px 14px; background: #fff1d2; color: #6b4e00; }
+  a { color: #0a5239; }
+  hr { border: none; border-top: 2px solid #dbd9ce; margin: 24px 0; }
+  .cover { text-align: center; padding-top: 20%; page-break-after: always; }
+  .cover h1 { font-size: 32px; border: none; }
+  .cover .sub { font-size: 15px; color: #3e4a43; margin-top: 6px; }
+  .cover .meta { margin-top: 60px; font-size: 13px; line-height: 2; }
+  ul, ol { padding-left: 22px; }
+  img, svg { max-width: 100%; }
+  .badge { display: inline-block; background: #e4f1ea; color: #0a5239; border-radius: 10px; padding: 2px 9px; font-size: 10.5px; font-weight: bold; font-family: Arial, sans-serif; }
+</style></head><body><div class="cover">
+<h1>Borla</h1>
+<div class="sub">User Manual</div>
+<div class="meta">
+Student: <b>George Boadu Junior</b><br>
+Student ID: <b>22427354</b><br>
+Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
+Document: User_Manual.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+</div>
+</div><h2>1. What Borla is</h2>
+<p>Borla connects households that have waste to dispose of with nearby collectors who are online
+and looking for work. There are two ways to get matched:</p>
+<ul>
+<li><strong>Broadcast</strong> — tap &quot;I HAVE WASTE&quot; and every nearby online collector sees a pin on their map.
+Whoever gets there first collects it; you clear the pin the moment someone shows up.</li>
+<li><strong>Direct request</strong> — pick one specific collector from the map and send them a request; they
+accept or reject it, and if they accept, you can both see and call each other.</li>
+</ul>
+<h2>2. Logging in (all roles)</h2>
+<ol>
+<li>Open the app&#39;s URL (see <code>Deployment_and_Source_Links.txt</code>).</li>
+<li>Enter your phone number.</li>
+<li>If it&#39;s a brand-new number, pick <strong>Household</strong> or <strong>Collector</strong>.</li>
+<li>Tap <strong>Send OTP</strong>.</li>
+<li><strong>If SMS delivery is configured and working</strong>, a text arrives with your 6-digit code and the
+screen simply says &quot;Code sent via SMS — check your phone.&quot;</li>
+<li><strong>If SMS delivery isn&#39;t available</strong> (no gateway configured, or the send failed), the screen
+shows the code directly in a dark banner labelled &quot;SMS delivery unavailable right now&quot; — this
+is a documented, deliberate fallback (see <code>Technical_Debt_Plan.md</code> TD-02), not a bug: nobody
+is ever locked out just because a text didn&#39;t arrive.</li>
+<li>Type the 6-digit code (from the text or the banner) and, if this is your first login, your
+name. Tap <strong>Verify &amp; continue</strong>.</li>
+</ol>
+<p>Admins do not use OTP — see §5.</p>
+<h2>3. Household walkthrough</h2>
+<ol>
+<li>After login you land on your <strong>Home</strong> screen: a map centred on your current location (allow
+location access when the browser asks), with green dots for nearby online collectors.</li>
+<li><strong>To broadcast</strong>: tap the big gold <strong>&quot;🔔 I HAVE WASTE&quot;</strong> button, optionally pick a waste type
+and add a short note, then <strong>Confirm — I have waste</strong>. A banner shows how many collectors
+were notified. The pin auto-expires after 45 minutes if you forget it.</li>
+<li><strong>The moment someone comes for it</strong>: tap <strong>Clear pin</strong> on the sticky banner — this removes
+it from every collector&#39;s map immediately, so nobody else wastes a trip.</li>
+<li><strong>To request one specific collector</strong>: scroll to &quot;Nearby collectors,&quot; pick one, and tap
+<strong>Request</strong>. Your request appears under &quot;My requests&quot; with a status chip: <em>Sent</em> → <em>Seen</em> →
+<em>Accepted</em>/<em>Rejected</em>/<em>No response</em>.</li>
+<li><strong>Once accepted</strong>: tap <strong>Show contact</strong> to reveal the collector&#39;s phone number and call them
+directly. You&#39;ll also see a <strong>⭐ Leave a review</strong> option — rate 1–5 and optionally comment;
+it becomes public once it passes moderation and the other side has also reviewed (or after
+the review window closes).</li>
+<li><strong>Profile tab</strong>: adjust your alert radius and whether standing alerts are on; see reviews
+collectors have left about you.</li>
+</ol>
+<h2>4. Collector walkthrough</h2>
+<ol>
+<li>After login you land on your <strong>Home</strong> screen, offline by default.</li>
+<li><strong>New collector accounts start unverified</strong> — you&#39;ll see a banner saying an admin must
+approve you before you can go online. This is a deliberate anti-abuse gate (only verified
+collectors ever receive broadcasts); ask an admin to verify your account (§5).</li>
+<li><strong>Go online</strong>: tap <strong>Go online</strong> (allow location access). Your position updates while the
+tab stays open in the foreground — this build has no native background-location service, so
+locking your phone or switching apps pauses updates (documented in <code>Technical_Debt_Plan.md</code>
+TD-03; keep the tab open and the screen on while actively collecting).</li>
+<li><strong>Nearby waste</strong>: active pins appear on your map and in the list below it, closest first,
+with a one-tap <strong>📞 Call</strong> button.</li>
+<li><strong>Incoming direct requests</strong>: appear as a card with <strong>Accept</strong>/<strong>Reject</strong>. Accepting reveals
+the household&#39;s phone number to both of you and lets you leave a review afterwards.</li>
+<li><strong>Go offline</strong> when you&#39;re done — this immediately removes you from the matchable set.</li>
+</ol>
+<h2>5. Admin walkthrough</h2>
+<ol>
+<li>At the login screen, tap the <strong>Admin</strong> toggle instead of Household/Collector.</li>
+<li>Enter the admin phone number and password (see <code>Deployment_and_Source_Links.txt</code> for the
+seeded demo admin credentials).</li>
+<li>You land on <strong>Admin — Ops console</strong> with five tabs:<ul>
+<li><strong>Stats</strong>: online collectors, users by role, broadcasts/requests by status, moderation
+backlog.</li>
+<li><strong>Map</strong>: live view of active pins (gold) and online collectors (green).</li>
+<li><strong>Users</strong>: search, <strong>Verify</strong> a collector (required before they can go online), or
+<strong>Suspend</strong>/<strong>Reinstate</strong> any account.</li>
+<li><strong>Moderation</strong>: AI-flagged/user-reported items to <strong>Clear</strong> or <strong>Remove</strong>, plus anything
+still awaiting moderation entirely (shown here whenever no <code>GEMINI_API_KEY</code> is configured)
+with a one-click <strong>Approve</strong>.</li>
+<li><strong>Audit</strong>: every privileged action taken by any admin, with a timestamp.</li>
+<li><strong>Config</strong>: live-editable operational settings (pin TTL, broadcast radius, request
+timeout, review window) — changes apply immediately, no redeploy.</li>
+</ul>
+</li>
+</ol>
+<h2>6. Redeploying / rolling back</h2>
+<p>The app auto-builds from the <code>main</code> branch of the connected GitHub repository. To ship a
+change: push to <code>main</code>; Render rebuilds and redeploys automatically. To roll back: in the Render
+dashboard, open the service → <strong>Events</strong>/<strong>Deploys</strong> tab → pick an earlier successful deploy →
+<strong>Redeploy</strong>. Database migrations run automatically on server boot
+(<code>server/src/db/migrate.ts</code>) and are additive/idempotent — rolling the <em>app</em> back does not roll
+the <em>schema</em> back, so avoid rolling back past a deploy that introduced a schema change unless
+you also revert <code>server/migrations/</code>.</p>
+<h2>7. Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>&quot;Your collector account is not verified yet&quot;</td>
+<td>New collector account, not yet admin-approved</td>
+<td>Log in as admin → Users → Verify</td>
+</tr>
+<tr>
+<td>No collectors/pins showing on the map</td>
+<td>Location permission denied, or nobody online nearby</td>
+<td>Allow location access; try again once a collector/household is nearby in the seed data</td>
+</tr>
+<tr>
+<td>OTP screen shows the code instead of &quot;sent via SMS&quot;</td>
+<td>SMS gateway not configured or the send failed</td>
+<td>Expected fallback — use the shown code; see Technical_Debt_Plan.md TD-02</td>
+</tr>
+<tr>
+<td>Reviews never appear on a profile</td>
+<td>Awaiting moderation and/or the other side hasn&#39;t reviewed yet</td>
+<td>Check Admin → Moderation; double-blind release also waits up to the configured review window</td>
+</tr>
+<tr>
+<td>Build fails on Render with &quot;vite: not found&quot;</td>
+<td><code>NODE_ENV=production</code> made <code>npm ci</code> skip devDependencies</td>
+<td>Already fixed in <code>render.yaml</code> (<code>--include=dev</code> on the build command)</td>
+</tr>
+</tbody></table>
+</body></html>

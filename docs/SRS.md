@@ -80,10 +80,11 @@ and the explicit list of substitutions).
 
 ### 2.4 Assumptions and dependencies
 - Users have a phone number and access to a smartphone/browser; no email is required.
-- The OTP is delivered via a real SMS gateway (GiantSMS) when configured; if that send fails
-  or no gateway is configured, the OTP is returned in the API response and shown in-app instead
-  — a safe fallback, but the GiantSMS integration itself is unverified against a live account
-  (tracked as TD-02, scheduled, in the Technical Debt Plan).
+- The OTP is delivered via a real SMS gateway (GiantSMS) when configured — confirmed live in
+  production, the gateway accepts the send request end-to-end; if a send ever fails or no
+  gateway is configured, the OTP is returned in the API response and shown in-app instead as a
+  safe fallback (tracked as TD-02, scheduled, in the Technical Debt Plan, pending visual
+  confirmation on a real handset).
 - AI moderation is optional infrastructure: the system is fully functional with
   `GEMINI_API_KEY` unset, falling back to a manual admin-only moderation queue.
 - A single deployed Node process is assumed (no horizontal scaling) — acceptable at pilot scale.

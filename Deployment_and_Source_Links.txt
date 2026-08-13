@@ -1,0 +1,40 @@
+Student Name: George Boadu Junior
+Student ID: 22427354
+Project Title: Borla — a real-time matchmaker connecting Ghanaian households with nearby
+                roaming waste collectors
+
+Live Application: https://borla.onrender.com
+Admin URL: https://borla.onrender.com/login  (tap the "Admin" toggle, then sign in — you land
+                on https://borla.onrender.com/admin)
+
+--- Household / Collector test accounts (phone + one-time code, no fixed password) ---
+These two accounts are seeded automatically on every server boot (idempotent), so they always
+exist even after a redeploy.
+
+Test Username (Household): +233200000001   (display name "Ama (Osu)")
+Test Username (Collector): +233200000002   (display name "Kwame the Collector", pre-verified
+                                             and pre-set online at Osu, Accra)
+Test Password: N/A — there is no password for these roles. At the login screen, enter the
+                phone number above and tap "Send OTP". If real SMS delivery is configured and
+                working, the code arrives by text. If not (or the send fails), the screen shows
+                the code directly in an on-screen banner — this is a documented, deliberate
+                fallback (see Technical_Debt_Plan.md, item TD-02), not a bug. Enter that code to
+                log in.
+
+--- Admin account ---
+Admin Username: +233200000000
+Admin Password: Borla-Admin-2026!
+(At /login, tap the "Admin" toggle instead of Household/Collector, then enter the above.)
+
+Source Code Repository: https://github.com/BoaduJnr/Borla
+
+--- Notes for the examiner ---
+- Health check: https://borla.onrender.com/api/health
+- The repository is public; the full documentation set (SRS, Technical Debt Plan, Testing
+  Report, User Manual, this file, and the consolidated Project Documentation) is under docs/
+  and at the repository root, in both Markdown source and rendered PDF form.
+- Render's free-tier instance can spin down after periods of inactivity — the first request
+  after a period of no traffic may take up to ~30-60 seconds to respond while it wakes up.
+- If SMS delivery to the GiantSMS gateway is not working at the time of grading, use the
+  on-screen fallback code exactly as described above — no account is ever inaccessible because
+  of it.

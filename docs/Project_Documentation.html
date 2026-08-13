@@ -1,0 +1,606 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 12.5px;
+    max-width: 100%;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI", Arial, sans-serif; color: #0a5239; page-break-after: avoid; }
+  h1 { font-size: 22px; border-bottom: 3px solid #0e6e4e; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #dbd9ce; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin-top: 20px; color: #16241c; }
+  h4 { font-size: 12.5px; margin-top: 14px; color: #3e4a43; }
+  p, li { font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 11px; page-break-inside: auto; }
+  th, td { border: 1px solid #c9c7bb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e4f1ea; color: #0a5239; font-family: "Segoe UI", Arial, sans-serif; }
+  tr:nth-child(even) td { background: #fafaf6; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f1f0e8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  pre { background: #16241c; color: #dce7e0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 10px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #f5a208; margin: 12px 0; padding: 4px 14px; background: #fff1d2; color: #6b4e00; }
+  a { color: #0a5239; }
+  hr { border: none; border-top: 2px solid #dbd9ce; margin: 24px 0; }
+  .cover { text-align: center; padding-top: 20%; page-break-after: always; }
+  .cover h1 { font-size: 32px; border: none; }
+  .cover .sub { font-size: 15px; color: #3e4a43; margin-top: 6px; }
+  .cover .meta { margin-top: 60px; font-size: 13px; line-height: 2; }
+  ul, ol { padding-left: 22px; }
+  img, svg { max-width: 100%; }
+  .badge { display: inline-block; background: #e4f1ea; color: #0a5239; border-radius: 10px; padding: 2px 9px; font-size: 10.5px; font-weight: bold; font-family: Arial, sans-serif; }
+</style></head><body><div class="cover">
+<h1>Borla</h1>
+<div class="sub">Project Documentation</div>
+<div class="meta">
+Student: <b>George Boadu Junior</b><br>
+Student ID: <b>22427354</b><br>
+Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
+Document: Project_Documentation.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+</div>
+</div><h2>1. Project title</h2>
+<p><strong>Borla</strong> — a real-time matchmaker connecting Ghanaian households with nearby roaming waste
+collectors. (&quot;Borla&quot; is Ghanaian slang for rubbish/waste.)</p>
+<h2>2. Problem statement</h2>
+<p>In many Ghanaian neighbourhoods, formal municipal waste collection is unreliable or absent, so
+households depend on informal, roaming waste collectors (tricycle/pickup operators) who work a
+patch of streets looking for waste to collect for a fee. There is no shared channel connecting
+the two sides: a household with waste ready has no way to signal it beyond hoping a collector
+happens to pass, and a collector has no way to see where waste is actually waiting without
+driving around speculatively. Both sides waste time and, for collectors, fuel/effort — a classic
+two-sided discovery problem that ride-hailing-style matchmaking solves in other domains.</p>
+<h2>3. Aim and objectives</h2>
+<p><strong>Aim</strong>: build and deploy a functional, end-to-end matchmaking platform that lets a household
+announce or directly request a waste pickup, and lets a collector discover and respond to that
+demand in real time — while demonstrating disciplined requirements engineering, effort
+estimation, design, implementation, testing, technical-debt management, and deployment practice
+within a hard time constraint.</p>
+<p><strong>Objectives</strong>:</p>
+<ol>
+<li>Model the matching problem as two independent mechanisms — a stateless broadcast and a
+stateful direct request — rather than one over-complicated dispatcher.</li>
+<li>Build a working two-sided trust layer (ratings) so both parties have a reason to behave well.</li>
+<li>Give operations staff (admin) real levers: verify collectors, moderate content, watch live
+density, and retune behaviour without a redeploy.</li>
+<li>Apply an explicit, justified effort-estimation technique to <em>scope</em> the build, not just to
+describe it after the fact.</li>
+<li>Ship something genuinely running at a public URL, not a mock-up — with real, executable
+automated tests and a maintained technical-debt register.</li>
+</ol>
+<h2>4. Stakeholders</h2>
+<table>
+<thead>
+<tr>
+<th>Stakeholder</th>
+<th>Interest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Households</td>
+<td>Fast, low-effort way to get waste collected; trust that a collector who says they&#39;re coming actually will</td>
+</tr>
+<tr>
+<td>Collectors</td>
+<td>Reliable visibility into nearby demand; protection from wasted trips to stale/cleared pins; a fair way to build a reputation</td>
+</tr>
+<tr>
+<td>Platform operators (Admin)</td>
+<td>Ability to onboard/verify collectors, keep content safe, see whether the marketplace is healthy per neighbourhood</td>
+</tr>
+<tr>
+<td>Course examiner</td>
+<td>Evidence of systematic Advanced Software Engineering practice across the full lifecycle</td>
+</tr>
+</tbody></table>
+<h2>5. Requirements analysis</h2>
+<p>Requirements were gathered by extending an existing, larger architectural vision
+(<code>borla-technical-design.md</code>, authored ahead of this build as the target end-state) down to
+what is actually implementable, deployable, and testable inside this exam&#39;s constraints. The
+extension/reduction process:</p>
+<ol>
+<li>Took every functional area of the original design (two matching planes, presence, trust
+layer, admin, AI) as the candidate requirement pool.</li>
+<li>Removed anything that depends on infrastructure or accounts that cannot be provisioned
+inside the exam (native Android background location, a funded SMS gateway — later
+<em>partially</em> resolved once real GiantSMS credentials became available mid-build, see
+<code>Technical_Debt_Plan.md</code> TD-02 — managed Redis, a second admin application).</li>
+<li>Classified everything that remained with MoSCoW (<code>SRS.md</code> §6).</li>
+<li>Ran Use Case Points estimation (§7 below) against the <em>remaining</em> scope to confirm the
+prioritisation was still necessary even after the initial cut — it was, by roughly 16–80×
+the nominal time-box, which is exactly the signal the exam brief anticipates.</li>
+</ol>
+<p>Full functional/non-functional requirement tables are in <code>SRS.md</code> §4–§5.</p>
+<h2>6. Software Requirements Specification (summary)</h2>
+<p>See <code>SRS.md</code> for the complete document. In summary: three human actors (household, collector,
+admin) plus two system actors (the Gemini moderation API, the cron scheduler); 26 functional
+requirements spanning auth, the broadcast plane, the request plane, the trust layer, and the
+admin console; ten non-functional requirements covering security, privacy, reliability,
+usability, and fail-safe moderation.</p>
+<h2>7. Software effort estimation (summary)</h2>
+<p><strong>Technique: Use Case Points</strong>, cross-checked with expert top-down estimation. Full working
+in <code>SRS.md</code> §7. Headline numbers:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Result</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>UCP (216 UUCP × 1.05 TCF × 0.845 EF × 20h/UCP)</td>
+<td><strong>≈ 3,833 person-hours</strong> (≈ 22.6 person-months)</td>
+<td>Cost to build this exact scope to full commercial rigour</td>
+</tr>
+<tr>
+<td>Expert top-down (module-by-module + 15% overhead)</td>
+<td><strong>≈ 770 person-hours</strong> (≈ 4.5 person-months solo)</td>
+<td>Cost for one experienced engineer to build a lean-but-real MVP</td>
+</tr>
+<tr>
+<td>Nominal exam window</td>
+<td>48 hours</td>
+<td>Neither estimate is remotely close to this — by design (see SRS §7.7)</td>
+</tr>
+</tbody></table>
+<p><strong>How this shaped scope</strong>: since both estimates dwarf the available time regardless of how
+aggressively the <em>original</em> design was already cut, the estimate&#39;s job was to decide <em>how</em> to
+spend the tiny fraction of either number actually available: breadth (a complete, working, thin
+slice of every Must-Have mechanism) rather than depth (fully hardening a narrower subset). The
+resulting shortfall — against either estimate — is exactly what §12 (Technical debt) below
+catalogues.</p>
+<h2>8. System analysis</h2>
+<p><strong>Actors and their goals</strong>: a household wants waste gone with minimum effort and no wasted
+trust; a collector wants reliable, current demand signals and protection from stale pins; an
+admin wants levers to keep the marketplace healthy and safe without needing a redeploy for every
+tuning change.</p>
+<p><strong>Core domain insight carried over from the original design</strong>: the two matching mechanisms have
+opposite integrity properties on purpose. A <strong>broadcast</strong> is stateless and lossy — no
+collector &quot;owns&quot; a pin, so there is no claim race to resolve, at the cost of possible wasted
+trips (mitigated by a strong clear-prompt and short TTL). A <strong>request</strong> is stateful and
+narrow — exactly one collector is targeted, so the only correctness hazard is a stale
+accept/reject arriving after the request already resolved, which is closed with a conditional
+<code>WHERE status IN (...)</code> update rather than a lock. Keeping these two mechanisms structurally
+separate (different tables, different state machines) is why neither had to inherit the other&#39;s
+complexity.</p>
+<p><strong>Key non-functional pressure</strong>: every mutation that touches trust (reviews, contact reveal,
+admin actions) needed an explicit integrity rule <em>enforced in the schema</em>, not just in
+application code — see the <code>UNIQUE(author_id, request_id)</code> / <code>UNIQUE(author_id, broadcast_id)</code>
+constraints and the <code>CHECK</code> that a review references exactly one interaction type.</p>
+<h2>9. System design</h2>
+<h3>9.1 Architecture</h3>
+<p>One monorepo, one Postgres database, one Render Web Service serving both the built React app
+and the <code>/api</code> + Socket.IO endpoints from the same origin (no CORS, no second service to keep
+alive on a free tier):</p>
+<pre><code>┌───────────────────────────────────────────────────────────────────────┐
+│                     BROWSER (household / collector / admin)           │
+│   React + Vite SPA, role-routed after login · Leaflet/OSM map        │
+│   Socket.IO client · browser Geolocation API                          │
+└───────────────────────────────┬─────────────────────────────────────┘
+                    HTTPS (REST) + WSS (Socket.IO), same origin
+┌───────────────────────────────▼─────────────────────────────────────┐
+│                     RENDER WEB SERVICE (single Node process)          │
+│  ┌───────────────────────────────────────────────────────────────┐   │
+│  │ Express: REST routes (auth/presence/broadcasts/requests/       │   │
+│  │           reviews/admin) · Socket.IO gateway (JWT, room-per-   │   │
+│  │           user) · static file server for the built client      │   │
+│  ├───────────────────────────────────────────────────────────────┤   │
+│  │ node-cron sweeps: presence (30s) · pin-expiry (60s) ·           │   │
+│  │           request-timeout (15s) · review double-blind (2m)     │   │
+│  └───────────────────────────┬───────────────────────────────────┘   │
+└───────────────────────────────┼─────────────────────────────────────┘
+                                │ pg (parameterised SQL)
+                    ┌───────────▼────────────┐        ┌──────────────────┐
+                    │ PostgreSQL + PostGIS    │        │ External APIs     │
+                    │ (single source of truth)│        │ • Gemini (mod.)   │
+                    │ users/households/       │◄───────│ • GiantSMS (OTP)  │
+                    │ collectors/broadcasts/  │        │   both optional,  │
+                    │ requests/reviews/…      │        │   fail gracefully │
+                    └─────────────────────────┘        └──────────────────┘
+</code></pre>
+<p><strong>Deliberate substitutions from the original design</strong> (each is a named technical-debt item,
+not an oversight): PostGIS/Postgres directly instead of a Redis hot-path + Postgres cold-path
+split (TD-05); <code>node-cron</code> sweeps instead of BullMQ+Redis jobs (TD-05); Leaflet+OSM raster tiles
+instead of MapLibre+vector tiles (TD-08); one Express service instead of separate
+household/collector/admin apps (TD-07); phone+password admin login instead of email+2FA
+(TD-06).</p>
+<h3>9.2 Data design (ER overview)</h3>
+<p>The full schema is <code>server/migrations/001_init.sql</code> (12 tables). Core entities and their
+relationships:</p>
+<svg viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <style>
+    .tbl { fill:#ffffff; stroke:#0e6e4e; stroke-width:1.5; rx:8; }
+    .hdr { fill:#0e6e4e; }
+    .hdrtxt { fill:#ffffff; font-weight:bold; font-size:13px; }
+    .fld { fill:#16241c; font-size:11px; }
+    .rel { stroke:#3e4a43; stroke-width:1.3; fill:none; }
+    .lbl { fill:#6b7a70; font-size:10px; }
+  </style>  <!-- users -->
+  <rect x="360" y="20" width="180" height="98" class="tbl"/>
+  <rect x="360" y="20" width="180" height="24" class="hdr"/>
+  <text x="450" y="37" text-anchor="middle" class="hdrtxt">users</text>
+  <text x="370" y="58" class="fld">id (PK), phone, role</text>
+  <text x="370" y="74" class="fld">verified, suspended</text>
+  <text x="370" y="90" class="fld">password_hash (admin only)</text>
+  <text x="370" y="106" class="fld">display_name, language</text>  <!-- households -->
+  <rect x="60" y="180" width="180" height="82" class="tbl"/>
+  <rect x="60" y="180" width="180" height="24" class="hdr"/>
+  <text x="150" y="197" text-anchor="middle" class="hdrtxt">households</text>
+  <text x="70" y="218" class="fld">user_id (PK, FK→users)</text>
+  <text x="70" y="234" class="fld">home_location, alert_radius_m</text>
+  <text x="70" y="250" class="fld">rating_avg, rating_count</text>  <!-- collectors -->
+  <rect x="660" y="180" width="180" height="98" class="tbl"/>
+  <rect x="660" y="180" width="180" height="24" class="hdr"/>
+  <text x="750" y="197" text-anchor="middle" class="hdrtxt">collectors</text>
+  <text x="670" y="218" class="fld">user_id (PK, FK→users)</text>
+  <text x="670" y="234" class="fld">online, last_location</text>
+  <text x="670" y="250" class="fld">waste_types, quiet_hours</text>
+  <text x="670" y="266" class="fld">rating_avg, rating_count</text>  <!-- broadcasts -->
+  <rect x="30" y="330" width="200" height="98" class="tbl"/>
+  <rect x="30" y="330" width="200" height="24" class="hdr"/>
+  <text x="130" y="347" text-anchor="middle" class="hdrtxt">broadcasts</text>
+  <text x="40" y="368" class="fld">id (PK), household_id (FK)</text>
+  <text x="40" y="384" class="fld">location, waste_type, note</text>
+  <text x="40" y="400" class="fld">status, expires_at</text>
+  <text x="40" y="416" class="fld">→ broadcast_notifications</text>  <!-- requests -->
+  <rect x="660" y="330" width="200" height="98" class="tbl"/>
+  <rect x="660" y="330" width="200" height="24" class="hdr"/>
+  <text x="760" y="347" text-anchor="middle" class="hdrtxt">requests</text>
+  <text x="670" y="368" class="fld">id (PK), household_id (FK)</text>
+  <text x="670" y="384" class="fld">collector_id (FK), location</text>
+  <text x="670" y="400" class="fld">status, requested_at</text>
+  <text x="670" y="416" class="fld">contact_revealed_at</text>  <!-- reviews -->
+  <rect x="330" y="460" width="240" height="98" class="tbl"/>
+  <rect x="330" y="460" width="240" height="24" class="hdr"/>
+  <text x="450" y="477" text-anchor="middle" class="hdrtxt">reviews</text>
+  <text x="340" y="498" class="fld">id (PK), author_id, subject_id (FK→users)</text>
+  <text x="340" y="514" class="fld">request_id? / broadcast_id? (exactly one)</text>
+  <text x="340" y="530" class="fld">rating, comment, status, moderation_passed</text>
+  <text x="340" y="546" class="fld">UNIQUE(author_id, request_id / broadcast_id)</text>  <!-- relationships -->
+  <path class="rel" d="M450,118 L450,150 L150,150 L150,180"/>
+  <text x="300" y="145" class="lbl">1—1</text>
+  <path class="rel" d="M450,118 L450,150 L750,150 L750,180"/>
+  <text x="620" y="145" class="lbl">1—1</text>
+  <path class="rel" d="M150,262 L150,300 L130,300 L130,330"/>
+  <text x="145" y="295" class="lbl">1—many</text>
+  <path class="rel" d="M750,278 L750,300 L760,300 L760,330"/>
+  <text x="700" y="295" class="lbl">1—many</text>
+  <path class="rel" d="M150,262 L150,400 L660,400"/>
+  <text x="400" y="395" class="lbl">1—many (targets)</text>
+  <path class="rel" d="M130,428 L130,460 L330,510"/>
+  <path class="rel" d="M760,428 L760,460 L570,510"/>
+  <text x="450" y="440" class="lbl">accepted request / confirmed broadcast → ≤2 reviews</text>
+</svg><p>Supporting tables not pictured: <code>otp_codes</code> (OTP hashes/expiry), <code>broadcast_notifications</code>
+(who was notified, for &quot;Did they come?&quot; attribution), <code>pickup_confirmations</code>, <code>review_replies</code>
+(≤1 per review), <code>moderation_flags</code> (AI/user-report queue), <code>audit_log</code> (every admin action),
+<code>app_config</code> (live-tunable settings).</p>
+<h3>9.3 Use-case diagram</h3>
+<svg viewBox="0 0 880 480" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <style>
+    .actor { fill:#16241c; }
+    .actorlbl { fill:#16241c; font-size:12px; font-weight:bold; text-anchor:middle; }
+    .uc { fill:#e4f1ea; stroke:#0e6e4e; stroke-width:1.3; }
+    .uctxt { fill:#0a5239; font-size:11px; text-anchor:middle; }
+    .link { stroke:#6b7a70; stroke-width:1; fill:none; }
+    .sysbox { fill:none; stroke:#dbd9ce; stroke-width:1.5; stroke-dasharray:4,3; }
+  </style>
+  <rect x="150" y="10" width="600" height="460" class="sysbox"/>
+  <text x="450" y="30" text-anchor="middle" font-size="13" fill="#6b7a70" font-weight="bold">Borla</text>
+  <circle cx="60" cy="90" r="14" class="actor"/>
+  <line x1="60" y1="104" x2="60" y2="140" stroke="#16241c"/>
+  <line x1="35" y1="115" x2="85" y2="115" stroke="#16241c"/>
+  <line x1="60" y1="140" x2="40" y2="165" stroke="#16241c"/>
+  <line x1="60" y1="140" x2="80" y2="165" stroke="#16241c"/>
+  <text x="60" y="185" class="actorlbl">Household</text>
+  <circle cx="60" cy="260" r="14" class="actor"/>
+  <line x1="60" y1="274" x2="60" y2="310" stroke="#16241c"/>
+  <line x1="35" y1="285" x2="85" y2="285" stroke="#16241c"/>
+  <line x1="60" y1="310" x2="40" y2="335" stroke="#16241c"/>
+  <line x1="60" y1="310" x2="80" y2="335" stroke="#16241c"/>
+  <text x="60" y="355" class="actorlbl">Collector</text>
+  <circle cx="60" cy="410" r="14" class="actor"/>
+  <line x1="60" y1="424" x2="60" y2="450" stroke="#16241c"/>
+  <text x="60" y="470" class="actorlbl">Admin</text>
+  <ellipse cx="280" cy="55" rx="85" ry="24" class="uc"/><text x="280" y="59" class="uctxt">Register / Login (OTP)</text>
+  <ellipse cx="280" cy="110" rx="85" ry="24" class="uc"/><text x="280" y="114" class="uctxt">Create / clear broadcast</text>
+  <ellipse cx="280" cy="165" rx="85" ry="24" class="uc"/><text x="280" y="169" class="uctxt">Send direct request</text>
+  <ellipse cx="280" cy="220" rx="85" ry="24" class="uc"/><text x="280" y="224" class="uctxt">Submit review / reply</text>
+  <ellipse cx="280" cy="280" rx="85" ry="24" class="uc"/><text x="280" y="284" class="uctxt">Go online / heartbeat</text>
+  <ellipse cx="280" cy="335" rx="85" ry="24" class="uc"/><text x="280" y="339" class="uctxt">View nearby pins / requests</text>
+  <ellipse cx="280" cy="390" rx="85" ry="24" class="uc"/><text x="280" y="394" class="uctxt">Accept / reject request</text>
+  <ellipse cx="620" cy="80" rx="95" ry="24" class="uc"/><text x="620" y="84" class="uctxt">Verify / suspend user</text>
+  <ellipse cx="620" cy="135" rx="95" ry="24" class="uc"/><text x="620" y="139" class="uctxt">Resolve moderation queue</text>
+  <ellipse cx="620" cy="190" rx="95" ry="24" class="uc"/><text x="620" y="194" class="uctxt">View live stats / map</text>
+  <ellipse cx="620" cy="245" rx="95" ry="24" class="uc"/><text x="620" y="249" class="uctxt">Tune app config</text>
+  <ellipse cx="480" cy="330" rx="95" ry="24" class="uc"/><text x="480" y="334" class="uctxt">Reveal contact (post-accept)</text>
+  <ellipse cx="480" cy="390" rx="95" ry="24" class="uc"/><text x="480" y="394" class="uctxt">AI / manual moderation</text>
+  <line class="link" x1="74" y1="90" x2="195" y2="55"/>
+  <line class="link" x1="74" y1="90" x2="195" y2="110"/>
+  <line class="link" x1="74" y1="90" x2="195" y2="165"/>
+  <line class="link" x1="74" y1="90" x2="195" y2="220"/>
+  <line class="link" x1="74" y1="260" x2="195" y2="280"/>
+  <line class="link" x1="74" y1="260" x2="195" y2="335"/>
+  <line class="link" x1="74" y1="260" x2="195" y2="390"/>
+  <line class="link" x1="74" y1="260" x2="195" y2="220"/>
+  <line class="link" x1="74" y1="410" x2="525" y2="80"/>
+  <line class="link" x1="74" y1="410" x2="525" y2="135"/>
+  <line class="link" x1="74" y1="410" x2="525" y2="190"/>
+  <line class="link" x1="74" y1="410" x2="525" y2="245"/>
+  <line class="link" x1="365" y1="165" x2="385" y2="330" stroke-dasharray="3,2"/>
+  <line class="link" x1="365" y1="390" x2="385" y2="330" stroke-dasharray="3,2"/>
+  <line class="link" x1="365" y1="220" x2="385" y2="390" stroke-dasharray="3,2"/>
+</svg><h3>9.4 Sequence: broadcast fan-out (design §3.1/§7)</h3>
+<pre><code>Household        Express API              Postgres/PostGIS         Collector(s)
+    │  POST /broadcasts   │                        │                     │
+    ├─────────────────────►│  INSERT broadcast       │                     │
+    │                      ├───────────────────────►│                     │
+    │                      │  SELECT online          │                     │
+    │                      │  collectors WHERE        │                     │
+    │                      │  ST_DWithin(...)         │                     │
+    │                      ├───────────────────────►│                     │
+    │                      │◄───────────────────────┤ rows: candidates    │
+    │                      │  filter: waste-type match, not quiet-hours    │
+    │                      │  INSERT broadcast_notifications (per match)  │
+    │                      ├───────────────────────►│                     │
+    │                      │  emit &quot;broadcast:new&quot; over Socket.IO ────────┼────►
+    │  201 {broadcast,     │                        │                     │
+    │◄─────notifiedCount}─┤                        │                     │
+</code></pre>
+<h3>9.5 State machine: request plane (design §3.2)</h3>
+<pre><code>        create
+          │
+          ▼
+     ┌─────────┐   collector&#39;s client opens it   ┌──────┐
+     │REQUESTED│ ────────────────────────────────►│ SEEN │
+     └────┬────┘                                  └──┬───┘
+          │                                          │
+          │   no response within T (default 90s)     │ accept ─► ACCEPTED (contact revealed)
+          ├─────────────────────────────────────────► │ reject ─► REJECTED
+          │                TIMED_OUT                  │
+          ▼                                          ▼
+     TIMED_OUT                               ACCEPTED / REJECTED
+
+Guard on every transition out of REQUESTED/SEEN:
+  UPDATE requests SET status = &#39;&lt;new&gt;&#39; WHERE id = $1 AND status IN (&#39;requested&#39;,&#39;seen&#39;)
+  0 rows affected ⇒ already resolved ⇒ respond 409, never resurrect a stale transition.
+</code></pre>
+<h3>9.6 Activity: two-sided review, double-blind release (design §16)</h3>
+<pre><code>accepted request OR confirmed broadcast pickup
+        │
+        ▼
+either party submits {rating, comment} ──► status=pending, moderation_passed=false
+        │
+        ▼
+moderation (Gemini if configured, else queued for admin)
+        │
+   ┌────┴────┐
+allow      flag/block
+   │            │
+moderation_    status=flagged
+passed=true    → admin queue
+   │
+   ▼
+release sweep (every 2 min): BOTH sides moderation_passed=true?
+   │                                  │
+  yes → status=visible now            no → still pending until the
+                                            review window closes, then
+                                            released solo
+   │
+   ▼
+rolling rating_avg/rating_count recomputed for the reviewed party
+</code></pre>
+<h2>10. Implementation</h2>
+<h3>10.1 Technology stack</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Choice</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Server language/framework</td>
+<td>Node.js + Express + TypeScript</td>
+<td>Same language across stack; Express is small enough to reason about every middleware</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>PostgreSQL 16 + PostGIS</td>
+<td>Real geospatial queries (<code>ST_DWithin</code>, <code>ST_Distance</code>) without hand-rolled Haversine math</td>
+</tr>
+<tr>
+<td>Realtime</td>
+<td>Socket.IO</td>
+<td>JWT-authable, room-per-user, graceful fallback to polling already built into the protocol</td>
+</tr>
+<tr>
+<td>Scheduling</td>
+<td><code>node-cron</code></td>
+<td>No extra infrastructure (Redis) for a single-instance deploy</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>React + Vite + TypeScript</td>
+<td>Fast dev loop; one codebase serves all three roles via role-routing</td>
+</tr>
+<tr>
+<td>Maps</td>
+<td>Leaflet + OpenStreetMap raster tiles</td>
+<td>Zero-config, no tile-provider account</td>
+</tr>
+<tr>
+<td>AI</td>
+<td>Google Gemini API (optional)</td>
+<td>Free tier for moderation; degrades gracefully without a key</td>
+</tr>
+<tr>
+<td>SMS</td>
+<td>GiantSMS (optional)</td>
+<td>Real OTP delivery when configured; falls back safely (see Technical_Debt_Plan TD-02)</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>JWT (access+refresh) + bcrypt</td>
+<td>Stateless API auth; OTP/password hashes never stored in plaintext</td>
+</tr>
+<tr>
+<td>Deployment</td>
+<td>Render (one Web Service + one Postgres)</td>
+<td>Single free-tier footprint, <code>render.yaml</code> blueprint</td>
+</tr>
+</tbody></table>
+<h3>10.2 What was actually built</h3>
+<p>Every functional requirement tagged Must-Have or Should-Have in <code>SRS.md</code> §6 is implemented and
+exercised by the automated test suite: phone/OTP auth with real SMS delivery attempt, admin
+password login, presence toggle/heartbeat with self-healing offline detection, the full
+broadcast plane (create/fan-out/clear/auto-expire), the full request plane
+(create/seen/accept/reject/auto-timeout with idempotent transitions), reveal-on-accept masked
+contact, two-sided reviews with real-interaction enforcement, AI-or-manual moderation, one
+capped public reply, double-blind release with rolling rating aggregates, and the full admin
+console (verify/suspend/reinstate, moderation queue, audit log, live stats, live ops map, live
+config tuning).</p>
+<h3>10.3 Code organisation</h3>
+<pre><code>server/src/modules/{auth,presence,broadcasts,requests,reviews,admin}/routes.ts   — one router per domain
+server/src/jobs/index.ts                                                        — all 4 cron sweeps
+server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours}.ts        — isolated, unit-testable logic
+client/src/pages/{Login,HouseholdHome,CollectorHome,AdminDashboard,Profile}.tsx  — one screen per role/concern
+client/src/components/{MapView,ReviewForm,ProtectedRoute}.tsx                    — shared, reusable
+</code></pre>
+<h3>10.4 Security controls actually implemented</h3>
+<p>JWT-gated routes with role middleware; bcrypt-hashed OTP codes and admin passwords;
+parameterised SQL everywhere (no injection surface); per-IP rate limiting on all <code>/api/</code>
+traffic plus a dedicated OTP-request cap; ownership checks on every mutating route (a household
+can only clear <em>its own</em> broadcast, etc.); phone numbers stripped from API responses until a
+request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).</p>
+<h2>11. Testing (summary)</h2>
+<p>38/38 automated tests passing (34 server — unit + Supertest integration against a real
+PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
+scripted manual system/UAT pass and a security/usability review. Two real defects were caught
+and fixed during development (a broken first-time-signup code path, and a review-reply status
+check gap) — full detail, every test case, and both defect write-ups are in <code>Testing_Report.md</code>.</p>
+<h2>12. Technical debt</h2>
+<p>Thirteen tracked items (<code>Technical_Debt_Plan.md</code>), each with Debt→Cause→Impact→Priority→
+Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
+GiantSMS OTP integration, which was <strong>confirmed live in production</strong> (the gateway accepted a
+real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢
+Acceptable deliberate trade-offs. The single largest is the missing native background-location
+collector app
+(TD-03) — the original design&#39;s own #1 risk — deliberately left as the biggest future-evolution
+item rather than attempted unsafely inside the exam window. Full register, priorities, and a
+phased repayment plan are in <code>Technical_Debt_Plan.md</code>.</p>
+<h2>13. Deployment</h2>
+<p>Deployed to <strong>Render</strong>: one free-tier Web Service (<code>buildCommand: npm ci --include=dev &amp;&amp; npm run build</code>, <code>startCommand: npm run start -w server</code>) serving both the compiled API and the
+built React client from one origin, plus one free-tier managed Postgres with the PostGIS
+extension enabled by the first migration. <code>render.yaml</code> in the repository root fully describes
+the topology (Infrastructure-as-Code, not click-ops) including which secrets (<code>GEMINI_API_KEY</code>,
+<code>GIANTSMS_API_TOKEN</code>, <code>GIANTSMS_SENDER_ID</code>) must be set manually in the dashboard
+(<code>sync: false</code>) versus generated automatically (<code>JWT_*_SECRET</code>, <code>generateValue: true</code>) or wired
+from the managed database (<code>DATABASE_URL</code>, <code>fromDatabase</code>). See
+<code>Deployment_and_Source_Links.txt</code> for the live URL and credentials, and <code>User_Manual.md</code> §6 for
+exact redeploy/rollback steps.</p>
+<h2>14. User manual (summary)</h2>
+<p>Full walkthroughs for all three roles — including how to read the on-screen OTP fallback if SMS
+delivery isn&#39;t available — are in <code>User_Manual.md</code>. In short: pick a role at first login, a
+household broadcasts with one tap or searches nearby collectors to request directly, a
+collector toggles online and responds to what appears; an admin logs in with a phone+password
+at the same <code>/login</code> screen (toggle to &quot;Admin&quot;) and lands on <code>/admin</code>.</p>
+<h2>15. Maintenance strategy</h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Approach</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Corrective</strong></td>
+<td>GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 34 server tests are the regression net.</td>
+</tr>
+<tr>
+<td><strong>Adaptive</strong></td>
+<td>Config changes (radius, TTLs, timeouts) go through <code>app_config</code> and the admin UI — no redeploy needed for the most likely &quot;the environment changed&quot; adjustments.</td>
+</tr>
+<tr>
+<td><strong>Perfective</strong></td>
+<td>Tracked as the technical-debt repayment plan (<code>Technical_Debt_Plan.md</code> §4) — i18n, offline shell, deeper test coverage.</td>
+</tr>
+<tr>
+<td><strong>Preventive</strong></td>
+<td><code>npm audit</code> run before any dependency bump; the health-check endpoint (<code>/api/health</code>) lets Render auto-restart a wedged instance.</td>
+</tr>
+<tr>
+<td><strong>Security updates</strong></td>
+<td>Dependencies pinned with caret ranges; <code>npm audit</code> reviewed monthly if the project continues; JWT secrets rotated by regenerating the Render env vars (stateless tokens, no migration needed).</td>
+</tr>
+<tr>
+<td><strong>Dependency updates</strong></td>
+<td>Renovate/Dependabot recommended once this leaves the exam context — not configured now, itself a minor debt item.</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>PostGIS GIST index already in place for the two hot geo-queries; would add a read replica for the admin analytics reads before scaling further (per the original design&#39;s own §17 guidance).</td>
+</tr>
+<tr>
+<td><strong>Scalability</strong></td>
+<td>The single-instance ceiling (TD-05) is the first thing to remove before real growth — Redis + BullMQ + Socket.IO Redis adapter, in that order.</td>
+</tr>
+<tr>
+<td><strong>New features / user feedback</strong></td>
+<td>Photo→waste-type classification (TD-11) and native background location (TD-03) are the two most-requested-shaped gaps based on the original design&#39;s own accessibility and reliability goals.</td>
+</tr>
+<tr>
+<td><strong>Technology changes</strong></td>
+<td>Node/Postgres/React are all mainstream, actively maintained — no forced-migration risk foreseen in the near term.</td>
+</tr>
+</tbody></table>
+<h2>16. Future evolution</h2>
+<p>Phased roughly as the original design&#39;s own roadmap (<code>borla-technical-design.md</code> §15),
+adjusted for what this build already covers:</p>
+<ul>
+<li><strong>v1.1</strong>: real SMS delivery confirmed end-to-end (finish TD-02), admin 2FA (TD-06).</li>
+<li><strong>v1.2</strong>: Gemini key provisioned in production, CI pipeline on every push (TD-01, TD-13).</li>
+<li><strong>v1.3</strong>: native Capacitor collector app with background geolocation (TD-03) — tested on
+real low-end Android hardware, per the original design&#39;s own risk mitigation.</li>
+<li><strong>v2.0</strong>: Redis + BullMQ + Socket.IO Redis adapter for horizontal scale (TD-05), i18n in
+Twi/Ga (TD-09), offline PWA shell (TD-04), photo→waste-type classification (TD-11).</li>
+<li><strong>Beyond</strong>: the original design&#39;s own explicitly-deferred set — in-app payments/escrow, live
+turn-by-turn tracking, auto-fallback dispatch, provider call-masking, and expansion beyond a
+single pilot neighbourhood.</li>
+</ul>
+<h2>17. Limitations</h2>
+<p>This is a web-only build: collectors only report position while their browser tab is open and
+foregrounded (no native background service — TD-03), which the original design itself identifies
+as the single biggest reliability risk for a real deployment. OTP delivery via GiantSMS is
+confirmed live in production at the HTTP layer but not yet confirmed to a real handset (TD-02).
+Admin authentication has no 2FA (TD-06). Test
+coverage is broad across every module but not exhaustive within any one of them (TD-10). The
+system has only ever run against a handful of seeded/manually-created accounts — it has not
+been load-tested.</p>
+<h2>18. Conclusion</h2>
+<p>Borla demonstrates that a genuinely two-sided, stateful/stateless-hybrid matching platform with
+a real trust layer and admin console can be specified, estimated, designed, built, tested,
+documented, and deployed inside a hard time-box — provided the estimation step is used
+honestly to <em>cut scope</em>, not to justify skipping it. The most valuable engineering decision in
+this build was not any single line of code but the early recognition (via UCP) that the
+original design was 16–80× too large for the window available, which forced a breadth-first,
+thin-vertical-slice strategy instead of a narrower, more polished one. What that strategy left
+unfinished is not hidden — it is named, prioritised, and scheduled in <code>Technical_Debt_Plan.md</code>.</p>
+<h2>19. References</h2>
+<ul>
+<li>Course specification: <em>CSCD 602 Advanced Software Engineering Project Exams.pdf</em>, University
+of Ghana, Department of Computer Science (Examiner: Prof. Solomon Mensah).</li>
+<li>Original architectural design: <code>borla-technical-design.md</code> (authored ahead of this build).</li>
+<li>UI design system: <code>borla_UI_design.html</code> (colour tokens, typography, and component patterns
+reused directly in <code>client/src/styles/</code>).</li>
+<li>Karner, G. (1993). <em>Resource Estimation for Objectory Projects</em> — Use Case Points method.</li>
+<li>Express — <a href="https://expressjs.com">https://expressjs.com</a> · PostgreSQL/PostGIS — <a href="https://postgis.net">https://postgis.net</a> ·
+Socket.IO — <a href="https://socket.io">https://socket.io</a> · React/Vite — <a href="https://vitejs.dev">https://vitejs.dev</a> ·
+Leaflet/OpenStreetMap — <a href="https://leafletjs.com">https://leafletjs.com</a>, <a href="https://www.openstreetmap.org">https://www.openstreetmap.org</a> ·
+node-cron — <a href="https://www.npmjs.com/package/node-cron">https://www.npmjs.com/package/node-cron</a> ·
+Google Gemini API — <a href="https://ai.google.dev">https://ai.google.dev</a> · GiantSMS — <a href="https://giantsms.com/developer">https://giantsms.com/developer</a> ·
+Render — <a href="https://render.com/docs">https://render.com/docs</a>.</li>
+</ul>
+</body></html>

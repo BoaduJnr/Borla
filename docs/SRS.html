@@ -1,0 +1,582 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a;
+    line-height: 1.55;
+    font-size: 12.5px;
+    max-width: 100%;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI", Arial, sans-serif; color: #0a5239; page-break-after: avoid; }
+  h1 { font-size: 22px; border-bottom: 3px solid #0e6e4e; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 17px; margin-top: 28px; border-bottom: 1px solid #dbd9ce; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin-top: 20px; color: #16241c; }
+  h4 { font-size: 12.5px; margin-top: 14px; color: #3e4a43; }
+  p, li { font-size: 12.5px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 11px; page-break-inside: auto; }
+  th, td { border: 1px solid #c9c7bb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e4f1ea; color: #0a5239; font-family: "Segoe UI", Arial, sans-serif; }
+  tr:nth-child(even) td { background: #fafaf6; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f1f0e8; padding: 1px 4px; border-radius: 3px; font-size: 10.5px; }
+  pre { background: #16241c; color: #dce7e0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 10px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #f5a208; margin: 12px 0; padding: 4px 14px; background: #fff1d2; color: #6b4e00; }
+  a { color: #0a5239; }
+  hr { border: none; border-top: 2px solid #dbd9ce; margin: 24px 0; }
+  .cover { text-align: center; padding-top: 20%; page-break-after: always; }
+  .cover h1 { font-size: 32px; border: none; }
+  .cover .sub { font-size: 15px; color: #3e4a43; margin-top: 6px; }
+  .cover .meta { margin-top: 60px; font-size: 13px; line-height: 2; }
+  ul, ol { padding-left: 22px; }
+  img, svg { max-width: 100%; }
+  .badge { display: inline-block; background: #e4f1ea; color: #0a5239; border-radius: 10px; padding: 2px 9px; font-size: 10.5px; font-weight: bold; font-family: Arial, sans-serif; }
+</style></head><body><div class="cover">
+<h1>Borla</h1>
+<div class="sub">Software Requirements Specification</div>
+<div class="meta">
+Student: <b>George Boadu Junior</b><br>
+Student ID: <b>22427354</b><br>
+Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
+Document: SRS.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+</div>
+</div><h2>1. Introduction</h2>
+<h3>1.1 Purpose</h3>
+<p>This document specifies the requirements for <strong>Borla</strong>, a real-time matchmaking application
+connecting Ghanaian households that have waste to dispose of with nearby roaming waste
+collectors. It is the Software Requirements Specification (SRS) deliverable for the CSCD 602
+Advanced Software Engineering individual capstone examination.</p>
+<h3>1.2 Scope</h3>
+<p>Borla is deliberately a <strong>matchmaker, not a dispatcher</strong>: it makes two people aware of each
+other; the physical pickup is negotiated and completed off-app. The system has two independent
+matching mechanisms — a stateless <strong>broadcast plane</strong> (&quot;I have waste&quot;, heard by every nearby
+online collector) and a stateful <strong>request plane</strong> (a household picks one collector and the
+request goes through a real accept/reject/timeout state machine) — plus a <strong>trust layer</strong>
+(two-sided ratings with AI-assisted moderation) and an <strong>admin portal</strong> for operations and
+content moderation.</p>
+<p>This SRS covers the <strong>web-only v1</strong> that was actually built and deployed for this examination.
+A larger design (<code>borla-technical-design.md</code>, retained in the repository as a reference) covers
+a full production system with a native Android collector app, managed Redis/BullMQ, a real SMS
+gateway, and a separate admin application; §1.4 explains why that design was intentionally
+descoped, and the full delta is tracked in <code>Technical_Debt_Plan.md</code>.</p>
+<h3>1.3 Definitions</h3>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Broadcast / pin</td>
+<td>A household&#39;s &quot;I have waste&quot; announcement, visible to nearby online collectors until cleared or expired</td>
+</tr>
+<tr>
+<td>Request</td>
+<td>A household&#39;s direct ask to one specific collector, with a real accept/reject/timeout lifecycle</td>
+</tr>
+<tr>
+<td>Presence</td>
+<td>Whether a collector is currently &quot;online&quot; and matchable</td>
+</tr>
+<tr>
+<td>Reveal-on-accept</td>
+<td>Phone numbers stay hidden until a request is accepted</td>
+</tr>
+<tr>
+<td>Double-blind release</td>
+<td>A review stays hidden until both sides have reviewed (or the review window closes)</td>
+</tr>
+<tr>
+<td>UCP</td>
+<td>Use Case Points, the effort-estimation technique used in §7</td>
+</tr>
+</tbody></table>
+<h3>1.4 Why the scope was reduced from the original design</h3>
+<p>The original design assumed infrastructure and accounts that cannot be provisioned inside an
+individual, time-boxed examination: a native Capacitor Android build with a background-location
+plugin (needs an Android toolchain and a physical/emulated device, and produces an installable
+APK rather than a gradable &quot;Live Application URL&quot;); a paid Ghanaian SMS gateway account; a
+managed Redis instance for BullMQ; and a second admin web application. Building the full system
+would also cost roughly 3,800 person-hours by formal estimation (§7) — nowhere near
+appropriately scoped for this exam. The requirements below are the <strong>Must-Have</strong> slice that
+<em>is</em> fully implemented, deployed, and tested; everything else is deliberately deferred and
+tracked as technical debt with a resolution plan (<code>Technical_Debt_Plan.md</code>).</p>
+<hr>
+<h2>2. Overall description</h2>
+<h3>2.1 Product perspective</h3>
+<p>Borla is a self-contained web application: a single React single-page app (role-routed after
+login) talking to a single Node/Express API over REST and Socket.IO, backed by one
+PostgreSQL+PostGIS database. It replaces the two-app, multi-service architecture of the original
+design with one deployable unit (see <code>Project_Documentation.md</code> §9 for the architecture diagram
+and the explicit list of substitutions).</p>
+<h3>2.2 User classes</h3>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Description</th>
+<th>Technical literacy assumed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Household</td>
+<td>Has waste to dispose of; broadcasts or requests a pickup</td>
+<td>Low–medium; icon-first UI, minimal text entry</td>
+</tr>
+<tr>
+<td>Collector</td>
+<td>Roams looking for waste to collect for a living</td>
+<td>Low–medium; large tap targets, one-tap actions</td>
+</tr>
+<tr>
+<td>Admin</td>
+<td>Operations/moderation staff</td>
+<td>Medium–high; desk user, data-dense screens acceptable</td>
+</tr>
+</tbody></table>
+<h3>2.3 Operating environment</h3>
+<ul>
+<li><strong>Client</strong>: any modern mobile or desktop browser with Geolocation API support (Chrome,
+Edge, Firefox, Safari — including Android WebView browsers, since no native app is required
+for this build).</li>
+<li><strong>Server</strong>: Node.js 20+, PostgreSQL 16 with the PostGIS extension, deployed on Render.</li>
+<li><strong>Network</strong>: designed to tolerate patchy/metered mobile connections (see NFR-5).</li>
+</ul>
+<h3>2.4 Assumptions and dependencies</h3>
+<ul>
+<li>Users have a phone number and access to a smartphone/browser; no email is required.</li>
+<li>The OTP is delivered via a real SMS gateway (GiantSMS) when configured — confirmed live in
+production, the gateway accepts the send request end-to-end; if a send ever fails or no
+gateway is configured, the OTP is returned in the API response and shown in-app instead as a
+safe fallback (tracked as TD-02, scheduled, in the Technical Debt Plan, pending visual
+confirmation on a real handset).</li>
+<li>AI moderation is optional infrastructure: the system is fully functional with
+<code>GEMINI_API_KEY</code> unset, falling back to a manual admin-only moderation queue.</li>
+<li>A single deployed Node process is assumed (no horizontal scaling) — acceptable at pilot scale.</li>
+</ul>
+<h3>2.5 Constraints</h3>
+<ul>
+<li>48-hour-equivalent time-box for the examination → aggressive MoSCoW prioritisation (§6).</li>
+<li>No budget for paid third-party services (SMS gateway, managed Redis, Vertex AI tier).</li>
+<li>Deployment target restricted to free-tier hosting (Render).</li>
+</ul>
+<hr>
+<h2>3. Actors</h2>
+<table>
+<thead>
+<tr>
+<th>Actor</th>
+<th>Type (UCP classification)</th>
+<th>Interacts via</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Household</td>
+<td>Complex (human, GUI)</td>
+<td>Web app</td>
+</tr>
+<tr>
+<td>Collector</td>
+<td>Complex (human, GUI)</td>
+<td>Web app</td>
+</tr>
+<tr>
+<td>Admin</td>
+<td>Complex (human, GUI)</td>
+<td>Web app (<code>/admin</code>)</td>
+</tr>
+<tr>
+<td>Gemini moderation API</td>
+<td>Simple (external API)</td>
+<td>Server-to-server HTTPS</td>
+</tr>
+<tr>
+<td>Scheduler (cron sweeps)</td>
+<td>Simple (time-triggered)</td>
+<td>In-process, drives system use cases</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>4. Functional requirements</h2>
+<p>Each requirement is tagged with its MoSCoW priority (§6) and the module that implements it.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Priority</th>
+<th>Implemented in</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FR-01</td>
+<td>A user registers/logs in with a phone number and a 6-digit one-time code</td>
+<td>Must</td>
+<td><code>server/src/modules/auth</code></td>
+</tr>
+<tr>
+<td>FR-02</td>
+<td>An admin logs in with a phone + password instead of OTP</td>
+<td>Must</td>
+<td><code>server/src/modules/auth</code></td>
+</tr>
+<tr>
+<td>FR-03</td>
+<td>A household creates a broadcast pin (location, optional waste type, optional note)</td>
+<td>Must</td>
+<td><code>server/src/modules/broadcasts</code></td>
+</tr>
+<tr>
+<td>FR-04</td>
+<td>The system fans the broadcast out to nearby, online, verified, waste-type-matching, non-quiet-hours collectors</td>
+<td>Must</td>
+<td><code>broadcasts/routes.ts</code> fan-out gauntlet</td>
+</tr>
+<tr>
+<td>FR-05</td>
+<td>A household clears its own active pin at any time</td>
+<td>Must</td>
+<td><code>broadcasts/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-06</td>
+<td>A broadcast pin auto-expires after a configurable TTL (default 45 min)</td>
+<td>Must</td>
+<td><code>jobs/index.ts</code> pin-expiry sweep</td>
+</tr>
+<tr>
+<td>FR-07</td>
+<td>A collector toggles online/offline and sends periodic heartbeats while online</td>
+<td>Must</td>
+<td><code>server/src/modules/presence</code></td>
+</tr>
+<tr>
+<td>FR-08</td>
+<td>A collector who has been offline (verified) cannot go online (KYC gate)</td>
+<td>Must</td>
+<td><code>presence/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-09</td>
+<td>Stale presence (no heartbeat for 90s) self-heals to offline</td>
+<td>Must</td>
+<td><code>jobs/index.ts</code> presence sweep</td>
+</tr>
+<tr>
+<td>FR-10</td>
+<td>A household views nearby online collectors on a map</td>
+<td>Must</td>
+<td><code>GET /collectors/nearby</code></td>
+</tr>
+<tr>
+<td>FR-11</td>
+<td>A collector views nearby active pins on a map</td>
+<td>Must</td>
+<td><code>GET /pins/nearby</code></td>
+</tr>
+<tr>
+<td>FR-12</td>
+<td>A household sends a direct request to one specific online collector</td>
+<td>Must</td>
+<td><code>server/src/modules/requests</code></td>
+</tr>
+<tr>
+<td>FR-13</td>
+<td>A request moves <code>requested → seen</code> when the collector&#39;s client opens it</td>
+<td>Must</td>
+<td><code>requests/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-14</td>
+<td>A collector accepts or rejects a request; the transition is idempotent (a stale reject/accept after resolution is a no-op, not an error)</td>
+<td>Must</td>
+<td><code>requests/routes.ts</code> conditional <code>WHERE status IN (...)</code> updates</td>
+</tr>
+<tr>
+<td>FR-15</td>
+<td>A request auto-times-out if the collector doesn&#39;t respond within a configurable window (default 90s)</td>
+<td>Must</td>
+<td><code>jobs/index.ts</code> request-timeout sweep</td>
+</tr>
+<tr>
+<td>FR-16</td>
+<td>Phone numbers stay hidden until a request is accepted, then both sides can see and call each other</td>
+<td>Must</td>
+<td><code>requests/routes.ts</code> <code>contact_revealed_at</code></td>
+</tr>
+<tr>
+<td>FR-17</td>
+<td>A household confirms whether a collector actually came for a broadcast pickup (&quot;Did they come?&quot;)</td>
+<td>Should</td>
+<td><code>POST /confirmations</code></td>
+</tr>
+<tr>
+<td>FR-18</td>
+<td>Either side of a resolved interaction (accepted request, or a confirmed broadcast) can leave a 1–5 rating + comment for the other</td>
+<td>Must</td>
+<td><code>server/src/modules/reviews</code></td>
+</tr>
+<tr>
+<td>FR-19</td>
+<td>A review/reply is screened (AI if configured, else queued for manual admin approval) before it can go public</td>
+<td>Must</td>
+<td><code>server/src/ai/moderation.ts</code></td>
+</tr>
+<tr>
+<td>FR-20</td>
+<td>A review is only shown once both sides have reviewed, or the review window has closed (double-blind release)</td>
+<td>Must</td>
+<td><code>jobs/index.ts</code> review-release sweep</td>
+</tr>
+<tr>
+<td>FR-21</td>
+<td>The reviewed party may post exactly one public reply</td>
+<td>Must</td>
+<td><code>reviews/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-22</td>
+<td>Any user can report a review for moderation</td>
+<td>Should</td>
+<td><code>POST /reviews/:id/report</code></td>
+</tr>
+<tr>
+<td>FR-23</td>
+<td>An admin can verify a collector, and suspend/reinstate any user</td>
+<td>Must</td>
+<td><code>server/src/modules/admin</code></td>
+</tr>
+<tr>
+<td>FR-24</td>
+<td>An admin can view a moderation queue (AI-flagged + user-reported + awaiting-manual) and resolve items</td>
+<td>Must</td>
+<td><code>admin/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-25</td>
+<td>An admin can view live stats, a live ops map, and the full audit log of privileged actions</td>
+<td>Must</td>
+<td><code>admin/routes.ts</code></td>
+</tr>
+<tr>
+<td>FR-26</td>
+<td>An admin can retune operational config (pin TTL, radius, timeouts, review window) without a redeploy</td>
+<td>Should</td>
+<td><code>admin/routes.ts</code> <code>app_config</code></td>
+</tr>
+</tbody></table>
+<h2>5. Non-functional requirements</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Approach taken</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>NFR-1 (Security)</td>
+<td>Passwords/OTPs never stored in plaintext; every privileged/authenticated route checks a signed JWT</td>
+<td>bcrypt hashing; <code>requireAuth</code>/<code>requireRole</code> middleware</td>
+</tr>
+<tr>
+<td>NFR-2 (Security)</td>
+<td>No SQL injection surface</td>
+<td>100% parameterised queries (<code>pg</code> placeholders), no string-concatenated SQL with user input</td>
+</tr>
+<tr>
+<td>NFR-3 (Authorization)</td>
+<td>A user can only act within their role and only on their own resources</td>
+<td>Role middleware + ownership checks (<code>WHERE household_id = $1</code>, etc.) on every mutating route</td>
+</tr>
+<tr>
+<td>NFR-4 (Privacy)</td>
+<td>A household&#39;s contact stays hidden from a specific collector until that collector is chosen and accepts</td>
+<td><code>contact_revealed_at</code>; phone fields stripped from the API response pre-accept</td>
+</tr>
+<tr>
+<td>NFR-5 (Reliability under poor connectivity)</td>
+<td>The app tolerates dropped connections and stale devices</td>
+<td>Presence self-heals via TTL-style sweep; idempotent state transitions; polling fallback alongside sockets</td>
+</tr>
+<tr>
+<td>NFR-6 (Usability)</td>
+<td>Icon-first, large tap targets, minimal required text entry, mobile-first</td>
+<td>Design tokens and component library lifted from the approved <code>borla_UI_design.html</code></td>
+</tr>
+<tr>
+<td>NFR-7 (Availability)</td>
+<td>The deployed instance stays reachable for grading</td>
+<td>Render health check (<code>/api/health</code>) wired into <code>render.yaml</code></td>
+</tr>
+<tr>
+<td>NFR-8 (Data integrity)</td>
+<td>A review can never be posted about a fabricated interaction</td>
+<td>DB-level <code>UNIQUE(author_id, request_id)</code> / <code>UNIQUE(author_id, broadcast_id)</code> plus application-level interaction checks</td>
+</tr>
+<tr>
+<td>NFR-9 (Fail-safe moderation)</td>
+<td>Unmoderated content never goes public by default</td>
+<td>Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue</td>
+</tr>
+<tr>
+<td>NFR-10 (Testability)</td>
+<td>Core business logic is covered by automated tests</td>
+<td>31 server tests (unit + Supertest integration) + 4 client component tests, all passing — see <code>Testing_Report.md</code></td>
+</tr>
+</tbody></table>
+<h2>6. Requirement prioritisation (MoSCoW)</h2>
+<p><strong>Must-have (built, this submission)</strong>: FR-01–FR-16, FR-18–FR-21, FR-23–FR-25 — the complete
+two-plane matching engine, masked contact, the full review/moderation/double-blind pipeline, and
+the admin console.</p>
+<p><strong>Should-have (built, lighter-touch)</strong>: FR-17 (Did-they-come confirmation, minimal UI), FR-22
+(user reporting), FR-26 (live config tuning) — all present, but not stress-tested to the same
+depth as Must-Have items.</p>
+<p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
+geolocation, real SMS OTP, Redis/BullMQ + Socket.IO Redis adapter, provider call-masking, photo
+→ waste-type AI classification, admin 2FA, notification rate-limiting nuance beyond a coarse
+per-IP limit, i18n beyond English.</p>
+<p><strong>Won&#39;t-have (out of scope entirely, per the original design&#39;s own roadmap)</strong>: in-app
+payments/escrow, live turn-by-turn tracking, auto-fallback dispatch, multi-neighbourhood
+expansion.</p>
+<h2>7. Software effort estimation</h2>
+<p><strong>Technique chosen: Use Case Points (UCP)</strong>, cross-checked with expert (top-down) estimation.
+UCP was chosen over Function Points because the requirements were captured as use cases from
+the outset (not data-flow specifications), and over raw story points because a first-time solo
+estimate benefits from UCP&#39;s more mechanical, less &quot;gut-feel&quot; weighting — useful for a graded
+exercise where the reasoning must be shown, not just a number.</p>
+<h3>7.1 Actor weighting (UAW)</h3>
+<table>
+<thead>
+<tr>
+<th>Actor</th>
+<th>Classification</th>
+<th>Weight</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Household</td>
+<td>Complex (GUI/human)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Collector</td>
+<td>Complex (GUI/human)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Admin</td>
+<td>Complex (GUI/human)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Gemini moderation API</td>
+<td>Simple (API)</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Scheduler (cron)</td>
+<td>Simple (time-triggered)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>UAW total</strong></td>
+<td></td>
+<td><strong>11</strong></td>
+</tr>
+</tbody></table>
+<h3>7.2 Use-case weighting (UUCW)</h3>
+<p>26 use cases from §4/§6 were classified by transaction count: <strong>4 Complex</strong> (15 pts) — fan-out
+broadcast creation, request accept/reject with idempotency + reveal, review submission with
+interaction validation, AI/manual moderation; <strong>8 Average</strong> (10 pts) — OTP login, direct
+request creation, auto-timeout, auto-expiry, double-blind release, reply, admin
+verify/suspend, admin moderation resolution; <strong>13 Simple</strong> (5 pts) — the remaining CRUD/toggle
+use cases (profile edits, presence toggle/heartbeat, nearby queries, pin clear, admin
+stats/config, reporting, pickup confirmation).</p>
+<p>UUCW = (4 × 15) + (8 × 10) + (13 × 5) = 60 + 80 + 65 = <strong>205</strong></p>
+<p><strong>UUCP = UAW + UUCW = 11 + 205 = 216</strong></p>
+<h3>7.3 Technical Complexity Factor (TCF)</h3>
+<p>Thirteen factors (T1–T13) rated 0–5 on relevance to Borla (distributed client/server,
+moderate performance needs, high end-user-efficiency bar for low-literacy users, real
+geospatial + state-machine logic, single-instance deployment limiting concurrency, strong auth
+but no 2FA, light third-party access via one AI API). Sum of (weight × rating) = 45.</p>
+<p><strong>TCF = 0.6 + (0.01 × 45) = 1.05</strong></p>
+<h3>7.4 Environmental Factor (EF)</h3>
+<p>Eight factors (F1–F8) reflecting a solo, AI-assisted, moderately experienced developer with
+fixed requirements post-planning but no dedicated QA/analyst roles. Sum of (weight × rating) =
+18.5.</p>
+<p><strong>EF = 1.4 − (0.03 × 18.5) = 0.845</strong></p>
+<h3>7.5 Adjusted UCP and effort</h3>
+<p><strong>Adjusted UCP = UUCP × TCF × EF = 216 × 1.05 × 0.845 ≈ 191.6</strong></p>
+<p>At the standard <strong>20 person-hours per UCP</strong> (appropriate given no more than two environmental
+factors were rated unfavourably): <strong>≈ 3,833 person-hours (≈ 22.6 person-months, ≈ 479
+person-days)</strong> to build this exact scope to full commercial rigour — complete automated test
+coverage, polished UX across languages, hardened security, and production-grade infrastructure.</p>
+<h3>7.6 Expert (top-down) cross-check</h3>
+<p>A module-by-module expert estimate gives a second, independent number: auth/DB setup 40h,
+presence 20h, broadcast plane 60h, request plane 50h, realtime layer 30h, reviews+moderation
+70h, admin portal 60h, AI integration 20h, full frontend (all screens + styling) 150h, testing
+80h, deployment/DevOps 30h, documentation 60h = 670h core work, <strong>+15% coordination/overhead ≈
+770 person-hours (≈ 4.5 person-months solo, full-time)</strong>.</p>
+<h3>7.7 Why two estimates disagree, and how estimation shaped scope</h3>
+<p>UCP&#39;s 3,833h models a fully-tested, fully-documented, production-hardened build at typical team
+velocity; the 770h expert estimate models one experienced engineer building a lean-but-real
+MVP without that last mile of polish. Both numbers are <strong>wildly larger than any literal
+48-hour window</strong> — which is the point: the exam itself says not to attempt a large commercial
+system. The estimate&#39;s real job here was to force a decision about <em>how</em> to spend a tiny
+fraction of either number. The choice made was <strong>breadth over depth</strong>: implement a complete,
+working, thin vertical slice of every Must-Have mechanism (auth → both matching planes → trust
+layer → admin) end-to-end, rather than fully polishing a narrower subset. The resulting
+shortfall against both estimates — thinner test coverage than &quot;full rigour&quot; would call for, no
+UI localisation, coarse rate-limiting, no native mobile client — is exactly what
+<code>Technical_Debt_Plan.md</code> catalogues and schedules for later phases.</p>
+<h3>7.8 Constraints and assumptions behind the estimate</h3>
+<p>Assumes: use cases as scoped in §4/§6 (not the original full design); a single developer;
+PostgreSQL/PostGIS and Render already known technologies (reflected in EF); no requirements
+churn after the planning phase. Does <strong>not</strong> assume: a dedicated QA engineer, a UX designer
+beyond the supplied mockup, or a native-mobile specialist — all three would be needed before
+this UCP estimate could be met in full, and their absence is itself tracked as technical debt.</p>
+<hr>
+<h2>8. External interface requirements</h2>
+<h3>8.1 REST API (representative — full surface in <code>Project_Documentation.md</code> §10)</h3>
+<pre><code>POST /api/auth/otp/request        {phone, role?} -&gt; {devOtp, isNewUser}
+POST /api/auth/otp/verify         {phone, code, role?, displayName?} -&gt; {access, refresh, user}
+POST /api/auth/admin/login        {phone, password} -&gt; {access, refresh, user}
+POST /api/auth/refresh            {refresh} -&gt; {access}
+GET  /api/auth/me                 -&gt; {user, profile}
+
+POST /api/presence                {online, lon?, lat?}
+POST /api/presence/heartbeat      {lon, lat}
+GET  /api/collectors/nearby       ?lon&amp;lat&amp;radius
+PATCH /api/households/me          {homeLon?, homeLat?, alertRadiusM?, alertsEnabled?}
+PATCH /api/collectors/me          {vehicleType?, wasteTypes?, quietHours?}
+
+POST /api/broadcasts              {lon, lat, wasteType?, note?}
+POST /api/broadcasts/:id/clear
+GET  /api/broadcasts/me/active
+GET  /api/pins/nearby             ?lon&amp;lat&amp;radius
+POST /api/confirmations           {broadcastId, came, collectorId?}
+
+POST /api/requests                {collectorId, lon, lat, wasteType?, note?}
+GET  /api/requests/mine
+GET  /api/requests/:id
+POST /api/requests/:id/seen
+POST /api/requests/:id/accept
+POST /api/requests/:id/reject
+
+POST /api/reviews                 {subjectId, requestId?|broadcastId?, rating, comment?}
+GET  /api/users/:id/reviews
+POST /api/reviews/:id/reply       {body}
+POST /api/reviews/:id/report      {reason}
+
+GET/POST /api/admin/*             stats, live-map, users, moderation queue, audit log, config
+</code></pre>
+<h3>8.2 Realtime events (Socket.IO, JWT-authed, room <code>user:{id}</code>)</h3>
+<p><code>broadcast:new</code>, <code>broadcast:cleared</code>, <code>request:new</code>, <code>request:seen</code>, <code>request:accepted</code>,
+<code>request:rejected</code>, <code>request:timed_out</code>.</p>
+<hr>
+<h2>9. Data requirements</h2>
+<p>See <code>Project_Documentation.md</code> §9.2 for the full ER diagram; the schema itself lives at
+<code>server/migrations/001_init.sql</code> and is the single source of truth.</p>
+</body></html>
