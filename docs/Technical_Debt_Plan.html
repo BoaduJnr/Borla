@@ -105,7 +105,7 @@ or a meaningful scale-up.</li>
 <td>— (closed)</td>
 <td>— (closed)</td>
 <td>🟢 Resolved</td>
-<td>Verified end-to-end against a real local Redis (Docker, mirroring the exact Upstash <code>rediss://</code> URL shape used in production): a collector going online is visible via <code>ZCARD geo:collectors</code>/<code>EXISTS presence:{id}</code>; creating a broadcast registers <code>pins:active</code> synchronously and produces a real <code>broadcast_notifications</code> row via the async <code>fanout</code> job within ~1s; clearing the pin removes it from <code>pins:active</code>. 46 server tests passing (up from 39), including new coverage of the rate limiter and the async fan-out path. Production verification pending the user pasting <code>REDIS_URL</code> into Render&#39;s dashboard (<code>sync: false</code> in <code>render.yaml</code>, same pattern as the other secrets).</td>
+<td>Verified end-to-end against a real local Redis (Docker, mirroring the exact Upstash <code>rediss://</code> URL shape used in production): a collector going online is visible via <code>ZCARD geo:collectors</code>/<code>EXISTS presence:{id}</code>; creating a broadcast registers <code>pins:active</code> synchronously and produces a real <code>broadcast_notifications</code> row via the async <code>fanout</code> job within ~1s; clearing the pin removes it from <code>pins:active</code>. 46 server tests passing (up from 39) at the time of this fix, including new coverage of the rate limiter and the async fan-out path. <strong>Production verification since completed</strong>: <code>REDIS_URL</code> is live in Render, and a direct re-test against <code>https://borla.onrender.com</code> confirmed the same behaviour — a collector going online is visible via <code>GET /collectors/nearby</code> (Redis <code>GEOSEARCH</code>), and a broadcast&#39;s pin/fan-out both work end-to-end.</td>
 </tr>
 <tr>
 <td><strong>TD-06</strong></td>
@@ -141,7 +141,7 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-10</strong></td>
-<td><strong>Automated test coverage is broad, not deep.</strong> 46 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
+<td><strong>Automated test coverage is broad, not deep.</strong> 47 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects, reveal-on-accept location gating); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
 <td>A time-boxed exam favoured &quot;every module has real integration tests&quot; over &quot;one module is exhaustively tested&quot; — a deliberate breadth-over-depth call, consistent with §7.7 of the SRS.</td>
 <td>Edge cases in less-tested paths (e.g. concurrent double-accept races under real network latency, malformed geo payloads) are not proven safe, only reasoned about.</td>
 <td>🟡 Scheduled</td>
