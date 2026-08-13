@@ -45,3 +45,10 @@ Source Code Repository: https://github.com/BoaduJnr/Borla
 - If SMS delivery to the GiantSMS gateway is not working at the time of grading, use the
   on-screen fallback code exactly as described above — no account is ever inaccessible because
   of it.
+- All three accounts above were re-verified live against the production URL on 13 August 2026
+  (login, presence, broadcast fan-out, direct-request accept/reject, AI review moderation) —
+  see Technical_Debt_Plan.md TD-05/TD-01 for what that confirmed.
+- Once a direct request is accepted, both the household and the collector see a route to each
+  other on their map (distance + ETA) — try it with the two seeded accounts above: log in as
+  the household, request the collector, then log in as the collector (a different browser or
+  incognito window keeps both sessions active at once) to accept it.
