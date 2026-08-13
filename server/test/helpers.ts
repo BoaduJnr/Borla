@@ -10,7 +10,7 @@ export function testPhone(): string {
 }
 
 export async function signup(app: Express, role: "household" | "collector", phone = testPhone()) {
-  const otpRes = await request(app).post("/api/auth/otp/request").send({ phone, role });
+  const otpRes = await request(app).post("/api/auth/otp/request").send({ phone });
   const devOtp = otpRes.body.devOtp as string;
   const verifyRes = await request(app)
     .post("/api/auth/otp/verify")

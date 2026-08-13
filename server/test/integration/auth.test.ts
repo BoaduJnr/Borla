@@ -17,14 +17,16 @@ async function makeAdmin() {
 }
 
 describe("auth: OTP signup/login", () => {
-  it("rejects an OTP request for a brand-new number with no role", async () => {
+  it("issues an OTP for a brand-new number without needing a role upfront (role is collected after verify)", async () => {
     const res = await request(app).post("/api/auth/otp/request").send({ phone: testPhone() });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.isNewUser).toBe(true);
+    expect(res.body.requiresPassword).toBe(false);
   });
 
-  it("issues a devOtp (no real SMS gateway) and completes signup on verify", async () => {
+  it("issues a devOtp (no real SMS gateway) and completes signup on verify, role supplied at verify time", async () => {
     const phone = testPhone();
-    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone, role: "household" });
+    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone });
     expect(otpRes.status).toBe(200);
     expect(otpRes.body.devOtp).toMatch(/^\d{6}$/);
     expect(otpRes.body.isNewUser).toBe(true);
@@ -37,16 +39,32 @@ describe("auth: OTP signup/login", () => {
     expect(verifyRes.body.user.role).toBe("household");
   });
 
+  it("rejects verify for a new number with no role (role is mandatory once a code is confirmed)", async () => {
+    const phone = testPhone();
+    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: otpRes.body.devOtp });
+    expect(res.status).toBe(400);
+  });
+
+  it("an existing user verifying just logs straight in — no role/name needed again", async () => {
+    const { phone } = await signup(app, "collector");
+    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone });
+    expect(otpRes.body.isNewUser).toBe(false);
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: otpRes.body.devOtp });
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe("collector");
+  });
+
   it("rejects an incorrect OTP code", async () => {
     const phone = testPhone();
-    await request(app).post("/api/auth/otp/request").send({ phone, role: "collector" });
+    await request(app).post("/api/auth/otp/request").send({ phone });
     const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "000000", role: "collector" });
     expect(res.status).toBe(400);
   });
 
   it("rejects a reused OTP code", async () => {
     const phone = testPhone();
-    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone, role: "household" });
+    const otpRes = await request(app).post("/api/auth/otp/request").send({ phone });
     const code = otpRes.body.devOtp;
     const first = await request(app).post("/api/auth/otp/verify").send({ phone, code, role: "household" });
     expect(first.status).toBe(200);
@@ -83,10 +101,12 @@ describe("auth: OTP signup/login", () => {
     expect(res.status).toBe(401);
   });
 
-  it("refuses to send an OTP to an admin's phone number (OTP must never be a second way into an admin account)", async () => {
+  it("tells the caller an admin's phone number needs a password instead of issuing an OTP (OTP must never be a second way into an admin account)", async () => {
     const adminPhone = await makeAdmin();
     const res = await request(app).post("/api/auth/otp/request").send({ phone: adminPhone });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.requiresPassword).toBe(true);
+    expect(res.body.devOtp).toBeUndefined();
   });
 
   it("refuses to verify an OTP into an admin account even if a code somehow exists", async () => {

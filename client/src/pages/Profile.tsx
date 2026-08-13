@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
+import { InstallButton } from "../pwa/InstallButton";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
@@ -69,6 +70,11 @@ export default function Profile() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="card row" style={{ justifyContent: "space-between" }}>
+        <span className="muted" style={{ fontSize: 13 }}>Add Borla to your home screen for one-tap access.</span>
+        <InstallButton />
       </div>
 
       {error && <div className="banner err">{error}</div>}

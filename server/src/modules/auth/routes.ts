@@ -17,7 +17,6 @@ export const phoneSchema = z.string().regex(/^\+?[0-9]{8,15}$/, "Enter a valid p
 
 const otpRequestSchema = z.object({
   phone: phoneSchema,
-  role: z.enum(["household", "collector"]).optional(),
 });
 
 const otpVerifySchema = z.object({
@@ -30,25 +29,28 @@ const otpVerifySchema = z.object({
 const refreshSchema = z.object({ refresh: z.string() });
 
 /**
- * POST /auth/otp/request
- * There is no SMS gateway wired up (Technical_Debt_Plan.md, TD-02) — the code is returned
- * directly in the response so the demo/grader can log in without a real phone network.
+ * POST /auth/otp/request — single unified entry point: the caller doesn't need to know their
+ * role or whether they've registered before. The phone number alone tells the system what to
+ * do next (design: "their number tells who they are"):
+ *   - belongs to a seeded admin -> {requiresPassword: true}, no OTP issued (admins never use OTP)
+ *   - otherwise -> an OTP is sent/shown; the client learns via `isNewUser` whether to collect a
+ *     role + name after the code is verified, or whether this logs straight in.
+ * There is no SMS gateway wired up by default (Technical_Debt_Plan.md, TD-02) — the code is
+ * returned directly in the response so the demo/grader can log in without a real phone network.
  */
 authRouter.post(
   "/otp/request",
   validateBody(otpRequestSchema),
   asyncHandler(async (req, res) => {
-    const { phone, role } = req.body as { phone: string; role?: Role };
+    const { phone } = req.body as { phone: string };
 
     const existing = await queryOne<{ id: string; role: Role }>(`SELECT id, role FROM users WHERE phone = $1`, [phone]);
-    if (!existing && !role) {
-      throw new ApiError(400, "New phone number — specify role (household|collector) to sign up");
-    }
-    // Admins must use POST /auth/admin/login (phone+password) — OTP is deliberately a weaker
-    // factor and must never be a second way into an admin account. Same response either way so
-    // this doesn't confirm/deny which phone numbers belong to admins.
+    // Admins use phone+password only (POST /auth/admin/login) — OTP is deliberately a weaker
+    // factor and must never be a second way into an admin account. Telling the caller "this
+    // number needs a password" is a deliberate UX choice (not a leak of anything sensitive —
+    // it doesn't reveal a password, just which login form to show).
     if (existing?.role === "admin") {
-      throw new ApiError(400, "This number is not set up for OTP sign-in");
+      return res.json({ requiresPassword: true });
     }
 
     // Basic abuse guard: at most 5 OTP requests per phone per 10 minutes (stands in for the
@@ -78,6 +80,7 @@ authRouter.post(
     }
 
     res.json({
+      requiresPassword: false,
       message: delivered
         ? "OTP sent via SMS."
         : "OTP generated. (SMS delivery unavailable or not configured — see Technical Debt Plan TD-02.)",

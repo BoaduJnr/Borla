@@ -36,15 +36,15 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/otp.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
 ✓ test/unit/sms.test.ts (3 tests)
-✓ test/integration/auth.test.ts (10 tests)
+✓ test/integration/auth.test.ts (12 tests)
 ✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 
  Test Files  8 passed (8)
-      Tests  36 passed (36)
-   Duration  40.54s
+      Tests  38 passed (38)
+   Duration  67.76s
 ```
 
 ### 2.2 Client (`npm run test -w client`)
@@ -57,7 +57,7 @@ separate phase, which is appropriate at this scale.
       Tests  4 passed (4)
 ```
 
-**Total: 40/40 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 42/42 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS — see `README.md`).
 
 ## 3. Test case log
@@ -101,6 +101,10 @@ development (rows T-08 and T-19).
 | T-31 | Production client build (`vite build`) and server build (`tsc`) both compile clean | Build/System | Zero TypeScript errors, bundle produced | Both confirmed (`tsc --noEmit` clean; `dist/` produced) | Pass |
 | T-32 | GiantSMS phone-number normalisation (`+233…` / `233…` → local `0…` form) | Unit | Both prefixes normalise to the same local number; an already-local number is untouched | 3/3 cases correct | Pass |
 | T-33 | GiantSMS end-to-end request against the real funded account, production | System (live) | Gateway accepts the send request | `POST /api/auth/otp/request` against `https://borla.onrender.com` returned `{"delivered":true}` — GiantSMS accepted the request at the HTTP layer. Actual handset receipt not visually confirmed (test number is a placeholder, not a live phone) | Pass (partial — see Technical_Debt_Plan.md TD-02) |
+| T-34 | Unified sign-in: a new phone number gets an OTP with no role needed upfront; the code screen then requires role+name | Integration + scripted screenshot | `isNewUser:true`; role/name fields appear only after the code step, submit creates the account | Confirmed both via `auth.test.ts` and a real headless-browser walkthrough | Pass |
+| T-35 | Unified sign-in: an existing (non-admin) number logs straight in from the code screen, no role/name prompt | Integration + scripted screenshot | `isNewUser:false`; verify returns tokens with no extra fields required | Confirmed | Pass |
+| T-36 | Unified sign-in: an admin's phone number is auto-detected and routed to a password prompt instead of an OTP | Integration + scripted screenshot | `requiresPassword:true`, no OTP issued; UI shows the password form directly | Confirmed both ways | Pass |
+| T-37 | PWA service worker registers and activates on the production build | System (headless browser against `dist/`) | `navigator.serviceWorker.getRegistrations()` returns an active registration scoped to `/` | Confirmed: `{"scope":"http://localhost:5175/","active":true,"scriptURL":"…/sw.js"}`, `<link rel="manifest">` present in the DOM | Pass |
 
 ## 4. Defects found during development
 

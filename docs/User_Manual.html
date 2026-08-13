@@ -49,22 +49,41 @@ Whoever gets there first collects it; you clear the pin the moment someone shows
 <li><strong>Direct request</strong> — pick one specific collector from the map and send them a request; they
 accept or reject it, and if they accept, you can both see and call each other.</li>
 </ul>
-<h2>2. Logging in (all roles)</h2>
+<p>Borla is a real installable web app (a PWA): after logging in, open <strong>Profile</strong> and tap
+<strong>Install Borla app</strong> to add it to your home screen with its own icon, launching full-screen
+like a native app (Chrome/Edge/Android; on iPhone, use Safari&#39;s Share → <strong>Add to Home Screen</strong>
+instead, since iOS doesn&#39;t offer the same in-app install button). When a new version is
+deployed, a banner appears at the bottom of the screen offering to <strong>Update</strong> — nothing changes
+under you without asking first.</p>
+<h2>2. Logging in (all roles) — one unified flow</h2>
+<p>There is a single entry point for everyone. You never have to say upfront whether you&#39;re a
+household, a collector, or an admin — <strong>your phone number tells the app who you are</strong>:</p>
 <ol>
-<li>Open the app&#39;s URL (see <code>Deployment_and_Source_Links.txt</code>).</li>
-<li>Enter your phone number.</li>
-<li>If it&#39;s a brand-new number, pick <strong>Household</strong> or <strong>Collector</strong>.</li>
-<li>Tap <strong>Send OTP</strong>.</li>
+<li>Open the app&#39;s URL (see <code>Deployment_and_Source_Links.txt</code>). You land on the welcome/splash
+screen — tap <strong>Get started</strong>.</li>
+<li>Enter your phone number and tap <strong>Continue</strong>. That&#39;s the only field on this screen — no role
+picker, no &quot;Admin&quot; toggle to find.</li>
+<li>What happens next depends on the number itself:<ul>
+<li><strong>It&#39;s a seeded admin&#39;s number</strong> → you&#39;re taken straight to a password field (&quot;This number
+is registered as an admin — sign in with your password&quot;). Enter the password and tap
+<strong>Sign in</strong>. See §5 for the admin credentials.</li>
+<li><strong>Anything else</strong> → a one-time code is sent.</li>
+</ul>
+</li>
 <li><strong>If SMS delivery is configured and working</strong>, a text arrives with your 6-digit code and the
 screen simply says &quot;Code sent via SMS — check your phone.&quot;</li>
 <li><strong>If SMS delivery isn&#39;t available</strong> (no gateway configured, or the send failed), the screen
 shows the code directly in a dark banner labelled &quot;SMS delivery unavailable right now&quot; — this
 is a documented, deliberate fallback (see <code>Technical_Debt_Plan.md</code> TD-02), not a bug: nobody
 is ever locked out just because a text didn&#39;t arrive.</li>
-<li>Type the 6-digit code (from the text or the banner) and, if this is your first login, your
-name. Tap <strong>Verify &amp; continue</strong>.</li>
+<li>Type the 6-digit code.<ul>
+<li><strong>Brand-new number</strong> → the screen also asks &quot;First time here — tell us a bit about you&quot;:
+pick <strong>Household</strong> or <strong>Collector</strong> and enter your name, then tap <strong>Create account</strong>.</li>
+<li><strong>Number you&#39;ve used before</strong> → there&#39;s nothing else to fill in; tap <strong>Verify &amp; continue</strong>
+and you&#39;re straight in.</li>
+</ul>
+</li>
 </ol>
-<p>Admins do not use OTP — see §5.</p>
 <h2>3. Household walkthrough</h2>
 <ol>
 <li>After login you land on your <strong>Home</strong> screen: a map centred on your current location (allow

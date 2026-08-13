@@ -93,11 +93,11 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-04</strong></td>
-<td>Geolocation is <strong>on-demand/foreground only</strong> for households too, and the whole app requires a live network round-trip on every screen — no offline shell/service worker.</td>
-<td>Time-boxed build prioritised functional depth over the PWA offline story described in the original design (§11).</td>
-<td>App shows a blank/broken state with zero signal, instead of &quot;something&quot; (cached shell + last map view). Lower severity than TD-03 since households use the app briefly and on-demand.</td>
-<td>🟡 Scheduled</td>
-<td>Add a Vite/Workbox service worker caching the app shell + last known map view + saved home location; queue &quot;clear pin&quot; actions locally and flush on reconnect.</td>
+<td><del>No offline PWA shell</del> — <strong>mostly resolved</strong>: <code>vite-plugin-pwa</code> now ships a real installable PWA — manifest + icons (<code>client/public/icon-*.png</code>), a Workbox service worker precaching the app shell (12 entries, ~490KB), an explicit &quot;Update available&quot; banner (<code>registerType:&#39;prompt&#39;</code>, <code>src/pwa/UpdatePrompt.tsx</code> — never silently swaps content under an open tab) and a real &quot;Install app&quot; button (<code>src/pwa/InstallButton.tsx</code>, <code>beforeinstallprompt</code>). Verified: the service worker registers and activates (checked via a headless-browser <code>navigator.serviceWorker.getRegistrations()</code> call against the built <code>dist/</code>), and API/socket traffic is deliberately excluded from precaching so it&#39;s never served stale. <strong>Still open</strong>: households&#39; geolocation is on-demand/foreground-only (unchanged), and there&#39;s no queued-writes-while-offline behaviour yet (e.g. &quot;clear pin&quot; typed while offline doesn&#39;t queue and flush on reconnect — the shell loads offline, but mutating actions still need a live connection).</td>
+<td>The remaining gap is genuinely more work (background sync / an offline action queue), not a missing dependency.</td>
+<td>Households still see a blank state for anything requiring a live fetch while offline (map data, requests, broadcasts) — the shell now loads, the <em>data</em> doesn&#39;t.</td>
+<td>🟢 Acceptable (down from 🟡 Scheduled — the install/update half is done; only the offline-writes half remains)</td>
+<td>Add a Workbox Background Sync queue (or a hand-rolled IndexedDB outbox) for &quot;clear pin&quot; and similarly small mutating actions so they survive a dropped connection.</td>
 </tr>
 <tr>
 <td><strong>TD-05</strong></td>
@@ -201,7 +201,7 @@ the right call at this scale (see <code>borla-technical-design.md</code> §1 and
 </tr>
 <tr>
 <td><strong>v2.0</strong></td>
-<td>TD-05 (Redis/BullMQ + Socket.IO Redis adapter, needed once traffic outgrows one instance), TD-09 (i18n), TD-04 (offline PWA shell), TD-11 (photo classification)</td>
+<td>TD-05 (Redis/BullMQ + Socket.IO Redis adapter, needed once traffic outgrows one instance), TD-09 (i18n), TD-04 (offline write queue — the install/update half already shipped), TD-11 (photo classification)</td>
 </tr>
 <tr>
 <td><strong>Ongoing</strong></td>

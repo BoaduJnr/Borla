@@ -393,18 +393,25 @@ rolling rating_avg/rating_count recomputed for the reviewed party
 | AI | Google Gemini API (optional) | Free tier for moderation; degrades gracefully without a key |
 | SMS | GiantSMS (optional) | Real OTP delivery when configured; falls back safely (see Technical_Debt_Plan TD-02) |
 | Auth | JWT (access+refresh) + bcrypt | Stateless API auth; OTP/password hashes never stored in plaintext |
+| PWA | `vite-plugin-pwa` + Workbox | Installable app shell + explicit update-available prompt (resolves most of Technical_Debt_Plan TD-04) |
 | Deployment | Render (one Web Service + one Postgres) | Single free-tier footprint, `render.yaml` blueprint |
 
 ### 10.2 What was actually built
 Every functional requirement tagged Must-Have or Should-Have in `SRS.md` §6 is implemented and
-exercised by the automated test suite: phone/OTP auth with real SMS delivery attempt, admin
-password login, presence toggle/heartbeat with self-healing offline detection, the full
-broadcast plane (create/fan-out/clear/auto-expire), the full request plane
-(create/seen/accept/reject/auto-timeout with idempotent transitions), reveal-on-accept masked
-contact, two-sided reviews with real-interaction enforcement, AI-or-manual moderation, one
-capped public reply, double-blind release with rolling rating aggregates, and the full admin
-console (verify/suspend/reinstate, moderation queue, audit log, live stats, live ops map, live
-config tuning).
+exercised by the automated test suite: a **unified sign-in flow** where the phone number alone
+decides what happens next (a branded splash screen leads into a single phone-entry step; a
+seeded admin's number is auto-detected and routed to a password prompt; any other number gets
+an OTP, and only a genuinely new number is asked to pick a role and a name — an existing user
+logs straight in), with real SMS delivery attempted first; presence toggle/heartbeat with
+self-healing offline detection; the full broadcast plane (create/fan-out/clear/auto-expire);
+the full request plane (create/seen/accept/reject/auto-timeout with idempotent transitions);
+reveal-on-accept masked contact; two-sided reviews with real-interaction enforcement;
+AI-or-manual moderation; one capped public reply; double-blind release with rolling rating
+aggregates; the full admin console (verify/suspend/reinstate, moderation queue, audit log, live
+stats, live ops map, live config tuning); and a real installable PWA (manifest, icons, a
+Workbox service worker precaching the app shell, an explicit "Update available" prompt, and a
+native "Install app" button) — verified by checking `navigator.serviceWorker.getRegistrations()`
+against the actual production build, not just trusting the plugin.
 
 ### 10.3 Code organisation
 ```
@@ -424,7 +431,7 @@ request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-40/40 automated tests passing (36 server — unit + Supertest integration against a real
+42/42 automated tests passing (38 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
 scripted manual system/UAT pass and a security/usability review. Five real defects were caught
 and fixed during development — four in the automated suite (a broken first-time-signup code

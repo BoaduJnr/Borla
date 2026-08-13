@@ -3,6 +3,7 @@ import { useAuth } from "./hooks/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Logo } from "./components/Logo";
 import { IconHome, IconPerson } from "./components/Icon";
+import { UpdatePrompt } from "./pwa/UpdatePrompt";
 import Login from "./pages/Login";
 import HouseholdHome from "./pages/HouseholdHome";
 import CollectorHome from "./pages/CollectorHome";
@@ -53,7 +54,9 @@ function HomeRedirect() {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <UpdatePrompt />
+      <Routes>
       <Route
         path="/login"
         element={
@@ -104,6 +107,7 @@ export default function App() {
       />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

@@ -18,22 +18,38 @@ and looking for work. There are two ways to get matched:
 - **Direct request** — pick one specific collector from the map and send them a request; they
   accept or reject it, and if they accept, you can both see and call each other.
 
-## 2. Logging in (all roles)
+Borla is a real installable web app (a PWA): after logging in, open **Profile** and tap
+**Install Borla app** to add it to your home screen with its own icon, launching full-screen
+like a native app (Chrome/Edge/Android; on iPhone, use Safari's Share → **Add to Home Screen**
+instead, since iOS doesn't offer the same in-app install button). When a new version is
+deployed, a banner appears at the bottom of the screen offering to **Update** — nothing changes
+under you without asking first.
 
-1. Open the app's URL (see `Deployment_and_Source_Links.txt`).
-2. Enter your phone number.
-3. If it's a brand-new number, pick **Household** or **Collector**.
-4. Tap **Send OTP**.
-5. **If SMS delivery is configured and working**, a text arrives with your 6-digit code and the
+## 2. Logging in (all roles) — one unified flow
+
+There is a single entry point for everyone. You never have to say upfront whether you're a
+household, a collector, or an admin — **your phone number tells the app who you are**:
+
+1. Open the app's URL (see `Deployment_and_Source_Links.txt`). You land on the welcome/splash
+   screen — tap **Get started**.
+2. Enter your phone number and tap **Continue**. That's the only field on this screen — no role
+   picker, no "Admin" toggle to find.
+3. What happens next depends on the number itself:
+   - **It's a seeded admin's number** → you're taken straight to a password field ("This number
+     is registered as an admin — sign in with your password"). Enter the password and tap
+     **Sign in**. See §5 for the admin credentials.
+   - **Anything else** → a one-time code is sent.
+4. **If SMS delivery is configured and working**, a text arrives with your 6-digit code and the
    screen simply says "Code sent via SMS — check your phone."
-6. **If SMS delivery isn't available** (no gateway configured, or the send failed), the screen
+5. **If SMS delivery isn't available** (no gateway configured, or the send failed), the screen
    shows the code directly in a dark banner labelled "SMS delivery unavailable right now" — this
    is a documented, deliberate fallback (see `Technical_Debt_Plan.md` TD-02), not a bug: nobody
    is ever locked out just because a text didn't arrive.
-7. Type the 6-digit code (from the text or the banner) and, if this is your first login, your
-   name. Tap **Verify & continue**.
-
-Admins do not use OTP — see §5.
+6. Type the 6-digit code.
+   - **Brand-new number** → the screen also asks "First time here — tell us a bit about you":
+     pick **Household** or **Collector** and enter your name, then tap **Create account**.
+   - **Number you've used before** → there's nothing else to fill in; tap **Verify & continue**
+     and you're straight in.
 
 ## 3. Household walkthrough
 
