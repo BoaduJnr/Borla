@@ -9,3 +9,5 @@ coverage/
 .DS_Store
 Thumbs.db
 *.pdf.tmp
+# Sakai submission package — a build artifact assembled from docs/, not source to version.
+*_Borla.zip
