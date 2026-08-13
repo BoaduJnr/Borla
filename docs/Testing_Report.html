@@ -60,7 +60,7 @@ separate phase, which is appropriate at this scale.</p>
 <h2>2. Automated test results</h2>
 <h3>2.1 Server (<code>npm run test -w server</code>)</h3>
 <pre><code>✓ test/integration/broadcasts.test.ts (4 tests)
-✓ test/integration/reviews.test.ts (4 tests)
+✓ test/integration/reviews.test.ts (5 tests)
 ✓ test/integration/requests.test.ts (5 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 ✓ test/integration/auth.test.ts (13 tests)
@@ -71,8 +71,8 @@ separate phase, which is appropriate at this scale.</p>
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  47 passed (47)
-   Duration  28.87s
+      Tests  48 passed (48)
+   Duration  49.31s
 </code></pre>
 <p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); <code>broadcasts.test.ts</code>
@@ -85,7 +85,7 @@ instead of asserting on a field the old synchronous handler used to return direc
  Test Files  2 passed (2)
       Tests  4 passed (4)
 </code></pre>
-<p><strong>Total: 51/51 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
+<p><strong>Total: 52/52 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
 <h2>3. Test case log</h2>
 <p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
@@ -478,6 +478,22 @@ development (rows T-08, T-19, and T-39).</p>
 <td>Confirmed in <code>requests.test.ts</code> — <code>collector_lon/lat</code> are <code>null</code> pre-accept and match the collector&#39;s position post-accept; <code>household_lon/lat</code> present in both cases</td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-48</td>
+<td><strong>(defect)</strong> <code>GET /reviews/mine</code> — an author can see their own review regardless of visibility, distinct from <code>GET /users/:id/reviews</code> (visible-only)</td>
+<td>Integration + manual (D-10, reported by the user)</td>
+<td>Author sees the review immediately with an honest status (<code>pending</code>/<code>visible</code>); a stranger&#39;s &quot;mine&quot; list never contains someone else&#39;s review</td>
+<td>Confirmed live: a fresh review submitted, then approved and released end-to-end via a real double-blind pairing (~15s in production, well under the 2-minute sweep interval) — the mechanism works; the gap was that neither side had any way to <em>see</em> that it was working</td>
+<td>Fail → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-49</td>
+<td>Double-blind release fires quickly once both sides have genuinely reviewed each other on the same request</td>
+<td>System (live, production)</td>
+<td>Both reviews become visible to each other shortly after the second side submits</td>
+<td>Two fresh reviews submitted on the same accepted request in production; both passed AI moderation within ~10s and were mutually visible within one release-sweep cycle (~15s observed)</td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -543,14 +559,24 @@ development (rows T-08, T-19, and T-39).</p>
 <td>Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the <code>Avatar</code> component referenced <code>.avatar</code>/<code>.avatar.g</code> classes that had never actually been added to <code>tokens.css</code>, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the <em>last</em> whitespace-separated token without checking it started with a letter, so <code>&quot;Ama (Osu)&quot;</code> produced <code>&quot;A(&quot;</code>.</td>
 <td>Added the missing <code>.avatar</code>/<code>.avatar.g</code> rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes.</td>
 </tr>
+<tr>
+<td>D-10</td>
+<td><code>client/src/pages/Profile.tsx</code>, <code>client/src/components/ReviewForm.tsx</code></td>
+<td>The double-blind release mechanism itself was working correctly (confirmed by T-49), but nothing in the UI <em>said</em> so: <code>GET /users/:id/reviews</code> only ever returns <code>status=&#39;visible&#39;</code> rows by design, and there was no way for the author of a review to see their own submission anywhere — not on Profile, not after the initial &quot;submitted&quot; moment. A one-sided review (the common case until the other party also reviews) looked indistinguishable from a silently-broken or lost one. <strong>Reported by the user</strong> (&quot;why is approved reviews and given reviews not seen by either party&quot;) after testing the flow themselves.</td>
+<td>Added <code>GET /reviews/mine</code> (any status, author-only) and a &quot;Reviews I&#39;ve given&quot; section on Profile showing each review&#39;s real status (<code>Awaiting moderation</code> / <code>Approved — waiting on the other side…</code> / <code>Public</code> / etc.); reworded <code>ReviewForm</code>&#39;s post-submit message to explain the hold instead of a bare &quot;thanks&quot;.</td>
+</tr>
 </tbody></table>
-<p>All nine were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
-corresponding feature — five by the automated suite, three by deliberately exercising the live
-deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
-by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by a
-scripted screenshot pass rather than by reading the code — direct evidence for why TD-10 (test
-depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t been
-extended to every corner of the app, including production behaviour, yet.</p>
+<p>All ten were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well after)
+the corresponding feature — five by the automated suite, four by deliberately exercising the
+live deployed app or reading its logs (D-05 by me re-testing production myself; D-07 and D-10
+reported back by the user; D-08 surfaced in production logs once the Gemini key went live), and
+D-09 by a scripted screenshot pass rather than by reading the code — direct evidence for why
+TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t
+been extended to every corner of the app, including production behaviour, yet. D-10 in
+particular is a reminder that a <em>correctly working</em> backend mechanism (the double-blind release
+sweep, confirmed by T-49) can still fail users entirely if the UI never surfaces its state —
+functional correctness and observability are different bars, and this build&#39;s automated tests
+only ever checked the former.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

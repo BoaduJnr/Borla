@@ -43,7 +43,9 @@ export function ReviewForm({
   if (done)
     return (
       <p className="muted row" style={{ fontSize: 12.5, gap: 5 }}>
-        <IconCheck size={14} color="var(--green)" /> Review submitted — thanks!
+        <IconCheck size={14} color="var(--green)" /> Review submitted — it becomes visible once the
+        other side has also reviewed, or the review window closes. Check Profile → Reviews I've
+        given for its status.
       </p>
     );
   if (!open)

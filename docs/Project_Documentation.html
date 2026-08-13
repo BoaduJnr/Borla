@@ -508,7 +508,7 @@ phone numbers normalised to one canonical form before every lookup/insert (<code
 D-07) and stripped from API responses until a request is accepted; fail-closed moderation (no
 verdict ⇒ stays hidden).</p>
 <h2>11. Testing (summary)</h2>
-<p>51/51 automated tests passing (47 server — unit + Supertest integration against a real
+<p>52/52 automated tests passing (48 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance <em>and</em> a real Redis instance; 4 client — React Testing Library) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
 Nine real defects were caught and fixed during development — five in the automated suite (a
@@ -563,7 +563,7 @@ what appears; an admin lands on <code>/admin</code> after the password step.</p>
 </thead>
 <tbody><tr>
 <td><strong>Corrective</strong></td>
-<td>GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 47 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with <code>phone.test.ts</code> added before the fix.</td>
+<td>GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 48 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with <code>phone.test.ts</code> added before the fix.</td>
 </tr>
 <tr>
 <td><strong>Adaptive</strong></td>

@@ -102,6 +102,32 @@ reviewsRouter.get(
   })
 );
 
+/**
+ * GET /reviews/mine — reviews the current user has *written*, any status. Reviews received
+ * (GET /users/:id/reviews) only ever returns `status='visible'` rows, by design — a review
+ * sits hidden until the double-blind release condition is met (both sides reviewed, or the
+ * review window closed; `jobs/workers.ts` reviewReleaseSweep). Without this endpoint, the
+ * author of a review has no way to confirm it was actually submitted and is just waiting on
+ * the other side, rather than lost — this is exactly that visibility.
+ */
+reviewsRouter.get(
+  "/reviews/mine",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const rows = await query(
+      `SELECT r.id, r.rating, r.comment, r.status, r.moderation_passed, r.created_at, r.visible_at,
+              s.display_name AS subject_name
+       FROM reviews r
+       JOIN users s ON s.id = r.subject_id
+       WHERE r.author_id = $1
+       ORDER BY r.created_at DESC
+       LIMIT 50`,
+      [req.user!.id]
+    );
+    res.json({ reviews: rows });
+  })
+);
+
 /** POST /reviews/:id/reply — the reviewed party gets exactly one public reply. */
 reviewsRouter.post(
   "/reviews/:id/reply",

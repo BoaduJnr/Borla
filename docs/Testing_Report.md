@@ -34,7 +34,7 @@ separate phase, which is appropriate at this scale.
 
 ```
 ✓ test/integration/broadcasts.test.ts (4 tests)
-✓ test/integration/reviews.test.ts (4 tests)
+✓ test/integration/reviews.test.ts (5 tests)
 ✓ test/integration/requests.test.ts (5 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 ✓ test/integration/auth.test.ts (13 tests)
@@ -45,8 +45,8 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  47 passed (47)
-   Duration  28.87s
+      Tests  48 passed (48)
+   Duration  49.31s
 ```
 
 `redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
@@ -64,7 +64,7 @@ instead of asserting on a field the old synchronous handler used to return direc
       Tests  4 passed (4)
 ```
 
-**Total: 51/51 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 52/52 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
 
 ## 3. Test case log
@@ -122,6 +122,8 @@ development (rows T-08, T-19, and T-39).
 | T-45 | Live Gemini moderation classification against the real provisioned key (D-08 fix) | Manual (real key, `server/src/ai/moderation.ts`) | A genuine, non-fallback `allow`/`flag`/`block` verdict, not a `null` that degrades to the manual queue | `classifyText("Great pickup, right on time, very professional!", "review")` returned `{"verdict":"allow","categories":[],"piiFound":false,"confidence":0.99,"reason":"The text is a positive, legitimate review with no presence of abuse, harassment, spam, or PII."}` — a real classification | Pass (confirmed locally against the real key; production re-verification pending — the deployed process needs the same key set) |
 | T-46 | Gemini model-ID resilience: the candidate-list fallback skips a 404'd model instead of failing closed entirely | Manual (real key, direct HTTP probe of 6 candidate IDs) | At least one candidate in the list resolves | `gemini-2.5-flash`/`gemini-2.0-flash` → `404`; `gemini-3.6-flash`/`gemini-3.5-flash`/`gemini-3.7-flash`/`gemini-flash-latest` → `200` — the code tries `gemini-3.6-flash` first and succeeds immediately | Pass |
 | T-47 | FR-27: `GET /requests/mine` exposes the right location to the right side, gated the same way as contact reveal | Integration | Collector always sees the household's pickup point (already shared at request creation); household sees no collector location before acceptance, then the real one after | Confirmed in `requests.test.ts` — `collector_lon/lat` are `null` pre-accept and match the collector's position post-accept; `household_lon/lat` present in both cases | Pass |
+| T-48 | **(defect)** `GET /reviews/mine` — an author can see their own review regardless of visibility, distinct from `GET /users/:id/reviews` (visible-only) | Integration + manual (D-10, reported by the user) | Author sees the review immediately with an honest status (`pending`/`visible`); a stranger's "mine" list never contains someone else's review | Confirmed live: a fresh review submitted, then approved and released end-to-end via a real double-blind pairing (~15s in production, well under the 2-minute sweep interval) — the mechanism works; the gap was that neither side had any way to *see* that it was working | Fail → **Fixed**, now Pass |
+| T-49 | Double-blind release fires quickly once both sides have genuinely reviewed each other on the same request | System (live, production) | Both reviews become visible to each other shortly after the second side submits | Two fresh reviews submitted on the same accepted request in production; both passed AI moderation within ~10s and were mutually visible within one release-sweep cycle (~15s observed) | Pass |
 
 ## 4. Defects found during development
 
@@ -136,14 +138,19 @@ development (rows T-08, T-19, and T-39).
 | D-07 | `server/src/modules/auth/routes.ts` (`phoneSchema`, both OTP endpoints) | Phone numbers were stored and looked up as the raw string the client sent, with no normalisation — `+233200000001`, `233200000001`, and `0200000001` were three different rows to Postgres, so an already-registered user who typed their number without the leading `+` looked brand new and was sent through the sign-up (role + name) path instead of logging straight in. **Found by the user testing the seeded household account (`233200000001`, no `+`) against the live app.** | Added `server/src/utils/phone.ts` (`normalizePhone`), wired into `phoneSchema` via Zod's `.transform()` so every route that accepts a phone number normalises it before it ever reaches a query or an insert. Four new unit tests (`phone.test.ts`) plus regression coverage in `auth.test.ts` confirming the same number in all three input forms resolves to one account. |
 | D-08 | `server/src/ai/moderation.ts` (`MODEL` constant) | The moderation pipeline was hardcoded to `gemini-2.5-flash`. Once the user provisioned a real `GEMINI_API_KEY`, live calls started returning `404 — this model is no longer available to new users` for that account's tier, which the fail-closed design (correctly) turned into every review silently landing in the manual queue instead of surfacing a visible error. **Found via production logs after the key was set.** | First fix (switching to a single hardcoded `gemini-flash-latest`) still couldn't be confirmed live. Root-caused properly by probing six candidate model IDs directly against the real key: `gemini-2.5-flash`/`gemini-2.0-flash` both 404, `gemini-3.6-flash`/`gemini-3.5-flash`/`gemini-3.7-flash`/`gemini-flash-latest` all work. Rewrote `classifyText` to try an ordered candidate list and cache whichever one succeeds per process, instead of betting on one guessed ID — confirmed working end-to-end locally (T-45/T-46). |
 | D-09 | `client/src/components/Avatar.tsx`, `client/src/styles/tokens.css` | Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the `Avatar` component referenced `.avatar`/`.avatar.g` classes that had never actually been added to `tokens.css`, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the *last* whitespace-separated token without checking it started with a letter, so `"Ama (Osu)"` produced `"A("`. | Added the missing `.avatar`/`.avatar.g` rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes. |
+| D-10 | `client/src/pages/Profile.tsx`, `client/src/components/ReviewForm.tsx` | The double-blind release mechanism itself was working correctly (confirmed by T-49), but nothing in the UI *said* so: `GET /users/:id/reviews` only ever returns `status='visible'` rows by design, and there was no way for the author of a review to see their own submission anywhere — not on Profile, not after the initial "submitted" moment. A one-sided review (the common case until the other party also reviews) looked indistinguishable from a silently-broken or lost one. **Reported by the user** ("why is approved reviews and given reviews not seen by either party") after testing the flow themselves. | Added `GET /reviews/mine` (any status, author-only) and a "Reviews I've given" section on Profile showing each review's real status (`Awaiting moderation` / `Approved — waiting on the other side…` / `Public` / etc.); reworded `ReviewForm`'s post-submit message to explain the hold instead of a bare "thanks". |
 
-All nine were caught by testing immediately after (or, for D-05/D-06/D-07/D-08, well after) the
-corresponding feature — five by the automated suite, three by deliberately exercising the live
-deployed app or reading its logs (D-05 by me re-testing production myself; D-07 reported back
-by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by a
-scripted screenshot pass rather than by reading the code — direct evidence for why TD-10 (test
-depth) is listed as "scheduled," not "critical": the practice works, it just hasn't been
-extended to every corner of the app, including production behaviour, yet.
+All ten were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well after)
+the corresponding feature — five by the automated suite, four by deliberately exercising the
+live deployed app or reading its logs (D-05 by me re-testing production myself; D-07 and D-10
+reported back by the user; D-08 surfaced in production logs once the Gemini key went live), and
+D-09 by a scripted screenshot pass rather than by reading the code — direct evidence for why
+TD-10 (test depth) is listed as "scheduled," not "critical": the practice works, it just hasn't
+been extended to every corner of the app, including production behaviour, yet. D-10 in
+particular is a reminder that a *correctly working* backend mechanism (the double-blind release
+sweep, confirmed by T-49) can still fail users entirely if the UI never surfaces its state —
+functional correctness and observability are different bars, and this build's automated tests
+only ever checked the former.
 
 ## 5. Security testing
 

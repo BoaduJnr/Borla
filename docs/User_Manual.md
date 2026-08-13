@@ -72,10 +72,12 @@ household, a collector, or an admin — **your phone number tells the app who yo
    directly. A small map also appears showing the **route to your collector** with distance and
    an estimated time — a straight line if the routing service is briefly unreachable, a real
    road route otherwise. You'll also see a **⭐ Leave a review** option — rate 1–5 and
-   optionally comment; it becomes public once it passes moderation and the other side has also
-   reviewed (or after the review window closes).
-6. **Profile tab**: adjust your alert radius and whether standing alerts are on; see reviews
-   collectors have left about you.
+   optionally comment; it stays private until it passes moderation *and* the other side has
+   also reviewed (or the review window closes) — check its status any time under Profile →
+   Reviews I've given.
+6. **Profile tab**: adjust your alert radius and whether standing alerts are on; see **Reviews
+   received** (visible ones, from collectors) and **Reviews I've given** (every review you've
+   written, with its current status — awaiting moderation, approved-and-waiting, or public).
 
 ## 4. Collector walkthrough
 
@@ -132,5 +134,5 @@ you also revert `server/migrations/`.
 | "Your collector account is not verified yet" | New collector account, not yet admin-approved | Log in as admin → Users → Verify |
 | No collectors/pins showing on the map | Location permission denied, or nobody online nearby | Allow location access; try again once a collector/household is nearby in the seed data |
 | OTP screen shows the code instead of "sent via SMS" | SMS gateway not configured or the send failed | Expected fallback — use the shown code; see Technical_Debt_Plan.md TD-02 |
-| Reviews never appear on a profile | Awaiting moderation and/or the other side hasn't reviewed yet | Check Admin → Moderation; double-blind release also waits up to the configured review window |
+| A review you wrote never shows up | Awaiting moderation, and/or the other side hasn't reviewed yet | Check Profile → Reviews I've given for its exact status; an admin can also check Admin → Moderation. Double-blind release also waits up to the configured review window if the other side never reviews back |
 | Build fails on Render with "vite: not found" | `NODE_ENV=production` made `npm ci` skip devDependencies | Already fixed in `render.yaml` (`--include=dev` on the build command) |

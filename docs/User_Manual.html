@@ -107,10 +107,12 @@ it from every collector&#39;s map immediately, so nobody else wastes a trip.</li
 directly. A small map also appears showing the <strong>route to your collector</strong> with distance and
 an estimated time — a straight line if the routing service is briefly unreachable, a real
 road route otherwise. You&#39;ll also see a <strong>⭐ Leave a review</strong> option — rate 1–5 and
-optionally comment; it becomes public once it passes moderation and the other side has also
-reviewed (or after the review window closes).</li>
-<li><strong>Profile tab</strong>: adjust your alert radius and whether standing alerts are on; see reviews
-collectors have left about you.</li>
+optionally comment; it stays private until it passes moderation <em>and</em> the other side has
+also reviewed (or the review window closes) — check its status any time under Profile →
+Reviews I&#39;ve given.</li>
+<li><strong>Profile tab</strong>: adjust your alert radius and whether standing alerts are on; see <strong>Reviews
+received</strong> (visible ones, from collectors) and <strong>Reviews I&#39;ve given</strong> (every review you&#39;ve
+written, with its current status — awaiting moderation, approved-and-waiting, or public).</li>
 </ol>
 <h2>4. Collector walkthrough</h2>
 <ol>
@@ -185,9 +187,9 @@ you also revert <code>server/migrations/</code>.</p>
 <td>Expected fallback — use the shown code; see Technical_Debt_Plan.md TD-02</td>
 </tr>
 <tr>
-<td>Reviews never appear on a profile</td>
-<td>Awaiting moderation and/or the other side hasn&#39;t reviewed yet</td>
-<td>Check Admin → Moderation; double-blind release also waits up to the configured review window</td>
+<td>A review you wrote never shows up</td>
+<td>Awaiting moderation, and/or the other side hasn&#39;t reviewed yet</td>
+<td>Check Profile → Reviews I&#39;ve given for its exact status; an admin can also check Admin → Moderation. Double-blind release also waits up to the configured review window if the other side never reviews back</td>
 </tr>
 <tr>
 <td>Build fails on Render with &quot;vite: not found&quot;</td>

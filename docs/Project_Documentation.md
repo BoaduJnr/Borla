@@ -448,7 +448,7 @@ verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-51/51 automated tests passing (47 server — unit + Supertest integration against a real
+52/52 automated tests passing (48 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance *and* a real Redis instance; 4 client — React Testing Library) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
 Nine real defects were caught and fixed during development — five in the automated suite (a
@@ -505,7 +505,7 @@ what appears; an admin lands on `/admin` after the password step.
 
 | Type | Approach |
 |---|---|
-| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 47 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with `phone.test.ts` added before the fix. |
+| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 48 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with `phone.test.ts` added before the fix. |
 | **Adaptive** | Config changes (radius, TTLs, timeouts) go through `app_config` and the admin UI — no redeploy needed for the most likely "the environment changed" adjustments. |
 | **Perfective** | Tracked as the technical-debt repayment plan (`Technical_Debt_Plan.md` §4) — i18n, offline shell, deeper test coverage. |
 | **Preventive** | `npm audit` run before any dependency bump; the health-check endpoint (`/api/health`) lets Render auto-restart a wedged instance. |

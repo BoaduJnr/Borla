@@ -87,4 +87,30 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
     const notSubject = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(household.access)).send({ body: "Sneaky" });
     expect(notSubject.status).toBe(403);
   });
+
+  it("GET /reviews/mine lets the author see their own review regardless of visibility (unlike GET /users/:id/reviews)", async () => {
+    const { household, collector, requestId } = await acceptedRequest();
+    const review = await request(app)
+      .post("/api/reviews")
+      .set(auth(household.access))
+      .send({ subjectId: collector.user.id, requestId, rating: 4, comment: "Good service" });
+    const reviewId = review.body.review.id;
+
+    // Author can see it immediately, still pending — this is exactly what's missing from
+    // GET /users/:id/reviews (visible-only), which would show nothing at all here.
+    const mineBefore = await request(app).get("/api/reviews/mine").set(auth(household.access));
+    const rowBefore = mineBefore.body.reviews.find((r: any) => r.id === reviewId);
+    expect(rowBefore).toBeDefined();
+    expect(rowBefore.status).toBe("pending");
+    expect(rowBefore.subject_name).toBe(collector.user.display_name);
+
+    await query(`UPDATE reviews SET status = 'visible', moderation_passed = true, visible_at = now() WHERE id = $1`, [reviewId]);
+
+    const mineAfter = await request(app).get("/api/reviews/mine").set(auth(household.access));
+    expect(mineAfter.body.reviews.find((r: any) => r.id === reviewId).status).toBe("visible");
+
+    // A stranger's "mine" list never contains someone else's authored review.
+    const strangerMine = await request(app).get("/api/reviews/mine").set(auth(collector.access));
+    expect(strangerMine.body.reviews.find((r: any) => r.id === reviewId)).toBeUndefined();
+  });
 });

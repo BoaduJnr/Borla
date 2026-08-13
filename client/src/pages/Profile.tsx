@@ -8,11 +8,13 @@ import { InstallButton } from "../pwa/InstallButton";
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
   const [reviews, setReviews] = useState<any[]>([]);
+  const [given, setGiven] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (user) api<{ reviews: any[] }>(`/users/${user.id}/reviews`).then((d) => setReviews(d.reviews));
+    api<{ reviews: any[] }>(`/reviews/mine`).then((d) => setGiven(d.reviews));
   }, [user?.id]);
 
   if (!user) return null;
@@ -146,8 +148,44 @@ export default function Profile() {
           </div>
         ))}
       </div>
+
+      <h3 className="h-disp" style={{ fontSize: 16, marginTop: 10 }}>
+        Reviews I've given
+      </h3>
+      <div className="stack">
+        {given.length === 0 && <p className="muted">You haven't reviewed anyone yet.</p>}
+        {given.map((r) => (
+          <div key={r.id} className="card stack">
+            <div className="spread">
+              <b>{r.subject_name ?? "Someone"}</b>
+              <Stars rating={r.rating} />
+            </div>
+            {r.comment && <p>{r.comment}</p>}
+            <span className={`tag-chip ${givenStatusChipClass(r)}`} style={{ alignSelf: "flex-start" }}>
+              {givenStatusLabel(r)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
+}
+
+// A review the current user authored is never itself hidden from them — but its public
+// visibility depends on the double-blind release gate (jobs/workers.ts reviewReleaseSweep), so
+// "submitted" and "visible to the other person" are different moments worth naming clearly.
+function givenStatusLabel(r: { status: string; moderation_passed: boolean }): string {
+  if (r.status === "visible") return "Public";
+  if (r.status === "removed") return "Removed by admin";
+  if (r.status === "flagged") return "Flagged — awaiting admin review";
+  if (r.moderation_passed) return "Approved — waiting on the other side (or the review window to close)";
+  return "Awaiting moderation";
+}
+
+function givenStatusChipClass(r: { status: string; moderation_passed: boolean }): string {
+  if (r.status === "visible") return "t-green";
+  if (r.status === "removed" || r.status === "flagged") return "t-coral";
+  return "t-gold";
 }
 
 function ReplyBox({ reviewId, onSent }: { reviewId: string; onSent: () => void }) {
