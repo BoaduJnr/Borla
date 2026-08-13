@@ -1,0 +1,192 @@
+/* Design tokens lifted directly from borla_UI_design.html (the provided design-system mockup)
+   so the real app matches the approved visual design instead of inventing a new one. */
+:root {
+  --ink: #16241c;
+  --ink-soft: #3e4a43;
+  --muted: #6b7a70;
+  --paper: #ecebe3;
+  --surface: #ffffff;
+  --line: #dbd9ce;
+  --green: #0e6e4e;
+  --green-d: #0a5239;
+  --green-tint: #e4f1ea;
+  --marigold: #f5a208;
+  --marigold-d: #d98a00;
+  --marigold-tint: #fff1d2;
+  --coral: #e14434;
+  --coral-tint: #fbe3df;
+  --disp: "Bricolage Grotesque", system-ui, sans-serif;
+  --body: "Hanken Grotesk", system-ui, sans-serif;
+  --r: 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  font-family: var(--body);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.45;
+}
+h1,
+h2,
+h3,
+.h-disp {
+  font-family: var(--disp);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin: 0;
+}
+button {
+  font-family: var(--body);
+}
+a {
+  color: var(--green-d);
+}
+
+.btn {
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  font-family: var(--body);
+  font-weight: 800;
+  font-size: 16px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  cursor: pointer;
+  transition: transform 0.05s ease, opacity 0.15s ease;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-green {
+  background: var(--green);
+  color: #fff;
+}
+.btn-gold {
+  background: var(--marigold);
+  color: #2a1c00;
+}
+.btn-coral {
+  background: var(--coral);
+  color: #fff;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--line);
+}
+.btn-dark {
+  background: var(--ink);
+  color: #fff;
+}
+.btn-sm {
+  padding: 9px 14px;
+  font-size: 14px;
+  width: auto;
+}
+
+.field {
+  background: #f4f3ec;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  padding: 13px 15px;
+  font-size: 15px;
+  color: var(--ink);
+  width: 100%;
+  font-family: var(--body);
+}
+.field:focus {
+  outline: 2px solid var(--green);
+}
+label {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink-soft);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 99px;
+}
+.t-green {
+  background: var(--green-tint);
+  color: var(--green-d);
+}
+.t-gold {
+  background: var(--marigold-tint);
+  color: var(--marigold-d);
+}
+.t-coral {
+  background: var(--coral-tint);
+  color: var(--coral);
+}
+
+.banner {
+  background: var(--marigold-tint);
+  border: 1.5px solid var(--marigold);
+  color: var(--marigold-d);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.banner.err {
+  background: var(--coral-tint);
+  border-color: var(--coral);
+  color: var(--coral);
+}
+.banner.ok {
+  background: var(--green-tint);
+  border-color: var(--green);
+  color: var(--green-d);
+}
+
+.muted {
+  color: var(--muted);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

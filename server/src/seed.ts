@@ -1,0 +1,71 @@
+import "dotenv/config";
+import bcrypt from "bcryptjs";
+import { pool, query, queryOne } from "./db/pool.js";
+import { runMigrations } from "./db/migrate.js";
+
+/**
+ * Seeds demo accounts for grading/UAT, per Deployment_and_Source_Links.txt:
+ *   - one admin (phone + password login)
+ *   - one household, one collector (both phone+OTP — request an OTP and read the devOtp
+ *     returned by the API; these accounts have no fixed password by design, see User_Manual.md)
+ * Idempotent: safe to run repeatedly.
+ */
+
+// Accra-ish coordinates (Osu) so the two demo accounts are within the default broadcast radius.
+const HOUSEHOLD_PHONE = "+233200000001";
+const COLLECTOR_PHONE = "+233200000002";
+const ADMIN_PHONE = "+233200000000";
+const ADMIN_PASSWORD = "Borla-Admin-2026!";
+
+async function upsertUser(phone: string, role: string, displayName: string, extra: Record<string, any> = {}) {
+  const existing = await queryOne<{ id: string }>(`SELECT id FROM users WHERE phone = $1`, [phone]);
+  if (existing) return existing.id;
+  const user = await queryOne<{ id: string }>(
+    `INSERT INTO users (phone, role, display_name, verified, password_hash)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [phone, role, displayName, extra.verified ?? role !== "collector", extra.passwordHash ?? null]
+  );
+  return user!.id;
+}
+
+async function main() {
+  await runMigrations();
+
+  const adminId = await upsertUser(ADMIN_PHONE, "admin", "Ops Admin", {
+    verified: true,
+    passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 10),
+  });
+
+  const householdId = await upsertUser(HOUSEHOLD_PHONE, "household", "Ama (Osu)");
+  await query(
+    `INSERT INTO households (user_id, home_lon, home_lat, home_location)
+     VALUES ($1, -0.1786, 5.5560, ST_SetSRID(ST_MakePoint(-0.1786, 5.5560), 4326)::geography)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [householdId]
+  );
+
+  const collectorId = await upsertUser(COLLECTOR_PHONE, "collector", "Kwame the Collector", { verified: true });
+  await query(
+    `INSERT INTO collectors (user_id, vehicle_type, waste_types, online, last_lon, last_lat, last_location, last_seen_at)
+     VALUES ($1, 'tricycle', ARRAY['general','recyclable'], true, -0.1800, 5.5570,
+             ST_SetSRID(ST_MakePoint(-0.1800, 5.5570), 4326)::geography, now())
+     ON CONFLICT (user_id) DO UPDATE SET online = true, last_seen_at = now()`,
+    [collectorId]
+  );
+  // Collectors also need `users.verified = true` to go online — set explicitly for the demo account.
+  await query(`UPDATE users SET verified = true WHERE id = $1`, [collectorId]);
+
+  console.log(`\nSeed complete. admin=${adminId} household=${householdId} collector=${collectorId}\n`);
+  console.log("Admin login   : POST /api/auth/admin/login");
+  console.log(`  phone: ${ADMIN_PHONE}  password: ${ADMIN_PASSWORD}`);
+  console.log("\nHousehold demo: POST /api/auth/otp/request { phone: '" + HOUSEHOLD_PHONE + "' } then /otp/verify");
+  console.log("Collector demo: POST /api/auth/otp/request { phone: '" + COLLECTOR_PHONE + "' } then /otp/verify");
+  console.log("(OTP has no real SMS gateway — the code is returned in the request response.)\n");
+
+  await pool.end();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
