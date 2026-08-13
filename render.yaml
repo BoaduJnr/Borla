@@ -8,7 +8,10 @@ services:
     name: borla
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    # --include=dev is required here: NODE_ENV=production below makes npm default to
+    # omitting devDependencies (vite, typescript, tsx) during `npm ci`, which are exactly what
+    # the build step needs — only the *runtime* should skip them, not the build.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run start -w server
     healthCheckPath: /api/health
     envVars:
