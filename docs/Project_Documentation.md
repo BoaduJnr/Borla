@@ -424,11 +424,14 @@ request is accepted; fail-closed moderation (no verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-38/38 automated tests passing (34 server — unit + Supertest integration against a real
+40/40 automated tests passing (36 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance; 4 client — React Testing Library) at time of submission, plus a
-scripted manual system/UAT pass and a security/usability review. Two real defects were caught
-and fixed during development (a broken first-time-signup code path, and a review-reply status
-check gap) — full detail, every test case, and both defect write-ups are in `Testing_Report.md`.
+scripted manual system/UAT pass and a security/usability review. Five real defects were caught
+and fixed during development — four in the automated suite (a broken first-time-signup code
+path, a review-reply status gap, and two others) plus one found by manually testing the *live
+deployed app*: the admin account was reachable via the weaker OTP flow, bypassing its intended
+phone+password requirement entirely. Full detail, every test case, and all five defect
+write-ups are in `Testing_Report.md`.
 
 ## 12. Technical debt
 

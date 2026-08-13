@@ -1,9 +1,20 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import bcrypt from "bcryptjs";
 import { createApp } from "../../src/app.js";
 import { testPhone, signup, auth } from "../helpers.js";
+import { query } from "../../src/db/pool.js";
 
 const app = createApp();
+
+async function makeAdmin() {
+  const phone = testPhone();
+  await query(`INSERT INTO users (phone, role, display_name, verified, password_hash) VALUES ($1,'admin','Test Admin', true, $2)`, [
+    phone,
+    await bcrypt.hash("irrelevant", 10),
+  ]);
+  return phone;
+}
 
 describe("auth: OTP signup/login", () => {
   it("rejects an OTP request for a brand-new number with no role", async () => {
@@ -70,5 +81,25 @@ describe("auth: OTP signup/login", () => {
     const { phone } = await signup(app, "household");
     const res = await request(app).post("/api/auth/admin/login").send({ phone, password: "whatever" });
     expect(res.status).toBe(401);
+  });
+
+  it("refuses to send an OTP to an admin's phone number (OTP must never be a second way into an admin account)", async () => {
+    const adminPhone = await makeAdmin();
+    const res = await request(app).post("/api/auth/otp/request").send({ phone: adminPhone });
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses to verify an OTP into an admin account even if a code somehow exists", async () => {
+    const adminPhone = await makeAdmin();
+    // Insert a valid OTP row directly, bypassing the (now-fixed) /otp/request guard, to prove
+    // /otp/verify itself also refuses admin accounts (defense in depth).
+    const code = "123456";
+    const hash = await bcrypt.hash(code, 10);
+    await query(`INSERT INTO otp_codes (phone, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`, [
+      adminPhone,
+      hash,
+    ]);
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone: adminPhone, code });
+    expect(res.status).toBe(400);
   });
 });

@@ -40,9 +40,15 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const { phone, role } = req.body as { phone: string; role?: Role };
 
-    const existing = await queryOne<{ id: string }>(`SELECT id FROM users WHERE phone = $1`, [phone]);
+    const existing = await queryOne<{ id: string; role: Role }>(`SELECT id, role FROM users WHERE phone = $1`, [phone]);
     if (!existing && !role) {
       throw new ApiError(400, "New phone number — specify role (household|collector) to sign up");
+    }
+    // Admins must use POST /auth/admin/login (phone+password) — OTP is deliberately a weaker
+    // factor and must never be a second way into an admin account. Same response either way so
+    // this doesn't confirm/deny which phone numbers belong to admins.
+    if (existing?.role === "admin") {
+      throw new ApiError(400, "This number is not set up for OTP sign-in");
     }
 
     // Basic abuse guard: at most 5 OTP requests per phone per 10 minutes (stands in for the
@@ -146,6 +152,10 @@ authRouter.post(
     }
 
     if (!user) throw new ApiError(500, "Failed to create user");
+    // Defense in depth: otp/request already refuses to issue codes for admin numbers, but this
+    // blocks it too in case a code was requested before that guard existed (or via any other
+    // path) — OTP must never be a way into an admin account.
+    if (user.role === "admin") throw new ApiError(400, "This number is not set up for OTP sign-in");
     if (user.suspended) throw new ApiError(403, "Account suspended — contact support");
 
     const access = signAccessToken(user.id, user.role);

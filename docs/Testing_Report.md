@@ -36,15 +36,15 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/otp.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
 ✓ test/unit/sms.test.ts (3 tests)
-✓ test/integration/auth.test.ts (8 tests)
+✓ test/integration/auth.test.ts (10 tests)
 ✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/requests.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (4 tests)
 ✓ test/integration/admin.test.ts (4 tests)
 
  Test Files  8 passed (8)
-      Tests  34 passed (34)
-   Duration  14.60s
+      Tests  36 passed (36)
+   Duration  40.54s
 ```
 
 ### 2.2 Client (`npm run test -w client`)
@@ -57,7 +57,7 @@ separate phase, which is appropriate at this scale.
       Tests  4 passed (4)
 ```
 
-**Total: 38/38 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 40/40 automated tests passing** at time of submission. Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS — see `README.md`).
 
 ## 3. Test case log
@@ -110,11 +110,13 @@ development (rows T-08 and T-19).
 | D-02 | `server/src/modules/auth/routes.ts` (OTP verify) | An early draft wrapped user-creation in a transaction block that threw a sentinel error (`role_missing`) to short-circuit — but the `catch` swallowed it without ever inserting the user, so first-time signup silently returned an "unexpected signup state" error | Rewritten as a straight-line `if (!user) { ...INSERT... }` with no transaction/sentinel-error indirection; covered by T-02/T-08 |
 | D-03 | `server/src/seed.ts` | First draft referenced a non-existent `verified_note` column on `collectors` (copy-paste artefact) wrapped in a silent `.catch()` fallback that masked the real error | Removed the phantom column and the `.catch()` swallow entirely; seed now fails loudly if it ever breaks again |
 | D-04 | `server/src/modules/reviews/routes.ts` (reply endpoint) | Only checked `review.subject_id === user.id`, not `review.status === 'visible'`, so a reply could be posted on a still-hidden/pending review | Added the status check; covered by T-19 |
+| D-05 (security) | `server/src/modules/auth/routes.ts` (`/auth/otp/request`, `/auth/otp/verify`) | Neither endpoint checked `users.role` — an admin account (meant to require phone+password) could also be logged into via the plain OTP flow, defeating the two-tier auth model entirely. Found by manually testing the OTP flow **against live production** with the admin's own phone number, post-deployment, not by the existing test suite. | Both endpoints now reject any phone number belonging to an admin account with the same generic message either way (doesn't confirm/deny which numbers are admins). Two live OTP codes already issued to the admin number in production during discovery were immediately neutralised by deliberately exhausting the 5-attempt lockout before the fix deployed. Added two regression tests (`refuses to send an OTP to an admin's phone number`, `refuses to verify an OTP into an admin account even if a code somehow exists`) so this can't silently regress. |
 
-All four were caught by writing the test suite immediately after the corresponding feature,
-not by separate manual QA — direct evidence for why TD-10 (test depth) is listed as
-"scheduled," not "critical": the practice worked, it just hasn't been extended to every corner
-of the app yet.
+All five were caught by testing immediately after (or, for D-05, well after) the corresponding
+feature — four by the automated suite, one by deliberately exercising the live deployed app —
+direct evidence for why TD-10 (test depth) is listed as "scheduled," not "critical": the
+practice works, it just hasn't been extended to every corner of the app, including production
+behaviour, yet.
 
 ## 5. Security testing
 
@@ -126,6 +128,7 @@ of the app yet.
 | Role escalation (collector calling household-only routes, etc.) | Automated (T-12) + manual `curl` across all role-gated routes | Consistently `403` |
 | Contact information leakage pre-accept | Automated (T-14) | Phone fields verified absent from the JSON payload itself (not just hidden in the UI) before acceptance |
 | Secrets handling | Code review | JWT secrets and the Gemini key are read from environment variables only, never committed (`.env` is git-ignored, `.env.example` has placeholders) |
+| Admin account reachable via the weaker OTP path (bypassing phone+password) | Manual testing against the **live production** deployment | **Confirmed exploitable** (D-05) — fixed immediately, redeployed, and re-verified `400` on both endpoints for the admin's number |
 
 ## 6. Usability testing
 
