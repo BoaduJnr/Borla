@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes, Link, useLocation } from "react-router-dom";
 import { useAuth } from "./hooks/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { Logo } from "./components/Logo";
+import { IconHome, IconPerson } from "./components/Icon";
 import Login from "./pages/Login";
 import HouseholdHome from "./pages/HouseholdHome";
 import CollectorHome from "./pages/CollectorHome";
@@ -10,10 +12,12 @@ import Profile from "./pages/Profile";
 function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   const { user, logout } = useAuth();
   const loc = useLocation();
+  const onHome = loc.pathname.startsWith("/household") || loc.pathname.startsWith("/collector");
+  const onProfile = loc.pathname === "/profile";
   return (
     <div className={`app-shell ${wide ? "wide" : ""}`}>
       <div className="topbar">
-        <span className="brand">Borla</span>
+        <Logo size={28} />
         <span className="spacer" />
         {user && (
           <button className="btn btn-ghost btn-sm" onClick={logout}>
@@ -24,11 +28,13 @@ function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }
       {children}
       {user && user.role !== "admin" && (
         <div className="tabbar">
-          <Link className={loc.pathname.startsWith("/household") || loc.pathname.startsWith("/collector") ? "active" : ""} to={user.role === "household" ? "/household" : "/collector"}>
-            🏠 Home
+          <Link className={onHome ? "active" : ""} to={user.role === "household" ? "/household" : "/collector"}>
+            <IconHome size={20} color={onHome ? "var(--green)" : "var(--muted)"} />
+            Home
           </Link>
-          <Link className={loc.pathname === "/profile" ? "active" : ""} to="/profile">
-            👤 Profile
+          <Link className={onProfile ? "active" : ""} to="/profile">
+            <IconPerson size={20} color={onProfile ? "var(--green)" : "var(--muted)"} />
+            Profile
           </Link>
         </div>
       )}

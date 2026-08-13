@@ -441,11 +441,22 @@ of the app yet.</p>
 </tr>
 </tbody></table>
 <h2>6. Usability testing</h2>
-<p>A short heuristic pass against the approved <code>borla_UI_design.html</code> design system: tap targets
-≥44px (<code>.btn</code> padding), icon-first primary actions (&quot;🔔 I HAVE WASTE&quot;, &quot;🚛 Go online&quot;), a
-single primary action per screen, and colour contrast matching the approved palette (green/
-marigold/coral on a warm paper background). Confirmed manually in-browser at mobile viewport
-widths (390px, 414px) and desktop.</p>
+<p>A design-fidelity pass against the approved <code>borla_UI_design.html</code> mockups: the brand mark
+(pin + marigold radar dot), the line-icon system, coloured initial avatars, and the signature
+animated &quot;broadcast ring&quot; were all re-implemented in the real app (not just approximated with
+emoji) and verified with real, scripted screenshots (Puppeteer driving headless Chrome against
+the running dev server, logged in as the seeded demo accounts) rather than eyeballing the code.</p>
+<p><strong>D-05 (found this way):</strong> the screenshots showed collector/household initials rendering as
+bare unstyled text with no circular background — <code>.avatar</code>/<code>.avatar.g</code> were referenced by the
+new <code>Avatar</code> component but had never actually been added to <code>tokens.css</code>. Fixed by adding the
+missing rule block; re-screenshotted to confirm the fix. A second minor defect surfaced the
+same way: <code>Ama (Osu)</code> produced initials <code>&quot;A(&quot;</code> because the initials helper took the first
+character of the <em>last</em> whitespace-separated token without checking it started with a letter;
+fixed by filtering to letter-led words first.</p>
+<p>Beyond that: tap targets ≥44px (<code>.btn</code> padding), icon-first primary actions, a single primary
+action per screen, and colour contrast matching the approved palette (green/marigold/coral on
+a warm paper background) — confirmed manually in-browser at mobile viewport widths (390px,
+414px) and desktop.</p>
 <h2>7. Performance testing</h2>
 <p>Out of scope at pilot scale by design (see SRS NFR discussion) — the one performance-relevant
 check performed was confirming the PostGIS <code>ST_DWithin</code>/<code>GEOSEARCH</code>-equivalent nearby queries

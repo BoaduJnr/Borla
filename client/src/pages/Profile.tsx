@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
+import { Avatar } from "../components/Avatar";
+import { Stars } from "../components/Stars";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
@@ -53,20 +55,20 @@ export default function Profile() {
       <h2 className="h-disp" style={{ fontSize: 22 }}>
         Profile
       </h2>
-      <div className="card stack">
+      <div className="card row">
+        <Avatar name={user.display_name} role={user.role === "collector" ? "collector" : "household"} size={56} />
         <div>
           <b>{user.display_name ?? "—"}</b>
           <div className="muted">{user.phone}</div>
+          {profile?.rating_avg && (
+            <div className="row" style={{ gap: 6, marginTop: 4 }}>
+              <Stars rating={profile.rating_avg} />
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                {profile.rating_avg} ({profile.rating_count} review{profile.rating_count === 1 ? "" : "s"})
+              </span>
+            </div>
+          )}
         </div>
-        {profile?.rating_avg && (
-          <div className="stars">
-            {"★".repeat(Math.round(profile.rating_avg))}
-            {"☆".repeat(5 - Math.round(profile.rating_avg))}{" "}
-            <span className="muted">
-              {profile.rating_avg} ({profile.rating_count} review{profile.rating_count === 1 ? "" : "s"})
-            </span>
-          </div>
-        )}
       </div>
 
       {error && <div className="banner err">{error}</div>}
@@ -121,8 +123,11 @@ export default function Profile() {
         {reviews.map((r) => (
           <div key={r.id} className="card stack">
             <div className="spread">
-              <b>{r.author_name ?? "Anonymous"}</b>
-              <span className="stars">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span>
+              <div className="row">
+                <Avatar name={r.author_name} size={28} />
+                <b>{r.author_name ?? "Anonymous"}</b>
+              </div>
+              <Stars rating={r.rating} />
             </div>
             {r.comment && <p>{r.comment}</p>}
             {r.reply_body ? (

@@ -6,6 +6,8 @@ import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
 import { MapView, type MapPoint } from "../components/MapView";
 import { StatusChip } from "./HouseholdHome";
 import { ReviewForm } from "../components/ReviewForm";
+import { IconPower, IconPhone } from "../components/Icon";
+import { Avatar } from "../components/Avatar";
 
 interface Pin {
   id: string;
@@ -148,9 +150,12 @@ export default function CollectorHome() {
   return (
     <div className="content stack">
       <div className="spread">
-        <h2 className="h-disp" style={{ fontSize: 22 }}>
-          Hi{user?.display_name ? `, ${user.display_name}` : ""} 🚛
-        </h2>
+        <div className="row">
+          <Avatar name={user?.display_name} role="collector" />
+          <h2 className="h-disp" style={{ fontSize: 22 }}>
+            Hi{user?.display_name ? `, ${user.display_name}` : ""}
+          </h2>
+        </div>
         <span className={`tag-chip ${online ? "t-green" : "t-coral"}`}>{online ? "Online" : "Offline"}</span>
       </div>
 
@@ -159,9 +164,24 @@ export default function CollectorHome() {
         <div className="banner">Your collector account is awaiting admin verification before you can go online.</div>
       )}
 
-      <button className={`btn ${online ? "btn-coral" : "btn-green"}`} onClick={toggleOnline}>
-        {online ? "Go offline" : "Go online"}
-      </button>
+      {!online && (
+        <div className="stack" style={{ alignItems: "center", padding: "18px 0" }}>
+          <button className="power-dial" onClick={toggleOnline} aria-label="Go online">
+            <IconPower size={38} color="#2A1C00" />
+            <b className="h-disp" style={{ fontSize: 15, marginTop: 6 }}>
+              Go online
+            </b>
+          </button>
+          <p className="muted" style={{ fontSize: 12.5, maxWidth: 240, textAlign: "center" }}>
+            Going online shares your live location so nearby waste alerts reach you.
+          </p>
+        </div>
+      )}
+      {online && (
+        <button className="power-dial online" onClick={toggleOnline} aria-label="Go offline" style={{ width: 64, height: 64, margin: "0 0 8px" }}>
+          <IconPower size={22} />
+        </button>
+      )}
 
       <div className="map-wrap tall">
         <MapView center={center} points={points} className="map-wrap tall" />
@@ -176,7 +196,10 @@ export default function CollectorHome() {
             {pending.map((r) => (
               <div key={r.id} className="card stack">
                 <div className="spread">
-                  <b>{r.household_name ?? "Household"}</b>
+                  <div className="row">
+                    <Avatar name={r.household_name} role="household" size={32} />
+                    <b>{r.household_name ?? "Household"}</b>
+                  </div>
                   <StatusChip status={r.status} />
                 </div>
                 {r.note && <p className="muted">{r.note}</p>}
@@ -201,14 +224,15 @@ export default function CollectorHome() {
         {pins.length === 0 && <p className="muted">{online ? "No active pins nearby." : "Go online to see nearby waste."}</p>}
         {pins.map((p) => (
           <div key={p.id} className="card row" style={{ justifyContent: "space-between" }}>
-            <div>
+            <Avatar name={p.household_name} role="household" size={36} />
+            <div style={{ flex: 1 }}>
               <b>{p.household_name ?? "Household"}</b>
               <div className="muted" style={{ fontSize: 12.5 }}>
                 {Math.round(p.distance_m)}m · {p.waste_type ?? "unspecified"} {p.note ? `· ${p.note}` : ""}
               </div>
             </div>
             <a className="btn btn-green btn-sm" href={`tel:${p.household_phone}`}>
-              📞 Call
+              <IconPhone size={16} color="#fff" /> Call
             </a>
           </div>
         ))}
@@ -230,7 +254,7 @@ export default function CollectorHome() {
                   <div>
                     {reveal[r.id] ? (
                       <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id]}`}>
-                        📞 Call {reveal[r.id]}
+                        <IconPhone size={16} color="#fff" /> Call {reveal[r.id]}
                       </a>
                     ) : (
                       <button className="btn btn-green btn-sm" onClick={() => revealContact(r.id)}>

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
+import { StarPicker } from "./Stars";
+import { IconCheck } from "./Icon";
 
 /**
  * Two-sided review composer (design §16). Deliberately has no "have I already reviewed this?"
@@ -38,24 +40,23 @@ export function ReviewForm({
     }
   }
 
-  if (done) return <p className="muted" style={{ fontSize: 12.5 }}>✓ Review submitted — thanks!</p>;
+  if (done)
+    return (
+      <p className="muted row" style={{ fontSize: 12.5, gap: 5 }}>
+        <IconCheck size={14} color="var(--green)" /> Review submitted — thanks!
+      </p>
+    );
   if (!open)
     return (
       <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
-        ⭐ Leave a review
+        Leave a review
       </button>
     );
 
   return (
     <div className="card stack" style={{ marginTop: 8 }}>
       {error && <div className="banner err">{error}</div>}
-      <div className="stars" style={{ fontSize: 22 }}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <span key={n} style={{ cursor: "pointer" }} onClick={() => setRating(n)}>
-            {n <= rating ? "★" : "☆"}
-          </span>
-        ))}
-      </div>
+      <StarPicker value={rating} onChange={setRating} />
       <input
         className="field"
         placeholder="Optional comment (moderated before it's public)"

@@ -18,7 +18,7 @@ describe("ReviewForm", () => {
 
     render(<ReviewForm requestId="req-1" subjectId="user-2" />);
 
-    fireEvent.click(screen.getByText("⭐ Leave a review"));
+    fireEvent.click(screen.getByText("Leave a review"));
     fireEvent.click(screen.getByText("Submit review"));
 
     await waitFor(() => expect(screen.getByText(/Review submitted/)).toBeInTheDocument());
@@ -38,7 +38,7 @@ describe("ReviewForm", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ReviewForm broadcastId="b-1" subjectId="user-2" />);
-    fireEvent.click(screen.getByText("⭐ Leave a review"));
+    fireEvent.click(screen.getByText("Leave a review"));
     fireEvent.click(screen.getByText("Submit review"));
 
     await waitFor(() => expect(screen.getByText(/Review submitted/)).toBeInTheDocument());

@@ -129,11 +129,24 @@ of the app yet.
 
 ## 6. Usability testing
 
-A short heuristic pass against the approved `borla_UI_design.html` design system: tap targets
-≥44px (`.btn` padding), icon-first primary actions ("🔔 I HAVE WASTE", "🚛 Go online"), a
-single primary action per screen, and colour contrast matching the approved palette (green/
-marigold/coral on a warm paper background). Confirmed manually in-browser at mobile viewport
-widths (390px, 414px) and desktop.
+A design-fidelity pass against the approved `borla_UI_design.html` mockups: the brand mark
+(pin + marigold radar dot), the line-icon system, coloured initial avatars, and the signature
+animated "broadcast ring" were all re-implemented in the real app (not just approximated with
+emoji) and verified with real, scripted screenshots (Puppeteer driving headless Chrome against
+the running dev server, logged in as the seeded demo accounts) rather than eyeballing the code.
+
+**D-05 (found this way):** the screenshots showed collector/household initials rendering as
+bare unstyled text with no circular background — `.avatar`/`.avatar.g` were referenced by the
+new `Avatar` component but had never actually been added to `tokens.css`. Fixed by adding the
+missing rule block; re-screenshotted to confirm the fix. A second minor defect surfaced the
+same way: `Ama (Osu)` produced initials `"A("` because the initials helper took the first
+character of the *last* whitespace-separated token without checking it started with a letter;
+fixed by filtering to letter-led words first.
+
+Beyond that: tap targets ≥44px (`.btn` padding), icon-first primary actions, a single primary
+action per screen, and colour contrast matching the approved palette (green/marigold/coral on
+a warm paper background) — confirmed manually in-browser at mobile viewport widths (390px,
+414px) and desktop.
 
 ## 7. Performance testing
 

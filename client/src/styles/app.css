@@ -79,6 +79,94 @@
   height: 360px;
 }
 
+/* Signature broadcast ring (borla_UI_design.html "signature screen") — the collector's bell,
+   made digital: your signal radiating out to nearby collectors while a pin is active. */
+.beacon-wrap {
+  position: relative;
+  height: 96px;
+  border-radius: var(--r);
+  background: var(--green-tint);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.beacon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.beacon .ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 2.5px solid var(--marigold);
+  opacity: 0;
+  animation: beacon-pulse 3s ease-out infinite;
+}
+.beacon .ring:nth-child(2) {
+  animation-delay: 1s;
+}
+.beacon .ring:nth-child(3) {
+  animation-delay: 2s;
+}
+.beacon .core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: var(--marigold);
+  box-shadow: 0 0 0 6px var(--marigold-tint), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+@keyframes beacon-pulse {
+  0% {
+    width: 60px;
+    height: 60px;
+    margin: -30px 0 0 -30px;
+    opacity: 0.9;
+  }
+  100% {
+    width: 220px;
+    height: 220px;
+    margin: -110px 0 0 -110px;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .beacon .ring {
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
+/* Big circular "Go online" dial (collector offline screen) */
+.power-dial {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: var(--marigold);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #2a1c00;
+  box-shadow: 0 0 0 12px var(--marigold-tint);
+  border: 0;
+  cursor: pointer;
+  font-family: var(--body);
+}
+.power-dial.online {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 0 0 12px rgba(22, 36, 28, 0.12);
+}
+
 .beacon-badge {
   display: inline-block;
   width: 10px;

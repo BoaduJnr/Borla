@@ -5,12 +5,15 @@ import { useSocket } from "../hooks/SocketContext";
 import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
 import { MapView, type MapPoint } from "../components/MapView";
 import { ReviewForm } from "../components/ReviewForm";
+import { IconTrash, IconRecycle, IconLeaf, IconBox, IconPin, IconPhone } from "../components/Icon";
+import { Avatar } from "../components/Avatar";
+import { Stars } from "../components/Stars";
 
 const WASTE_TYPES = [
-  { id: "general", label: "🗑️ General" },
-  { id: "recyclable", label: "♻️ Recyclable" },
-  { id: "organic", label: "🍃 Organic" },
-  { id: "bulky", label: "🛋️ Bulky" },
+  { id: "general", label: "General", Icon: IconTrash },
+  { id: "recyclable", label: "Recyclable", Icon: IconRecycle },
+  { id: "organic", label: "Organic", Icon: IconLeaf },
+  { id: "bulky", label: "Bulky", Icon: IconBox },
 ] as const;
 
 interface Broadcast {
@@ -192,12 +195,21 @@ export default function HouseholdHome() {
       </div>
 
       {broadcast ? (
-        <div className="banner">
-          <div className="spread">
-            <span>📍 Pin is live — someone coming? Tap to clear so others don't drive over.</span>
+        <div className="banner stack">
+          <div className="beacon-wrap">
+            <div className="beacon">
+              <div className="ring"></div>
+              <div className="ring"></div>
+              <div className="ring"></div>
+              <div className="core"></div>
+            </div>
           </div>
-          <button className="btn btn-coral" style={{ marginTop: 10 }} onClick={clearBroadcast}>
-            Clear pin
+          <div className="row">
+            <IconPin size={16} />
+            <span>Your signal is out — someone coming? Tap to clear so others don't drive over.</span>
+          </div>
+          <button className="btn btn-coral" onClick={clearBroadcast}>
+            Clear — someone's coming
           </button>
         </div>
       ) : showForm ? (
@@ -210,6 +222,7 @@ export default function HouseholdHome() {
                 className={`type-tile ${wasteType === w.id ? "sel" : ""}`}
                 onClick={() => setWasteType(wasteType === w.id ? undefined : w.id)}
               >
+                <w.Icon color={wasteType === w.id ? "var(--green)" : "var(--ink)"} />
                 {w.label}
               </button>
             ))}
@@ -225,7 +238,8 @@ export default function HouseholdHome() {
         </div>
       ) : (
         <button className="btn btn-gold" style={{ fontSize: 18, padding: 18 }} onClick={() => setShowForm(true)}>
-          🔔 I HAVE WASTE
+          <IconTrash />
+          I HAVE WASTE
         </button>
       )}
 
@@ -240,11 +254,15 @@ export default function HouseholdHome() {
         {collectors.length === 0 && <p className="muted">No collectors online nearby right now.</p>}
         {collectors.map((c) => (
           <div key={c.id} className="card row" style={{ justifyContent: "space-between" }}>
-            <div>
+            <Avatar name={c.display_name} role="collector" />
+            <div style={{ flex: 1 }}>
               <b>{c.display_name ?? "Collector"}</b>
-              <div className="muted" style={{ fontSize: 12.5 }}>
-                {c.vehicle_type ?? "vehicle n/a"} · {Math.round(c.distance_m)}m away
-                {c.rating_avg ? ` · ⭐ ${c.rating_avg}` : ""}
+              <div className="row muted" style={{ fontSize: 12.5, gap: 5 }}>
+                {c.rating_avg && <Stars rating={c.rating_avg} size={11} />}
+                <span>
+                  {c.rating_avg ? `${c.rating_avg} · ` : ""}
+                  {c.vehicle_type ?? "vehicle n/a"} · {Math.round(c.distance_m)}m away
+                </span>
               </div>
             </div>
             <button className="btn btn-green btn-sm" onClick={() => sendRequest(c.id)}>
@@ -262,14 +280,17 @@ export default function HouseholdHome() {
         {requests.map((r) => (
           <div key={r.id} className="card stack">
             <div className="spread">
-              <b>{r.collector_name ?? "Collector"}</b>
+              <div className="row">
+                <Avatar name={r.collector_name} role="collector" size={32} />
+                <b>{r.collector_name ?? "Collector"}</b>
+              </div>
               <StatusChip status={r.status} />
             </div>
             {r.status === "accepted" && (
               <div>
                 {reveal[r.id] ? (
                   <a className="btn btn-green btn-sm" href={`tel:${reveal[r.id].phone}`}>
-                    📞 Call {reveal[r.id].phone}
+                    <IconPhone size={16} color="#fff" /> Call {reveal[r.id].phone}
                   </a>
                 ) : (
                   <button className="btn btn-green btn-sm" onClick={() => revealContact(r.id)}>

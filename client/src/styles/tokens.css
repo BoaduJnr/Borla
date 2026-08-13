@@ -172,6 +172,32 @@ label {
   color: var(--green-d);
 }
 
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--green-tint);
+  color: var(--green-d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-family: var(--disp);
+  flex: none;
+  font-size: 16px;
+}
+.avatar.g {
+  background: var(--marigold-tint);
+  color: var(--marigold-d);
+}
+
+.stars {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--marigold);
+  vertical-align: middle;
+}
+
 .muted {
   color: var(--muted);
 }

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
+import { Logo } from "../components/Logo";
+import { IconHome, IconTruck } from "../components/Icon";
 
 type Step = "phone" | "code";
 
@@ -85,10 +87,8 @@ export default function Login() {
     <div className="content" style={{ maxWidth: 420, margin: "40px auto" }}>
       <div className="stack">
         <div>
-          <h1 className="h-disp" style={{ fontSize: 40, color: "var(--green-d)" }}>
-            Borla
-          </h1>
-          <p className="muted">Waste pickup, matched nearby.</p>
+          <Logo size={52} />
+          <p className="muted" style={{ marginTop: 10 }}>Waste, sorted — one ring away.</p>
         </div>
 
         <div className="row" style={{ gap: 6 }}>
@@ -134,14 +134,16 @@ export default function Login() {
                   className={`type-tile ${role === "household" ? "sel" : ""}`}
                   onClick={() => setRole("household")}
                 >
-                  🏠 Household
+                  <IconHome color={role === "household" ? "var(--green)" : "var(--ink)"} />
+                  Household
                 </button>
                 <button
                   type="button"
                   className={`type-tile ${role === "collector" ? "sel" : ""}`}
                   onClick={() => setRole("collector")}
                 >
-                  🚛 Collector
+                  <IconTruck color={role === "collector" ? "var(--green)" : "var(--ink)"} />
+                  Collector
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
