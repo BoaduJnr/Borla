@@ -4,9 +4,11 @@ import { useAuth } from "../hooks/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
 import { InstallButton } from "../pwa/InstallButton";
+import { useInstallPrompt } from "../pwa/useInstallPrompt";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
+  const { installed } = useInstallPrompt();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -68,7 +70,9 @@ export default function Profile() {
       </div>
 
       <div className="card row" style={{ justifyContent: "space-between" }}>
-        <span className="muted" style={{ fontSize: 13 }}>Add Borla to your home screen for one-tap access.</span>
+        {!installed && (
+          <span className="muted" style={{ fontSize: 13 }}>Add Borla to your home screen for one-tap access.</span>
+        )}
         <InstallButton />
       </div>
 

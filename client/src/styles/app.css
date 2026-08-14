@@ -70,6 +70,13 @@
 
 .map-wrap {
   position: relative;
+  /* Leaflet assigns its internal panes real z-index values (tile pane 200, popup pane 700,
+     controls 1000) but never gives .leaflet-container itself a z-index — so without this, those
+     panes escape into the page's shared stacking context once painted and can cover a sibling
+     overlay (e.g. .map-overlay-btn) that only has a modest z-index of its own. `isolation`
+     seals the map's own stacking inside this box without changing how the box itself stacks
+     against its page siblings. */
+  isolation: isolate;
   height: 260px;
   border-radius: var(--r);
   overflow: hidden;
@@ -94,6 +101,13 @@
 .map-overlay-btn {
   position: absolute;
   z-index: 15;
+}
+/* Fills a .map-wrap box exactly, for a MapView nested inside one that already supplies the
+   box's own size/edge-bleed — avoids re-applying .map-wrap's own height/margin rules a second
+   time (which would double up full-bleed's negative margins and shift the map off-centre). */
+.map-fill {
+  height: 100%;
+  width: 100%;
 }
 
 /* Signature broadcast ring (borla_UI_design.html "signature screen") — the collector's bell,

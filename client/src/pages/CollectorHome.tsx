@@ -244,7 +244,7 @@ export default function CollectorHome() {
       )}
 
       <div className="map-wrap hero full-bleed">
-        <MapView center={center} points={points} className="map-wrap hero full-bleed" />
+        <MapView center={center} points={points} className="map-fill" />
         {online && (
           <button
             className="power-dial online map-overlay-btn"

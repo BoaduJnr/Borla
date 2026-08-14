@@ -594,8 +594,24 @@ defects, several found other ways, is in §4).</p>
 <td>FR-35: the collector Home map renders edge-to-edge, with the online/offline toggle floating on top of it</td>
 <td>Manual (dev build, narrow viewport)</td>
 <td>Map fills the full device width (no visible side gutter against the app shell&#39;s padding); the toggle button sits centred over the bottom of the map, not stacked above it</td>
-<td>Confirmed visually in the dev build at a 375px-wide viewport</td>
-<td>Pass</td>
+<td>Layout/width confirmed at a 375px-wide viewport, but the button itself turned out to be briefly visible then hidden behind the map once tiles painted — see D-15/T-71, the initial pass only checked position, not whether it stayed visible after tiles loaded</td>
+<td>Fail (button hidden by Leaflet&#39;s own z-index) → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-70</td>
+<td><strong>(defect)</strong> D-14: the &quot;Add Borla to your home screen&quot; label disappears once the app is actually installed, matching <code>InstallButton</code>&#39;s own already-correct state</td>
+<td>Component/manual (<code>Profile.tsx</code>, <code>useInstallPrompt</code>)</td>
+<td>With <code>display-mode: standalone</code> (or, on older iOS, <code>navigator.standalone</code>) true, neither the label nor the install button renders — only the &quot;✓ Borla is installed on this device.&quot; line does</td>
+<td><strong>Reported by the user</strong> (&quot;why am I seeing &#39;Add Borla to your home screen&#39; even when I installed the app&quot;) — traced to the label being a hardcoded sibling <code>&lt;span&gt;</code> never gated on install state at all</td>
+<td>Fail (stale label, hardcoded) → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-71</td>
+<td><strong>(defect)</strong> D-15: a <code>.map-overlay-btn</code> placed on top of any <code>.map-wrap</code> map stays visible once Leaflet&#39;s tiles/controls finish painting, instead of being buried by their internal z-index</td>
+<td>Manual (dev build)</td>
+<td>The floating &quot;Go offline&quot; button remains visible and clickable throughout, on first render and after tiles/markers load</td>
+<td><strong>Reported by the user</strong> (&quot;the go offline button... glitches into view once and disappears&quot;) — traced to <code>.map-wrap</code> never establishing its own CSS stacking context, letting Leaflet&#39;s panes (z-index up to 1000) escape into the page&#39;s root stacking context and outrank the button&#39;s <code>z-index: 15</code> there</td>
+<td>Fail (button buried after first paint) → <strong>Fixed</strong> via <code>isolation: isolate</code> on <code>.map-wrap</code>, now Pass</td>
 </tr>
 <tr>
 <td>T-54</td>
@@ -750,28 +766,45 @@ defects, several found other ways, is in §4).</p>
 <td>Found live in production while verifying D-12/TD-15: a transient Gemini failure (not &quot;no key configured&quot;, an actual call failure — plausibly rate-limiting from this session&#39;s own heavy testing) left two genuine replies stuck in the manual queue indefinitely. Root cause: <code>processModerate</code> returned quietly on a null verdict instead of throwing, so the <code>moderate</code> queue&#39;s own <code>attempts:3</code>/exponential-backoff config (<code>jobs/queues.ts</code>) never engaged — a transient failure got exactly one attempt, forever. Compounding it: there was no admin &quot;Approve&quot; action for a stuck <em>reply</em> at all (only reviews had one), so once stuck, a reply had zero recovery path.</td>
 <td><code>processModerate</code> now distinguishes &quot;no key configured&quot; (permanent, returns cleanly, no point retrying) from &quot;the call itself failed&quot; (throws, letting BullMQ&#39;s existing retry/backoff actually run) — confirmed locally that the exact stuck reply text classifies fine in isolation, supporting transient failure as the cause. Added <code>POST /admin/replies/:id/approve</code>, mirroring the review one, plus its &quot;Approve&quot; button in the admin UI for reply-type queue items (previously review-only). Regression test added (server/test/integration/admin.test.ts).</td>
 </tr>
+<tr>
+<td>D-14</td>
+<td><code>client/src/pages/Profile.tsx</code></td>
+<td>The &quot;Add Borla to your home screen for one-tap access.&quot; label next to <code>&lt;InstallButton&gt;</code> was a hardcoded sibling <code>&lt;span&gt;</code>, never gated on install state at all — unlike <code>InstallButton</code> itself, which correctly swaps to &quot;✓ Borla is installed on this device.&quot; once installed. A user who had already installed the PWA kept seeing the &quot;go install it&quot; prompt text forever alongside the correct checkmark button underneath it. <strong>Reported by the user</strong>, who noticed the stale label after installing the app.</td>
+<td>Profile now calls the same <code>useInstallPrompt()</code> hook <code>InstallButton</code> uses internally and only renders the label when <code>!installed</code>. While fixing it, also hardened <code>useInstallPrompt</code>&#39;s own <code>installed</code> detection: it only checked the <code>(display-mode: standalone)</code> media query, which older iOS Safari never reflects for a manual &quot;Add to Home Screen&quot; — added a fallback check against <code>navigator.standalone</code> so an iPhone user who installed that way doesn&#39;t hit the same stale-label bug for a different reason.</td>
+</tr>
+<tr>
+<td>D-15</td>
+<td><code>client/src/styles/app.css</code> (<code>.map-wrap</code>), <code>client/src/pages/CollectorHome.tsx</code> (Home tab map)</td>
+<td>The floating &quot;Go offline&quot; button added on top of the enlarged Home map (FR-35) would flash into view for one frame, then disappear permanently. Root cause: Leaflet assigns its internal panes real <code>z-index</code> values (tile pane 200, popup pane 700, controls 1000) but never gives <code>.leaflet-container</code> itself a <code>z-index</code>, and neither did <code>.map-wrap</code> — a <code>position: relative</code> box with no <code>z-index</code> doesn&#39;t establish a CSS stacking context, so those panes escape all the way up to the page&#39;s <em>root</em> stacking context, where they were compared directly against the button&#39;s much lower <code>z-index: 15</code> and buried it the moment tiles finished painting. A related, smaller issue in the same code: the enlarged map&#39;s wrapping div and the <code>MapView</code> nested inside it were both given the identical <code>map-wrap hero full-bleed</code> classes, double-applying <code>full-bleed</code>&#39;s negative edge margins and shifting the map slightly outside its own container. <strong>Reported by the user</strong> while this session&#39;s map-enlargement work was still fresh.</td>
+<td>Added <code>isolation: isolate;</code> to the base <code>.map-wrap</code> rule — this seals every map&#39;s own internal stacking (however high Leaflet&#39;s z-index values go) inside its own box without changing how the box itself stacks against page siblings, so the fix applies to every map on the site, not just this one. Introduced a <code>.map-fill { height:100%; width:100% }</code> utility so a <code>MapView</code> nested inside an already-sized <code>.map-wrap</code> box only fills it, instead of re-declaring the box&#39;s own size/margin rules a second time.</td>
+</tr>
 </tbody></table>
-<p>All thirteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12,
-well after) the corresponding feature — eight by the automated suite (D-11 by reasoning through
-the code while building an unrelated feature, D-13 by directly observing stuck production
-queue items while manually verifying D-12), five by deliberately exercising the live deployed
-app or reading its logs (D-05 by me re-testing production myself; D-07, D-10, and D-12 reported
-back by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by
-a scripted screenshot pass rather than by reading the code — direct evidence for why TD-10
-(test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t been
-extended to every corner of the app, including production behaviour, yet. D-10 and D-11 make a
-related point: a <em>correctly working</em> backend mechanism (the double-blind release sweep; the
-rating aggregate) can still fail users if either its state is never surfaced (D-10) or it&#39;s
-only kept correct along one of several paths that touch it (D-11) — functional correctness on
-the happy path and correctness everywhere the same data can change are different bars. D-12 is
-a step further still: the mechanism was working <em>exactly as designed</em>, and the design itself was
-the problem — no amount of additional testing against the original spec would have caught it,
-because the spec (double-blind release) was what the user was objecting to. D-13, found while
-manually re-verifying D-12&#39;s own fix in production, is a reminder that verification itself can
-surface new defects — the retry/backoff infrastructure existed since TD-05 but had never
-actually been exercised until real usage hit it. Some defects are only found by putting the
-actual feature in front of the actual person it&#39;s for, and some are only found by watching your
-own fix operate for real.</p>
+<p>All fifteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/D-14/
+D-15, well after) the corresponding feature — eight by the automated suite (D-11 by reasoning
+through the code while building an unrelated feature, D-13 by directly observing stuck
+production queue items while manually verifying D-12), seven by deliberately exercising the
+live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
+D-12, D-14, and D-15 reported back by the user; D-08 surfaced in production logs once the
+Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the code —
+direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
+practice works, it just hasn&#39;t been extended to every corner of the app, including production
+behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em> backend mechanism
+(the double-blind release sweep; the rating aggregate) can still fail users if either its state
+is never surfaced (D-10) or it&#39;s only kept correct along one of several paths that touch it
+(D-11) — functional correctness on the happy path and correctness everywhere the same data can
+change are different bars. D-12 is a step further still: the mechanism was working <em>exactly as
+designed</em>, and the design itself was the problem — no amount of additional testing against the
+original spec would have caught it, because the spec (double-blind release) was what the user
+was objecting to. D-13, found while manually re-verifying D-12&#39;s own fix in production, is a
+reminder that verification itself can surface new defects — the retry/backoff infrastructure
+existed since TD-05 but had never actually been exercised until real usage hit it. D-14 and
+D-15 are UI-layer versions of the same lesson as D-10/D-11: a component that individually works
+correctly (<code>InstallButton</code>&#39;s own state; a Leaflet map rendering fine on its own) can still
+produce a visibly broken experience once placed next to something else that doesn&#39;t share its
+state (a stale hardcoded label) or contend with its stacking (an overlay button) — neither is
+caught by a unit test of the component in isolation, only by looking at the assembled screen.
+Some defects are only found by putting the actual feature in front of the actual person it&#39;s
+for, and some are only found by watching your own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>
