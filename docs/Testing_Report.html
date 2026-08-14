@@ -614,6 +614,22 @@ defects, several found other ways, is in §4).</p>
 <td>Fail (button buried after first paint) → <strong>Fixed</strong> via <code>isolation: isolate</code> on <code>.map-wrap</code>, now Pass</td>
 </tr>
 <tr>
+<td>T-72</td>
+<td><strong>(defect)</strong> D-16: a fully-interactive map (collector Home map, <code>RoutePanel</code> lightbox) stays where a user manually pans/zooms it, instead of snapping back on the next live coordinate/zoom update</td>
+<td>Manual (mobile device, real GPS movement)</td>
+<td>After a manual drag or pinch-zoom, subsequent heartbeat-driven position updates no longer force the viewport back to centre; the live &quot;you are here&quot;/route markers still move to their correct positions regardless</td>
+<td><strong>Reported by the user</strong>, testing as a collector on a mobile device (&quot;navigating the map... is difficult; reset when you move&quot;) — traced to <code>Recenter</code> calling <code>map.setView(...)</code> unconditionally on every centre/zoom prop change, with no way for a manual gesture to &quot;win&quot;</td>
+<td>Fail (view kept resetting under the user&#39;s finger) → <strong>Fixed</strong> via a <code>follow</code> flag that disengages on the first real <code>dragstart</code>/<code>zoomstart</code>, now Pass</td>
+</tr>
+<tr>
+<td>T-73</td>
+<td><strong>(defect)</strong> D-17: the topbar (logo, logout button) and tab bar clear a notched iPhone&#39;s status bar and home-indicator strip</td>
+<td>Manual (iPhone 17)</td>
+<td>Logo/logout button fully visible below the network/battery/time icons; tab labels clear of the home-indicator strip</td>
+<td><strong>Reported by the user</strong> (&quot;on iphone 17, the logo and the logout button is hidden under network and battery icons&quot;) — traced to <code>viewport-fit=cover</code> + <code>black-translucent</code> drawing content under the status bar with no matching <code>env(safe-area-inset-*)</code> padding anywhere in the CSS</td>
+<td>Fail (topbar content under the status bar icons) → <strong>Fixed</strong> via <code>env(safe-area-inset-top/bottom)</code> padding on <code>.topbar</code>/<code>.tabbar</code>, now Pass</td>
+</tr>
+<tr>
 <td>T-54</td>
 <td>FR-31: <code>GET /requests/:id/reviews</code> shows both directions of review in the context of the request they belong to</td>
 <td>Integration</td>
@@ -778,33 +794,50 @@ defects, several found other ways, is in §4).</p>
 <td>The floating &quot;Go offline&quot; button added on top of the enlarged Home map (FR-35) would flash into view for one frame, then disappear permanently. Root cause: Leaflet assigns its internal panes real <code>z-index</code> values (tile pane 200, popup pane 700, controls 1000) but never gives <code>.leaflet-container</code> itself a <code>z-index</code>, and neither did <code>.map-wrap</code> — a <code>position: relative</code> box with no <code>z-index</code> doesn&#39;t establish a CSS stacking context, so those panes escape all the way up to the page&#39;s <em>root</em> stacking context, where they were compared directly against the button&#39;s much lower <code>z-index: 15</code> and buried it the moment tiles finished painting. A related, smaller issue in the same code: the enlarged map&#39;s wrapping div and the <code>MapView</code> nested inside it were both given the identical <code>map-wrap hero full-bleed</code> classes, double-applying <code>full-bleed</code>&#39;s negative edge margins and shifting the map slightly outside its own container. <strong>Reported by the user</strong> while this session&#39;s map-enlargement work was still fresh.</td>
 <td>Added <code>isolation: isolate;</code> to the base <code>.map-wrap</code> rule — this seals every map&#39;s own internal stacking (however high Leaflet&#39;s z-index values go) inside its own box without changing how the box itself stacks against page siblings, so the fix applies to every map on the site, not just this one. Introduced a <code>.map-fill { height:100%; width:100% }</code> utility so a <code>MapView</code> nested inside an already-sized <code>.map-wrap</code> box only fills it, instead of re-declaring the box&#39;s own size/margin rules a second time.</td>
 </tr>
+<tr>
+<td>D-16</td>
+<td><code>client/src/components/MapView.tsx</code> (<code>Recenter</code>)</td>
+<td>Every fully-interactive map (the collector&#39;s Home map, and any expanded <code>RoutePanel</code> lightbox) force-called <code>map.setView(...)</code> on <em>every</em> change to the live centre coordinates or the distance-based zoom — which happens every few seconds while a collector is online and roaming (position heartbeats) or a route&#39;s distance recomputes. On mobile this made the map effectively impossible to pan or pinch-zoom: any manual gesture was silently reverted within seconds by the next live update, snapping the view back to a re-centred position. <strong>Reported by the user</strong>, testing as a collector on a mobile device: &quot;navigating the map... is difficult; reset when you move.&quot;</td>
+<td><code>Recenter</code> now tracks a <code>follow</code> flag, on by default: it auto-centres exactly as before <em>until</em> a real <code>dragstart</code> or user-initiated <code>zoomstart</code> fires, at which point it stops recentring for the life of that map instance — the &quot;you are here&quot;/route markers keep tracking live coordinates regardless (they&#39;re plain props, independent of the viewport-following logic), only the forced view-snapping stops. A <code>programmaticZoom</code> ref distinguishes the component&#39;s own <code>setView</code>-triggered zoom events from a genuine pinch/double-tap so the guard doesn&#39;t misfire on its own updates.</td>
+</tr>
+<tr>
+<td>D-17</td>
+<td><code>client/index.html</code> (<code>viewport-fit=cover</code> + <code>apple-mobile-web-app-status-bar-style: black-translucent</code>), <code>client/src/styles/app.css</code> (<code>.topbar</code>, <code>.tabbar</code>)</td>
+<td>On notched iPhones (reported on iPhone 17), the brand logo and the logout button rendered underneath the status bar&#39;s network/battery/time icons, and the bottom tab bar sat flush against the home-indicator strip. Root cause: the app deliberately draws edge-to-edge under the status bar (<code>viewport-fit=cover</code> + <code>black-translucent</code>, needed for the full-bleed map work, FR-35) but nothing in the CSS ever added the matching <code>env(safe-area-inset-*)</code> padding those two settings require — every other device without a notch happened to have zero inset, so the gap was invisible until tested on real notched hardware. <strong>Reported by the user.</strong></td>
+<td>Added <code>padding-top: calc(14px + env(safe-area-inset-top))</code> to <code>.topbar</code> and <code>padding-bottom: env(safe-area-inset-bottom)</code> to <code>.tabbar</code> (with <code>.content</code>&#39;s bottom padding bumped to match the now-taller tab bar) — <code>env()</code> resolves to <code>0</code> on any device without a safe-area inset, so this is a no-op everywhere else.</td>
+</tr>
 </tbody></table>
-<p>All fifteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/D-14/
-D-15, well after) the corresponding feature — eight by the automated suite (D-11 by reasoning
-through the code while building an unrelated feature, D-13 by directly observing stuck
-production queue items while manually verifying D-12), seven by deliberately exercising the
-live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
-D-12, D-14, and D-15 reported back by the user; D-08 surfaced in production logs once the
-Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the code —
-direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
-practice works, it just hasn&#39;t been extended to every corner of the app, including production
-behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em> backend mechanism
-(the double-blind release sweep; the rating aggregate) can still fail users if either its state
-is never surfaced (D-10) or it&#39;s only kept correct along one of several paths that touch it
-(D-11) — functional correctness on the happy path and correctness everywhere the same data can
-change are different bars. D-12 is a step further still: the mechanism was working <em>exactly as
-designed</em>, and the design itself was the problem — no amount of additional testing against the
-original spec would have caught it, because the spec (double-blind release) was what the user
-was objecting to. D-13, found while manually re-verifying D-12&#39;s own fix in production, is a
-reminder that verification itself can surface new defects — the retry/backoff infrastructure
-existed since TD-05 but had never actually been exercised until real usage hit it. D-14 and
-D-15 are UI-layer versions of the same lesson as D-10/D-11: a component that individually works
-correctly (<code>InstallButton</code>&#39;s own state; a Leaflet map rendering fine on its own) can still
-produce a visibly broken experience once placed next to something else that doesn&#39;t share its
-state (a stale hardcoded label) or contend with its stacking (an overlay button) — neither is
-caught by a unit test of the component in isolation, only by looking at the assembled screen.
-Some defects are only found by putting the actual feature in front of the actual person it&#39;s
-for, and some are only found by watching your own fix operate for real.</p>
+<p>All seventeen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14/D-15/D-16/D-17, well after) the corresponding feature — eight by the automated suite
+(D-11 by reasoning through the code while building an unrelated feature, D-13 by directly
+observing stuck production queue items while manually verifying D-12), nine by deliberately
+exercising the live deployed app or reading its logs (D-05 by me re-testing production myself;
+D-07, D-10, D-12, D-14, D-15, D-16, and D-17 reported back by the user; D-08 surfaced in
+production logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather
+than by reading the code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot;
+not &quot;critical&quot;: the practice works, it just hasn&#39;t been extended to every corner of the app,
+including production behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em>
+backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users
+if either its state is never surfaced (D-10) or it&#39;s only kept correct along one of several
+paths that touch it (D-11) — functional correctness on the happy path and correctness
+everywhere the same data can change are different bars. D-12 is a step further still: the
+mechanism was working <em>exactly as designed</em>, and the design itself was the problem — no amount
+of additional testing against the original spec would have caught it, because the spec
+(double-blind release) was what the user was objecting to. D-13, found while manually
+re-verifying D-12&#39;s own fix in production, is a reminder that verification itself can surface
+new defects — the retry/backoff infrastructure existed since TD-05 but had never actually been
+exercised until real usage hit it. D-14 and D-15 are UI-layer versions of the same lesson as
+D-10/D-11: a component that individually works correctly (<code>InstallButton</code>&#39;s own state; a
+Leaflet map rendering fine on its own) can still produce a visibly broken experience once placed
+next to something else that doesn&#39;t share its state (a stale hardcoded label) or contend with
+its stacking (an overlay button) — neither is caught by a unit test of the component in
+isolation, only by looking at the assembled screen. D-16 and D-17 are squarely device-class
+gaps: nothing in this project&#39;s own dev environment (desktop browsers, an Android emulator) has
+a notch or a GPS that streams position updates every few seconds while a person is physically
+walking with the page open — both defects are entirely invisible until a real person tests on
+real mobile hardware, which is exactly what surfaced them, well after both features individually
+passed their own review. Some defects are only found by putting the actual feature in front of
+the actual person it&#39;s for, and some are only found by watching your own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

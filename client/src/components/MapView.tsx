@@ -1,5 +1,5 @@
 import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, useMap } from "react-leaflet";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 
 export interface MapPoint {
@@ -22,12 +22,47 @@ export interface RouteInfo {
   roadFollowing: boolean; // false when this is the straight-line fallback, not a real route
 }
 
+/**
+ * Keeps the map centred on `lon`/`lat` as it updates live — until the user takes over. A
+ * collector's own position streams in every few seconds while online/roaming, and a route's
+ * zoom recomputes as distance changes (RoutePanel); without this guard, either one yanks the
+ * viewport back out from under a finger mid-pan on mobile, making the map impossible to look
+ * around in ("resets when you move" — reported directly by a user testing on an iPhone).
+ * Once a real drag or pinch-zoom is detected, auto-recentring stops for the life of this map
+ * instance; the "you are here"/route markers keep tracking live coordinates regardless, since
+ * they're plain props on CircleMarker/Polyline, independent of this viewport-following logic.
+ */
 function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number }) {
   const map = useMap();
+  const [follow, setFollow] = useState(true);
+  // Distinguishes our own setView-triggered zoomstart/zoomend from a real pinch/double-tap zoom
+  // — setView never fires "dragstart" on its own, only zoomstart/zoomend when the zoom changes.
+  const programmaticZoom = useRef(false);
+
   useEffect(() => {
+    if (!follow) return;
+    programmaticZoom.current = true;
     map.setView([lat, lon], zoom ?? map.getZoom());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lon, lat, zoom]);
+  }, [lon, lat, zoom, follow, map]);
+
+  useEffect(() => {
+    const onZoomEnd = () => {
+      programmaticZoom.current = false;
+    };
+    const onDragStart = () => setFollow(false);
+    const onZoomStart = () => {
+      if (!programmaticZoom.current) setFollow(false);
+    };
+    map.on("zoomend", onZoomEnd);
+    map.on("dragstart", onDragStart);
+    map.on("zoomstart", onZoomStart);
+    return () => {
+      map.off("zoomend", onZoomEnd);
+      map.off("dragstart", onDragStart);
+      map.off("zoomstart", onZoomStart);
+    };
+  }, [map]);
+
   return null;
 }
 

@@ -15,7 +15,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 18px;
+  /* `viewport-fit=cover` + the iOS "black-translucent" status bar style (index.html) draw our
+     content edge-to-edge underneath the status bar/Dynamic Island — without this, the brand
+     logo and the logout button render right under the network/battery icons on notched iPhones.
+     env(safe-area-inset-top) is 0 on anything without a notch, so this is a no-op elsewhere. */
+  padding: calc(14px + env(safe-area-inset-top)) 18px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   position: sticky;
@@ -35,7 +39,7 @@
 .content {
   flex: 1;
   padding: 16px;
-  padding-bottom: 90px;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom));
   overflow-y: auto;
 }
 
@@ -47,6 +51,9 @@
   width: 100%;
   max-width: 480px;
   height: 64px;
+  /* Keeps the tab labels clear of the home-indicator strip on notched iPhones, same reasoning
+     as .topbar above — 0 on devices without one. */
+  padding-bottom: env(safe-area-inset-bottom);
   background: #fff;
   border-top: 1px solid var(--line);
   display: flex;
