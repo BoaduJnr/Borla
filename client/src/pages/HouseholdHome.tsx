@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
 import { useSocket } from "../hooks/SocketContext";
 import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
+import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { MapView, type MapPoint } from "../components/MapView";
 import { RoutePanel } from "../components/RoutePanel";
 import { RequestReviews } from "../components/RequestReviews";
@@ -65,6 +66,7 @@ export default function HouseholdHome() {
   const [reveal, setReveal] = useState<Record<string, { phone: string; name: string | null }>>({});
   const [routeDistances, setRouteDistances] = useState<Record<string, number>>({});
   const lastBroadcastId = useRef<string | null>(null);
+  useAutoDismiss(info, setInfo);
 
   async function loadNearbyCollectors() {
     try {
@@ -211,13 +213,18 @@ export default function HouseholdHome() {
     setConfirmPrompt(null);
   }
 
+  // Split pending (awaiting the collector's response) from accepted ("on the way") — mirrors
+  // CollectorHome's own "Incoming requests" / "On the way" split, instead of lumping every
+  // non-terminal request into one flat list regardless of how far along it is.
+  const pendingRequests = requests.filter((r) => r.status === "requested" || r.status === "seen");
   // Closest collector first — and kept current as collectors move, not just sorted once at load:
   // each card's RoutePanel reports its live road-route distance back up via onDistanceChange, so
   // this re-sorts on every route update rather than only reflecting distance at page-load time.
-  const activeRequests = requests
-    .filter((r) => !TERMINAL.includes(r.status) && !r.arrived_at)
+  const acceptedRequests = requests
+    .filter((r) => r.status === "accepted" && !r.arrived_at)
     .slice()
     .sort((a, b) => (routeDistances[a.id] ?? Infinity) - (routeDistances[b.id] ?? Infinity));
+  const activeRequests = [...pendingRequests, ...acceptedRequests];
   const historyRequests = requests.filter((r) => TERMINAL.includes(r.status) || r.arrived_at);
 
   const points: MapPoint[] = collectors.map((c) => ({
@@ -248,7 +255,14 @@ export default function HouseholdHome() {
       </div>
 
       {error && <div className="banner err">{error}</div>}
-      {info && <div className="banner ok">{info}</div>}
+      {info && (
+        <div className="banner ok row" style={{ justifyContent: "space-between" }}>
+          <span>{info}</span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 10px" }} onClick={() => setInfo(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {tab === "home" && (
         <>
@@ -337,20 +351,42 @@ export default function HouseholdHome() {
       )}
 
       {tab === "requests" && (
-      <div className="stack">
-        {activeRequests.length === 0 && <p className="muted">No active requests.</p>}
-        {activeRequests.map((r) => (
-          <HouseholdRequestCard
-            key={r.id}
-            r={r}
-            center={center}
-            reveal={reveal}
-            onRevealContact={revealContact}
-            onCancel={cancelRequest}
-            onDistanceChange={(m) => setRouteDistances((d) => ({ ...d, [r.id]: m }))}
-          />
-        ))}
-      </div>
+        <>
+      {pendingRequests.length > 0 && (
+        <>
+          <h3 className="h-disp" style={{ fontSize: 16 }}>
+            Awaiting response
+          </h3>
+          <div className="stack">
+            {pendingRequests.map((r) => (
+              <HouseholdRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} onCancel={cancelRequest} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {acceptedRequests.length > 0 && (
+        <>
+          <h3 className="h-disp" style={{ fontSize: 16 }}>
+            On the way
+          </h3>
+          <div className="stack">
+            {acceptedRequests.map((r) => (
+              <HouseholdRequestCard
+                key={r.id}
+                r={r}
+                center={center}
+                reveal={reveal}
+                onRevealContact={revealContact}
+                onCancel={cancelRequest}
+                onDistanceChange={(m) => setRouteDistances((d) => ({ ...d, [r.id]: m }))}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      {activeRequests.length === 0 && <p className="muted">No active requests.</p>}
+        </>
       )}
 
       {tab === "history" && (

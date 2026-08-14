@@ -162,6 +162,9 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-33 | A request's route map zooms in as the two parties get closer together, so a 5 km approach and a 20 m final stretch each render at a legible scale | Should | `RoutePanel.tsx` `zoomForDistance()`, fed by `onRouteInfo`'s live distance; `MapView`'s `zoom` prop |
 | FR-34 | Tapping a request card's route map opens it full-screen with a dimmed backdrop and an explicit close control, instead of only ever showing a small fixed preview | Should | `RoutePanel.tsx` lightbox (`expanded` state); small preview map is non-interactive (`MapView`'s `interactive={false}`) so it can safely sit inside a tappable button, the enlarged copy is fully interactive |
 | FR-35 | The collector's Home map is shown edge-to-edge (full device width) rather than boxed in by the page's side padding, with the online/offline toggle floating on top of the map instead of stacked above it | Could | `client/src/styles/app.css` `.map-wrap.full-bleed`/`.hero`/`.map-overlay-btn`; `CollectorHome.tsx` Home tab |
+| FR-36 | A household cannot have more than one live request (pending *or* accepted) with the same collector at once — sending a second one is rejected, not silently duplicated | Should | `requests/routes.ts` `POST /requests`; DB-enforced via a partial `UNIQUE(household_id, collector_id) WHERE status IN ('requested','seen','accepted') AND arrived_at IS NULL` index (`migrations/004_request_guards.sql`) |
+| FR-37 | History is ordered by whichever event most recently made a request historical (arrival, or a response to accept/reject/cancel), not by when it was originally created | Should | `GET /requests/mine`'s `ORDER BY COALESCE(r.arrived_at, r.resolved_at, r.requested_at) DESC`; dedicated `resolved_at` column (`migrations/005_request_resolved_at.sql`) rather than reusing `responded_at`, since cancelling an already-accepted request must never be conflated with its earlier acceptance time |
+| FR-38 | A household's own Requests view separates requests still awaiting the collector's response from ones already accepted ("On the way"), mirroring the collector's own Incoming/On-the-way split, instead of one flat list regardless of stage | Should | `client/src/pages/HouseholdHome.tsx` `pendingRequests`/`acceptedRequests` |
 
 ## 5. Non-functional requirements
 
@@ -176,7 +179,7 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | NFR-7 (Availability) | The deployed instance stays reachable for grading | Render health check (`/api/health`) wired into `render.yaml` |
 | NFR-8 (Data integrity) | A review can never be posted about a fabricated interaction | DB-level `UNIQUE(author_id, request_id)` / `UNIQUE(author_id, broadcast_id)` plus application-level interaction checks |
 | NFR-9 (Fail-safe moderation) | Unmoderated content never goes public by default | Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue |
-| NFR-10 (Testability) | Core business logic is covered by automated tests | 55 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see `Testing_Report.md` |
+| NFR-10 (Testability) | Core business logic is covered by automated tests | 57 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see `Testing_Report.md` |
 
 ## 6. Requirement prioritisation (MoSCoW)
 
@@ -188,8 +191,10 @@ and the admin console.
 (user reporting), FR-26 (live config tuning), FR-27–FR-34 (accepted-request route, cancel,
 button-triggered/server-verified arrival confirmation + SMS, active/history split with a
 frozen read-only thread, review-in-context, closest-first sort, distance-based map zoom, map
-lightbox) — all present, but not stress-tested to the same depth as Must-Have items. FR-35
-(full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11's already-Must map.
+lightbox), FR-36–FR-38 (one-live-request-per-collector guard, recency-ordered History,
+pending/accepted split) — all present, but not stress-tested to the same depth as Must-Have
+items. FR-35 (full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11's
+already-Must map.
 
 **Could-have (explicitly deferred — see `Technical_Debt_Plan.md`)**: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n

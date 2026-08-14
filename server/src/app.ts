@@ -30,7 +30,14 @@ export function createApp() {
 
   app.use(
     "/api/",
-    rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false })
+    // The real, enforced production limit is 120/min per IP. Vitest's supertest calls all
+    // originate from the same loopback "IP" within one shared app instance per test file, so as
+    // the suite has grown, a single heavily-exercised file can legitimately make well over 120
+    // requests inside one 60s window — a test-harness artifact of this specific generic
+    // safety-net middleware, not a real security behaviour under test (no test anywhere asserts
+    // on its exact threshold). Effectively uncapped outside production so test-suite growth
+    // never trips it again; the production number itself is untouched.
+    rateLimit({ windowMs: 60_000, limit: config.isProd ? 120 : 100_000, standardHeaders: true, legacyHeaders: false })
   );
 
   app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));

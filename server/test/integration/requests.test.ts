@@ -202,4 +202,51 @@ describe("request plane (design §3.2 state machine)", () => {
     const strangerAttempt = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(stranger.access));
     expect(strangerAttempt.status).toBe(400); // not this request's collector — conditional update matches zero rows
   });
+
+  it("a household cannot send a second request to a collector while one is already pending or accepted", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+
+    const first = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    expect(first.status).toBe(201);
+
+    // Still pending — a second attempt is rejected, not silently duplicated.
+    const secondWhilePending = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    expect(secondWhilePending.status).toBe(409);
+
+    // A different household can still request the same collector — the guard is per-pair, not global.
+    const otherHousehold = await signup(app, "household");
+    const otherRequest = await request(app).post("/api/requests").set(auth(otherHousehold.access)).send({ collectorId: collector.user.id, ...POINT });
+    expect(otherRequest.status).toBe(201);
+
+    // Once accepted, still blocked — "whether accepted or pending acceptance".
+    await request(app).post(`/api/requests/${first.body.request.id}/accept`).set(auth(collector.access));
+    const thirdWhileAccepted = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    expect(thirdWhileAccepted.status).toBe(409);
+
+    // Once resolved (cancelled here), the pair is free again.
+    await request(app).post(`/api/requests/${first.body.request.id}/cancel`).set(auth(household.access));
+    const fourthAfterResolved = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    expect(fourthAfterResolved.status).toBe(201);
+  });
+
+  it("GET /requests/mine orders by whichever event most recently made a request current, not by when it was created", async () => {
+    const household = await signup(app, "household");
+    const oldCollector = await verifiedOnlineCollector();
+    const newCollector = await verifiedOnlineCollector();
+
+    // Created first, but resolved (cancelled) most recently — should sort ABOVE the newer one.
+    const older = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: oldCollector.user.id, ...POINT });
+    await request(app).post(`/api/requests/${older.body.request.id}/accept`).set(auth(oldCollector.access));
+
+    // Created second (after `older`), but never resolved — requested_at is all it has to sort by.
+    const newer = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: newCollector.user.id, ...POINT });
+
+    // Now resolve the OLDER one — it should jump above the newer, still-pending one.
+    await request(app).post(`/api/requests/${older.body.request.id}/cancel`).set(auth(household.access));
+
+    const mine = await request(app).get("/api/requests/mine").set(auth(household.access));
+    const ids = mine.body.requests.map((r: any) => r.id);
+    expect(ids.indexOf(older.body.request.id)).toBeLessThan(ids.indexOf(newer.body.request.id));
+  });
 });

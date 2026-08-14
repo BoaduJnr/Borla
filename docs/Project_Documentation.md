@@ -476,29 +476,35 @@ verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-57/57 automated tests passing (54 server — unit + Supertest integration against a real
+60/60 automated tests passing (57 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance *and* a real Redis instance; 3 client — React Testing Library, down
 from 5 after `ReviewForm.tsx`/its test were retired along with the double-blind model, TD-15) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
-Thirteen real defects were caught and fixed during development — eight in the automated suite (a
-broken first-time-signup code path, a review-reply status gap, a rating-aggregate staleness bug
-found by reasoning through every path that touches a review's visibility (D-11), and five
-others), one in a scripted screenshot pass (missing avatar CSS + broken initials logic, D-09),
-one found by watching a just-shipped fix operate for real in production (a moderation-retry gap
-that meant a transient AI failure got exactly one attempt forever, D-13), and three found only
-by treating the *live deployed app or its logs* as the actual object under test: the admin
-account was reachable via the weaker OTP flow, bypassing its intended phone+password requirement
-entirely (found by me, re-testing production); an already-registered phone number typed without
-its leading `+` was treated as brand-new instead of logging straight in (found by the user,
-D-07); and a hardcoded Gemini model ID started 404ing the moment a real key went live in
-production (D-08) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone
-numbers would have silently "succeeded" into a gateway with no phone behind them, locking any
-examiner out of the graded accounts. Full detail, every test case, and all thirteen defect
-write-ups are in `Testing_Report.md`.
+Twenty-two real defects were caught and fixed during development (a twenty-third, D-23, was a
+test-harness capacity limit the suite's own growth ran into, not a product defect, and is
+tracked separately for that reason) — eight in the automated suite (a broken first-time-signup
+code path, a review-reply status gap, a rating-aggregate staleness bug found by reasoning
+through every path that touches a review's visibility (D-11), and five others), one in a
+scripted screenshot pass (missing avatar CSS + broken initials logic, D-09), one found by
+watching a just-shipped fix operate for real in production (a moderation-retry gap that meant a
+transient AI failure got exactly one attempt forever, D-13), and the remaining twelve found only
+by treating the *live deployed app* as the actual object under test — several caught by me
+re-testing production directly (the admin account was reachable via the weaker OTP flow,
+bypassing its intended phone+password requirement entirely; a hardcoded Gemini model ID started
+404ing the moment a real key went live), and the majority reported back by a user actually using
+the app on real mobile hardware over several rounds of live iteration: an already-registered
+phone number typed without its leading `+` treated as brand-new instead of logging straight in
+(D-07); a Leaflet map's own internal stacking silently burying a floating overlay button (D-15);
+a live-tracking map fighting every manual pan/pinch-zoom gesture on mobile (D-16); topbar/tabbar
+content rendering under a notched iPhone's status bar and home-indicator strip, plus two
+regressions that fix itself introduced (D-17–D-19); a full chrome remount causing a visible
+"jump" on every tab switch (D-20); status banners that never dismissed themselves (D-21); and a
+PWA "ready to work offline" banner reappearing on every relaunch instead of once (D-22). Full
+detail, every test case, and every defect write-up are in `Testing_Report.md`.
 
 ## 12. Technical debt
 
-Sixteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
+Seventeen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
 Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
 GiantSMS OTP integration, which was **confirmed live in production** (the gateway accepted a
 real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢

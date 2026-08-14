@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, Link, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, Link, useLocation } from "react-router-dom";
 import { useAuth } from "./hooks/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Logo } from "./components/Logo";
@@ -10,23 +10,32 @@ import CollectorHome from "./pages/CollectorHome";
 import AdminDashboard from "./pages/AdminDashboard";
 import Profile from "./pages/Profile";
 
-function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+/**
+ * Mounted once as a layout route (below), not per-page — every earlier version wrapped each
+ * <Route>'s element in its own <Shell>{children}</Shell>, which meant React Router tore down
+ * and rebuilt the whole topbar/tabbar chrome on every navigation between them, including the
+ * Home <-> Profile tab switch. That full remount was the actual cause of the visible "jump"
+ * users reported (independent of, and on top of, the safe-area padding/height fixes elsewhere)
+ * — only the routed page content should change on navigation, not the chrome around it.
+ */
+function Shell() {
   const { user, logout } = useAuth();
   const loc = useLocation();
   const onHome = loc.pathname.startsWith("/household") || loc.pathname.startsWith("/collector");
   const onProfile = loc.pathname === "/profile";
+  const wide = loc.pathname.startsWith("/admin");
   return (
     <div className={`app-shell ${wide ? "wide" : ""}`}>
       <div className="topbar">
         <Logo size={28} />
         <span className="spacer" />
         {user && (
-          <button className="btn btn-ghost btn-sm" onClick={logout}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
             Log out
           </button>
         )}
       </div>
-      {children}
+      <Outlet />
       {user && user.role !== "admin" && (
         <div className="tabbar">
           <Link className={onHome ? "active" : ""} to={user.role === "household" ? "/household" : "/collector"}>
@@ -57,54 +66,41 @@ export default function App() {
     <>
       <UpdatePrompt />
       <Routes>
-      <Route
-        path="/login"
-        element={
-          <Shell>
-            <Login />
-          </Shell>
-        }
-      />
-      <Route
-        path="/household"
-        element={
-          <Shell>
+      <Route element={<Shell />}>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/household"
+          element={
             <ProtectedRoute roles={["household"]}>
               <HouseholdHome />
             </ProtectedRoute>
-          </Shell>
-        }
-      />
-      <Route
-        path="/collector"
-        element={
-          <Shell>
+          }
+        />
+        <Route
+          path="/collector"
+          element={
             <ProtectedRoute roles={["collector"]}>
               <CollectorHome />
             </ProtectedRoute>
-          </Shell>
-        }
-      />
-      <Route
-        path="/profile"
-        element={
-          <Shell>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
             <ProtectedRoute roles={["household", "collector"]}>
               <Profile />
             </ProtectedRoute>
-          </Shell>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <Shell wide>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
             <ProtectedRoute roles={["admin"]}>
               <AdminDashboard />
             </ProtectedRoute>
-          </Shell>
-        }
-      />
+          }
+        />
+      </Route>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

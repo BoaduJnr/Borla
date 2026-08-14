@@ -535,27 +535,33 @@ phone numbers normalised to one canonical form before every lookup/insert (<code
 D-07) and stripped from API responses until a request is accepted; fail-closed moderation (no
 verdict ⇒ stays hidden).</p>
 <h2>11. Testing (summary)</h2>
-<p>57/57 automated tests passing (54 server — unit + Supertest integration against a real
+<p>60/60 automated tests passing (57 server — unit + Supertest integration against a real
 PostgreSQL+PostGIS instance <em>and</em> a real Redis instance; 3 client — React Testing Library, down
 from 5 after <code>ReviewForm.tsx</code>/its test were retired along with the double-blind model, TD-15) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
-Thirteen real defects were caught and fixed during development — eight in the automated suite (a
-broken first-time-signup code path, a review-reply status gap, a rating-aggregate staleness bug
-found by reasoning through every path that touches a review&#39;s visibility (D-11), and five
-others), one in a scripted screenshot pass (missing avatar CSS + broken initials logic, D-09),
-one found by watching a just-shipped fix operate for real in production (a moderation-retry gap
-that meant a transient AI failure got exactly one attempt forever, D-13), and three found only
-by treating the <em>live deployed app or its logs</em> as the actual object under test: the admin
-account was reachable via the weaker OTP flow, bypassing its intended phone+password requirement
-entirely (found by me, re-testing production); an already-registered phone number typed without
-its leading <code>+</code> was treated as brand-new instead of logging straight in (found by the user,
-D-07); and a hardcoded Gemini model ID started 404ing the moment a real key went live in
-production (D-08) — plus, adjacent to the SMS defect, the two arbitrary seeded demo phone
-numbers would have silently &quot;succeeded&quot; into a gateway with no phone behind them, locking any
-examiner out of the graded accounts. Full detail, every test case, and all thirteen defect
-write-ups are in <code>Testing_Report.md</code>.</p>
+Twenty-two real defects were caught and fixed during development (a twenty-third, D-23, was a
+test-harness capacity limit the suite&#39;s own growth ran into, not a product defect, and is
+tracked separately for that reason) — eight in the automated suite (a broken first-time-signup
+code path, a review-reply status gap, a rating-aggregate staleness bug found by reasoning
+through every path that touches a review&#39;s visibility (D-11), and five others), one in a
+scripted screenshot pass (missing avatar CSS + broken initials logic, D-09), one found by
+watching a just-shipped fix operate for real in production (a moderation-retry gap that meant a
+transient AI failure got exactly one attempt forever, D-13), and the remaining twelve found only
+by treating the <em>live deployed app</em> as the actual object under test — several caught by me
+re-testing production directly (the admin account was reachable via the weaker OTP flow,
+bypassing its intended phone+password requirement entirely; a hardcoded Gemini model ID started
+404ing the moment a real key went live), and the majority reported back by a user actually using
+the app on real mobile hardware over several rounds of live iteration: an already-registered
+phone number typed without its leading <code>+</code> treated as brand-new instead of logging straight in
+(D-07); a Leaflet map&#39;s own internal stacking silently burying a floating overlay button (D-15);
+a live-tracking map fighting every manual pan/pinch-zoom gesture on mobile (D-16); topbar/tabbar
+content rendering under a notched iPhone&#39;s status bar and home-indicator strip, plus two
+regressions that fix itself introduced (D-17–D-19); a full chrome remount causing a visible
+&quot;jump&quot; on every tab switch (D-20); status banners that never dismissed themselves (D-21); and a
+PWA &quot;ready to work offline&quot; banner reappearing on every relaunch instead of once (D-22). Full
+detail, every test case, and every defect write-up are in <code>Testing_Report.md</code>.</p>
 <h2>12. Technical debt</h2>
-<p>Sixteen tracked items (<code>Technical_Debt_Plan.md</code>), each with Debt→Cause→Impact→Priority→
+<p>Seventeen tracked items (<code>Technical_Debt_Plan.md</code>), each with Debt→Cause→Impact→Priority→
 Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
 GiantSMS OTP integration, which was <strong>confirmed live in production</strong> (the gateway accepted a
 real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢

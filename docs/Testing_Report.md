@@ -33,7 +33,7 @@ separate phase, which is appropriate at this scale.
 ### 2.1 Server (`npm run test -w server`)
 
 ```
-✓ test/integration/requests.test.ts (9 tests)
+✓ test/integration/requests.test.ts (11 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/integration/admin.test.ts (5 tests)
@@ -45,8 +45,8 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  55 passed (55)
-   Duration  ~708s (real Postgres+Redis, no mocks)
+      Tests  57 passed (57)
+   Duration  ~76s (real Postgres+Redis, no mocks)
 ```
 
 `redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
@@ -54,9 +54,10 @@ separate phase, which is appropriate at this scale.
 now polls for the async BullMQ `fanout` job's side effect (a `broadcast_notifications` row)
 instead of asserting on a field the old synchronous handler used to return directly.
 `requests.test.ts` grew again for the button-triggered, server-verified arrival confirmation
-(FR-29/FR-29a, TD-17) — replacing the old heartbeat-auto-arrival test with one exercising
-`POST /requests/:id/arrived`'s near/far/role gating and `GET /requests/mine`'s
-`can_mark_arrived` flag; `reviews.test.ts` for review-in-request-context (FR-31) and the
+(FR-29/FR-29a, TD-17) and again for the one-live-request-per-collector guard and
+recency-ordered History (FR-36/FR-37, T-79/T-80) — the latter addition legitimately tripped the
+app-wide rate limiter mid-file purely from added request volume, fixed as D-23 (test infra,
+not a product defect); `reviews.test.ts` for review-in-request-context (FR-31) and the
 rating-aggregate staleness fix (D-11).
 
 ### 2.2 Client (`npm run test -w client`)
@@ -68,7 +69,7 @@ rating-aggregate staleness fix (D-11).
       Tests  3 passed (3)
 ```
 
-**Total: 58/58 automated tests passing** at time of submission (client dropped from 5 to 3 —
+**Total: 60/60 automated tests passing** at time of submission (client dropped from 5 to 3 —
 `ReviewForm.tsx` and its test were retired along with the double-blind review model, TD-15).
 Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
@@ -149,6 +150,13 @@ defects, several found other ways, is in §4).
 | T-73 | **(defect)** D-17: the topbar (logo, logout button) and tab bar clear a notched iPhone's status bar and home-indicator strip | Manual (iPhone 17) | Logo/logout button fully visible below the network/battery/time icons; tab labels clear of the home-indicator strip | **Reported by the user** ("on iphone 17, the logo and the logout button is hidden under network and battery icons") — traced to `viewport-fit=cover` + `black-translucent` drawing content under the status bar with no matching `env(safe-area-inset-*)` padding anywhere in the CSS. The topbar/tabbar visibility itself was fixed correctly; see T-74/T-75 for two follow-on regressions this same fix introduced elsewhere, caught on the same device immediately after | Fail (topbar content under the status bar icons) → **Fixed** via `env(safe-area-inset-top/bottom)` padding on `.topbar`/`.tabbar`, now Pass |
 | T-74 | **(defect)** D-18: the tab bar's icons/labels stay correctly centred and full-height on a notched device, instead of being squeezed by the same safe-area padding that fixed T-73 | Manual (iPhone 17) | Tab icons sit at the same vertical position/size as on a non-notched device; only the reserved strip below them (over the home indicator) grows | **Reported by the user** immediately after T-73 shipped ("the layout in the button pane is now off. The icon don't sit right in the pane.") — traced to `.tabbar` keeping a fixed `height: 64px` while gaining `padding-bottom: env(safe-area-inset-bottom)`, which (under `box-sizing: border-box`) shrank the icon area instead of growing the box | Fail (icons squeezed by the fixed-height/padding interaction) → **Fixed** via `height: calc(64px + env(safe-area-inset-bottom))`, now Pass |
 | T-75 | **(defect)** D-19: the first-launch splash screen's "Get started" button stays on-screen on a notched device, instead of being pushed off the bottom by the taller topbar | Manual (iPhone 17, fresh session / logged out) | The full splash — language picker and "Get started" button included — fits within the viewport below the topbar with no scrolling needed | **Reported by the user** ("also get started is buried when app is open for the first time") — traced to the splash's hardcoded `minHeight: calc(100vh - 64px)`, a guess at the topbar's height that stopped matching once T-73 made the topbar taller on notched devices | Fail (splash content overflowed below the fold) → **Fixed** by replacing the hardcoded guess with `flex: 1` (matching `.content`'s own approach elsewhere), now Pass |
+| T-76 | **(defect)** D-20: switching between the Home and Profile tabs no longer visibly "jumps" — the topbar/tabbar chrome stays mounted across the navigation | Manual (mobile device) | Topbar and tab bar render once and stay stable in place; only the page content between them changes when tapping Home/Profile | **Reported by the user**, persisting even after the map-focused D-15/D-16 hardening had already shipped — traced to every route wrapping its own separate `<Shell>` instance, so React Router fully remounted the chrome on every navigation | Fail (topbar/tabbar remounted, visibly resetting, on every navigation) → **Fixed** by hoisting `Shell` to a single shared layout route rendered via `<Outlet/>`, now Pass |
+| T-77 | **(defect)** D-21: a socket-driven status banner (e.g. "The household cancelled this request.") clears itself after a few seconds, and can also be dismissed manually | Manual/component (`HouseholdHome`, `CollectorHome`) | The banner disappears on its own roughly 6 seconds after appearing, or immediately on tapping "Dismiss" | **Reported by the user** ("stuck after it appears") — traced to the `info` state having no dismiss mechanism, automatic or manual, at all | Fail (banner persisted indefinitely) → **Fixed** via `useAutoDismiss` plus a manual "Dismiss" button, now Pass |
+| T-78 | **(defect)** D-22: "Borla is ready to work offline" shows once, ever, not on every app launch | Manual (reopen an installed PWA session twice) | The banner appears the first time the service worker finishes precaching; reopening the app afterwards does not show it again | **Reported by the user** ("keeps appearing") — traced to the dismissal only ever being in-memory component state, with nothing persisted across a fresh service-worker registration on relaunch | Fail (reappeared on every relaunch) → **Fixed** via a `localStorage` "seen" flag, now Pass |
+| T-79 | FR-36: a household cannot send a second request to a collector while an earlier one is still pending or already accepted; a new request is allowed again once the earlier one resolves | Integration | Second attempt while pending/accepted → `409`; a different household is unaffected; a fresh request succeeds once the earlier one is cancelled | Confirmed in `requests.test.ts` ("a household cannot send a second request to a collector while one is already pending or accepted") — DB-enforced via a partial unique index, not just an application check, so it holds even under a race | Pass |
+| T-80 | FR-37: `GET /requests/mine` orders by whichever event most recently made a request current (arrival/response), not strictly by creation time | Integration | An older request resolved *after* a newer, still-pending one sorts above it | Confirmed in `requests.test.ts` ("orders by whichever event most recently made a request current, not by when it was created") | Pass |
+| T-81 | FR-38: a household's Requests tab separates "Awaiting response" from "On the way", mirroring the collector's Incoming/On-the-way split | Manual/component (`HouseholdHome.tsx`) | Pending (requested/seen) requests render under their own heading, separate from accepted ones; the tab's badge count still reflects both combined | Confirmed by inspection of `pendingRequests`/`acceptedRequests` and the two-section JSX | Pass |
+| T-82 | Investigation: how long an unanswered request takes to auto-cancel | Manual (production config check + code inspection) | A documented, admin-tunable duration, not a hidden or inconsistent one | `request_timeout_seconds` defaults to 90s (`server/src/config.ts`) and was confirmed still at its default (90) in production via `GET /admin/config`; the sweep (`requestTimeoutSweep`, `jobs/workers.ts`) runs every 15s, so a request actually flips to `timed_out` within 90–105s of being sent, depending on sweep timing. No defect found — reported to the user as a finding, and the exact number is visible/changeable in Admin → Config ("Request timeout") per FR-26 | Pass (informational, no code change) |
 | T-54 | FR-31: `GET /requests/:id/reviews` shows both directions of review in the context of the request they belong to | Integration | Author sees `mine` regardless of status; the subject sees `theirs` only once visible; a non-party gets `403` | Confirmed in `reviews.test.ts` | Pass |
 | T-55 | **(defect)** Removing a previously-visible review recomputes the subject's `rating_avg`/`rating_count` instead of leaving them stale | Integration (found while implementing FR-31, D-11) | Admin `POST /reviews/:id/remove` on a visible 5-star review drops the subject's `rating_count` back to 0, not left at the pre-removal value | **First implementation only updated the aggregate when the review-release sweep itself made a review visible — an admin removing one afterwards never re-ran the computation** — see §4 | Fail → **Fixed**, now Pass |
 | T-56 | `StatusChip` renders `'On the way'`/`'Arrived'` distinctly for an accepted request, and a label for `cancelled` | Component | Each status/arrived combination shows its own label | 3/3 cases correct (`StatusChip.test.tsx`) | Pass |
@@ -181,13 +189,17 @@ defects, several found other ways, is in §4).
 | D-17 | `client/index.html` (`viewport-fit=cover` + `apple-mobile-web-app-status-bar-style: black-translucent`), `client/src/styles/app.css` (`.topbar`, `.tabbar`) | On notched iPhones (reported on iPhone 17), the brand logo and the logout button rendered underneath the status bar's network/battery/time icons, and the bottom tab bar sat flush against the home-indicator strip. Root cause: the app deliberately draws edge-to-edge under the status bar (`viewport-fit=cover` + `black-translucent`, needed for the full-bleed map work, FR-35) but nothing in the CSS ever added the matching `env(safe-area-inset-*)` padding those two settings require — every other device without a notch happened to have zero inset, so the gap was invisible until tested on real notched hardware. **Reported by the user.** | Added `padding-top: calc(14px + env(safe-area-inset-top))` to `.topbar` and `padding-bottom: env(safe-area-inset-bottom)` to `.tabbar` (with `.content`'s bottom padding bumped to match the now-taller tab bar) — `env()` resolves to `0` on any device without a safe-area inset, so this is a no-op everywhere else. |
 | D-18 | `client/src/styles/app.css` (`.tabbar`) | D-17's own fix introduced a new bug on the exact devices it was meant to help: `.tabbar` kept its fixed `height: 64px` while gaining `padding-bottom: env(safe-area-inset-bottom)` — with the project's global `box-sizing: border-box`, that padding ate into the fixed height instead of growing the box, squeezing the tab icons/labels into a shorter content area on any notched device. **Reported by the user** ("the layout in the button pane is now off. The icon don't sit right in the pane.") immediately after D-17 shipped. | Changed `.tabbar`'s `height` to `calc(64px + env(safe-area-inset-bottom))` so the inset grows the box instead of shrinking the icon area — the icons' own 64px stays exactly as it was on every device; only the reserved strip below them grows on a notched one. |
 | D-19 | `client/src/pages/Login.tsx` (splash screen) | Also surfaced by D-17's own fix: the first-launch splash screen hardcoded `minHeight: calc(100vh - 64px)`, guessing `.topbar`'s height as a fixed 64px so the splash box would fill the rest of the viewport. Once `.topbar` grew by `env(safe-area-inset-top)` on a notched phone, the real topbar height exceeded that guess, so the splash's own box (still sized against the old assumption) overflowed the viewport and pushed the "Get started" button off the bottom of the screen on first open — the one moment every new user has no other way into the app. **Reported by the user** ("get started is buried when app is open for the first time"). | Replaced the hardcoded `calc(100vh - 64px)` with `flex: 1` — `.app-shell` is already a flex column and `.content` already uses the same `flex: 1` approach elsewhere, so the splash now fills exactly whatever space is left below the topbar, however tall that topbar actually renders, with no magic number to fall out of sync again. |
+| D-20 | `client/src/App.tsx` (`Shell`, route tree) | A visible "jump" persisted when switching between the Home and Profile tabs even after every CSS-level safe-area/height fix (D-17–D-19) — because the actual root cause was never CSS at all. Every route wrapped its own separate `<Shell>{children}</Shell>` element, so React Router fully unmounted and rebuilt the entire topbar/tabbar chrome (and re-ran the safe-area `env()` calculations from scratch) on *every single navigation* between pages, not just on first load. **Reported by the user**, persisting after D-15/D-16's map-focused hardening pass had already shipped and been confirmed live for the *map* overlay specifically — the tab-switch jump was a distinct, still-open issue. | Restructured routing to a single shared layout route (`<Route element={<Shell/>}>` wrapping the page routes as children, rendered via `<Outlet/>`) — `Shell` now mounts exactly once for the whole authenticated session; navigating between Home/Requests/History/Profile only swaps the routed page content inside it, never the chrome around it. `wide` (admin's layout) is now derived from the current path instead of passed as a prop, since `Shell` no longer receives one per-route. |
+| D-21 | `client/src/pages/HouseholdHome.tsx`, `client/src/pages/CollectorHome.tsx` (`info` banner) | Every socket-driven status message ("The household cancelled this request.", "🎉 Your collector has arrived!", "Request sent.", etc.) stayed on screen forever once shown — there was no auto-dismiss and no manual close button at all, only ever replaced if some *other* event happened to set a new message first. **Reported by the user**: "'The household cancelled this request' and other, stuck after it appears." | Added a small `useAutoDismiss` hook (`client/src/hooks/useAutoDismiss.ts`) that clears the message after 6 seconds, plus an explicit "Dismiss" button on the banner itself for immediate control — applied identically in both `HouseholdHome` and `CollectorHome`, since both shared the exact same unbounded `info` state pattern. |
+| D-22 | `client/src/pwa/UpdatePrompt.tsx` | "Borla is ready to work offline" reappeared on every single app launch instead of once, ever. Root cause: the service worker re-registers (and re-fires `onOfflineReady`) each time the installed PWA is closed and reopened, and the previous dismissal (`setOfflineReady(false)`) was only ever in-memory component state — nothing persisted the fact that this purely informational, one-time message had already been shown. **Reported by the user**: "'Borla is ready to work offline' that keeps appearing." | Added a `localStorage` flag (`borla:offlineReadySeen`) set the first time the banner is genuinely earned; a value captured once at mount from a *previous* session's flag gates the render, so it still shows normally the first time it's actually true, but never again on subsequent launches. |
+| D-23 (test infra) | `server/src/app.ts` (general `express-rate-limit`, 120/min per IP) | Not a product defect — found while adding the two new tests for FR-36/FR-37 (T-79/T-80): `requests.test.ts` had grown enough sequential Supertest calls within one shared `createApp()` instance to legitimately trip the app-wide 120-requests-per-minute safety net mid-file, failing an unrelated later test with a raw `429` instead of the JSON it expected. No test anywhere asserts on this middleware's exact threshold — it isn't the behaviour under test, just collateral from a growing suite sharing one rate-limited app instance. | Limit is now `config.isProd ? 120 : 100,000` — the real, enforced production value is completely untouched; only non-production runs (including every test file) are effectively uncapped, so continued suite growth can't trip this again. |
 
-All nineteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14 through D-19, well after) the corresponding feature — eight by the automated suite (D-11
+All twenty-two were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14 through D-22, well after) the corresponding feature — eight by the automated suite (D-11
 by reasoning through the code while building an unrelated feature, D-13 by directly observing
-stuck production queue items while manually verifying D-12), eleven by deliberately exercising
+stuck production queue items while manually verifying D-12), fourteen by deliberately exercising
 the live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
-D-12, and D-14 through D-19 reported back by the user; D-08 surfaced in production logs once
+D-12, and D-14 through D-22 reported back by the user; D-08 surfaced in production logs once
 the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the
 code — direct evidence for why TD-10 (test depth) is listed as "scheduled," not "critical": the
 practice works, it just hasn't been extended to every corner of the app, including production
@@ -216,9 +228,21 @@ each caught within one round-trip of shipping it because the same user immediate
 the same real device — a reminder that a safe-area fix changes real, load-bearing pixel
 measurements (a fixed box height; a hardcoded viewport-height guess elsewhere in the codebase
 that had nothing to do with the fix itself) and every place that measurement was assumed
-constant needs re-checking, not just the one spot the original bug was reported in. Some
-defects are only found by putting the actual feature in front of the actual person it's for,
-and some are only found by watching your own fix operate for real.
+constant needs re-checking, not just the one spot the original bug was reported in. D-20 is a
+reminder that a CSS-only fix can mask a symptom without curing the disease: D-15/D-16's
+map-focused hardening genuinely fixed the map overlay's own stacking, but the *general*
+Home↔Profile navigation jump the user kept seeing turned out to be an architectural issue one
+layer up (the whole chrome remounting per route) that no amount of further CSS tuning on the
+map itself would ever have touched — it needed the actual remounting to stop, not a better
+z-index. D-21 and D-22 are both instances of the same gap: a piece of transient UI state
+(`info`; `offlineReady`) with a clear "this should eventually go away" intent, but no code that
+actually implemented that intent — correct on the happy path (showing the message) and silently
+wrong on the other half (never un-showing it). D-23 is listed separately, deliberately outside
+the "twenty-two" count above — it's a test-harness capacity limit the suite's own growth ran
+into, not a defect in the product being tested, and is recorded here for the same reason
+everything else on this page is: a decision was made and it should be visible, not just quietly
+committed. Some defects are only found by putting the actual feature in front of the actual
+person it's for, and some are only found by watching your own fix operate for real.
 
 ## 5. Security testing
 

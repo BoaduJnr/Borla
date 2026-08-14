@@ -36,12 +36,24 @@ requestsRouter.post(
     if (!collector) throw new ApiError(404, "Collector not found");
     if (!collector.online) throw new ApiError(409, "That collector is currently offline");
 
-    const row = await queryOne(
-      `INSERT INTO requests (household_id, collector_id, lon, lat, location, waste_type, note)
-       VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6)
-       RETURNING id, status, requested_at`,
-      [req.user!.id, collectorId, lon, lat, wasteType ?? null, note ?? null]
-    );
+    // One live request per household/collector pair at a time — DB-enforced via a partial
+    // unique index (migrations/004_request_guards.sql) rather than a check-then-insert, which a
+    // rapid double-tap of "Request" could still slip past. Covers pending AND already-accepted
+    // requests, per the user's explicit ask ("whether accepted or pending acceptance").
+    let row;
+    try {
+      row = await queryOne(
+        `INSERT INTO requests (household_id, collector_id, lon, lat, location, waste_type, note)
+         VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6)
+         RETURNING id, status, requested_at`,
+        [req.user!.id, collectorId, lon, lat, wasteType ?? null, note ?? null]
+      );
+    } catch (err: any) {
+      if (err?.code === "23505") {
+        throw new ApiError(409, "You already have an active request with this collector");
+      }
+      throw err;
+    }
 
     emitToUser(collectorId, "request:new", {
       requestId: row!.id,
@@ -72,6 +84,13 @@ requestsRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const user = req.user!;
+    // Ordered by whichever event most recently made a request "current" — arrival, or whatever
+    // resolved it (reject/timeout/cancel, see resolved_at's own comment in
+    // migrations/004_request_guards.sql for why this isn't just responded_at) — falling back to
+    // requested_at for anything still pending. A request accepted hours ago and only just now
+    // cancelled should outrank one created minutes ago that already timed out; ordering by
+    // requested_at alone got this backwards for History.
+    const RECENCY_ORDER = `ORDER BY COALESCE(r.arrived_at, r.resolved_at, r.requested_at) DESC`;
     let rows;
     if (user.role === "household") {
       rows = await query(
@@ -83,7 +102,7 @@ requestsRouter.get(
          FROM requests r
          JOIN users u ON u.id = r.collector_id
          LEFT JOIN collectors c ON c.user_id = r.collector_id
-         WHERE r.household_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
+         WHERE r.household_id = $1 ${RECENCY_ORDER} LIMIT 50`,
         [user.id]
       );
     } else {
@@ -104,7 +123,7 @@ requestsRouter.get(
          FROM requests r
          JOIN users u ON u.id = r.household_id
          LEFT JOIN collectors c ON c.user_id = r.collector_id
-         WHERE r.collector_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
+         WHERE r.collector_id = $1 ${RECENCY_ORDER} LIMIT 50`,
         [user.id, radiusM]
       );
     }
@@ -227,7 +246,7 @@ requestsRouter.post(
   requireRole("collector"),
   asyncHandler(async (req, res) => {
     const row = await queryOne<{ id: string; household_id: string }>(
-      `UPDATE requests SET status = 'rejected', responded_at = now()
+      `UPDATE requests SET status = 'rejected', responded_at = now(), resolved_at = now()
        WHERE id = $1 AND collector_id = $2 AND status IN ('requested','seen')
        RETURNING id, household_id`,
       [req.params.id, req.user!.id]
@@ -252,7 +271,8 @@ requestsRouter.post(
   asyncHandler(async (req, res) => {
     const user = req.user!;
     const row = await queryOne<{ id: string; household_id: string; collector_id: string }>(
-      `UPDATE requests SET status = 'cancelled', cancelled_by = $2, responded_at = COALESCE(responded_at, now())
+      `UPDATE requests SET status = 'cancelled', cancelled_by = $2,
+              responded_at = COALESCE(responded_at, now()), resolved_at = now()
        WHERE id = $1 AND (household_id = $3 OR collector_id = $3)
          AND status IN ('requested','seen','accepted') AND arrived_at IS NULL
        RETURNING id, household_id, collector_id`,

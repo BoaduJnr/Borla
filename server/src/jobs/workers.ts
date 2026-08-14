@@ -45,7 +45,7 @@ async function pinExpirySweep() {
 async function requestTimeoutSweep() {
   const timeoutSeconds = await getConfigNumber(AppConfigKeys.requestTimeoutSeconds, defaults.requestTimeoutSeconds);
   const rows = await query<{ id: string; household_id: string }>(
-    `UPDATE requests SET status = 'timed_out', responded_at = now()
+    `UPDATE requests SET status = 'timed_out', responded_at = now(), resolved_at = now()
      WHERE status IN ('requested','seen')
        AND requested_at < now() - interval '${timeoutSeconds} seconds'
      RETURNING id, household_id`

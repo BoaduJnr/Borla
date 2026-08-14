@@ -447,6 +447,24 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <td>Could</td>
 <td><code>client/src/styles/app.css</code> <code>.map-wrap.full-bleed</code>/<code>.hero</code>/<code>.map-overlay-btn</code>; <code>CollectorHome.tsx</code> Home tab</td>
 </tr>
+<tr>
+<td>FR-36</td>
+<td>A household cannot have more than one live request (pending <em>or</em> accepted) with the same collector at once — sending a second one is rejected, not silently duplicated</td>
+<td>Should</td>
+<td><code>requests/routes.ts</code> <code>POST /requests</code>; DB-enforced via a partial <code>UNIQUE(household_id, collector_id) WHERE status IN (&#39;requested&#39;,&#39;seen&#39;,&#39;accepted&#39;) AND arrived_at IS NULL</code> index (<code>migrations/004_request_guards.sql</code>)</td>
+</tr>
+<tr>
+<td>FR-37</td>
+<td>History is ordered by whichever event most recently made a request historical (arrival, or a response to accept/reject/cancel), not by when it was originally created</td>
+<td>Should</td>
+<td><code>GET /requests/mine</code>&#39;s <code>ORDER BY COALESCE(r.arrived_at, r.resolved_at, r.requested_at) DESC</code>; dedicated <code>resolved_at</code> column (<code>migrations/005_request_resolved_at.sql</code>) rather than reusing <code>responded_at</code>, since cancelling an already-accepted request must never be conflated with its earlier acceptance time</td>
+</tr>
+<tr>
+<td>FR-38</td>
+<td>A household&#39;s own Requests view separates requests still awaiting the collector&#39;s response from ones already accepted (&quot;On the way&quot;), mirroring the collector&#39;s own Incoming/On-the-way split, instead of one flat list regardless of stage</td>
+<td>Should</td>
+<td><code>client/src/pages/HouseholdHome.tsx</code> <code>pendingRequests</code>/<code>acceptedRequests</code></td>
+</tr>
 </tbody></table>
 <h2>5. Non-functional requirements</h2>
 <table>
@@ -505,7 +523,7 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <tr>
 <td>NFR-10 (Testability)</td>
 <td>Core business logic is covered by automated tests</td>
-<td>55 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see <code>Testing_Report.md</code></td>
+<td>57 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see <code>Testing_Report.md</code></td>
 </tr>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
@@ -516,8 +534,10 @@ and the admin console.</p>
 (user reporting), FR-26 (live config tuning), FR-27–FR-34 (accepted-request route, cancel,
 button-triggered/server-verified arrival confirmation + SMS, active/history split with a
 frozen read-only thread, review-in-context, closest-first sort, distance-based map zoom, map
-lightbox) — all present, but not stress-tested to the same depth as Must-Have items. FR-35
-(full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11&#39;s already-Must map.</p>
+lightbox), FR-36–FR-38 (one-live-request-per-collector guard, recency-ordered History,
+pending/accepted split) — all present, but not stress-tested to the same depth as Must-Have
+items. FR-35 (full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11&#39;s
+already-Must map.</p>
 <p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
 beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on

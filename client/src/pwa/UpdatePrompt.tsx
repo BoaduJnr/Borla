@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { IconCheck } from "../components/Icon";
+
+const OFFLINE_READY_SEEN_KEY = "borla:offlineReadySeen";
 
 /**
  * Real PWA update behaviour (Technical_Debt_Plan.md TD-04): a new deployed build doesn't
@@ -24,7 +27,18 @@ export function UpdatePrompt() {
     },
   });
 
-  if (offlineReady && !needRefresh) {
+  // "Borla is ready to work offline" is a one-time, purely informational message — useful the
+  // first time the service worker finishes precaching, not on every single app launch. Without
+  // this, closing/reopening the installed PWA re-registers the service worker each time, which
+  // re-fires onOfflineReady and made the banner reappear forever (reported by the user: "keeps
+  // appearing"). `seenBefore` is captured once at mount from a *previous* session's flag, so it
+  // still shows normally the first time in the session that actually earns it.
+  const [seenBefore] = useState(() => localStorage.getItem(OFFLINE_READY_SEEN_KEY) === "1");
+  useEffect(() => {
+    if (offlineReady && !needRefresh) localStorage.setItem(OFFLINE_READY_SEEN_KEY, "1");
+  }, [offlineReady, needRefresh]);
+
+  if (offlineReady && !needRefresh && !seenBefore) {
     return (
       <div
         className="banner ok row"

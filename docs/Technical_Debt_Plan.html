@@ -141,7 +141,7 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-10</strong></td>
-<td><strong>Automated test coverage is broad, not deep.</strong> 55 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects, reveal-on-accept location gating, given-vs-received review visibility, cancel/arrival lifecycle, review-in-request-context, rating-aggregate correctness across every path that touches it); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
+<td><strong>Automated test coverage is broad, not deep.</strong> 57 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects, reveal-on-accept location gating, given-vs-received review visibility, cancel/arrival lifecycle, review-in-request-context, rating-aggregate correctness across every path that touches it); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
 <td>A time-boxed exam favoured &quot;every module has real integration tests&quot; over &quot;one module is exhaustively tested&quot; — a deliberate breadth-over-depth call, consistent with §7.7 of the SRS.</td>
 <td>Edge cases in less-tested paths (e.g. concurrent double-accept races under real network latency, malformed geo payloads) are not proven safe, only reasoned about.</td>
 <td>🟡 Scheduled</td>

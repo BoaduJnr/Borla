@@ -94,7 +94,7 @@ and you&#39;re straight in.</li>
 <h2>3. Household walkthrough</h2>
 <p>Three tabs run across the top: <strong>Home</strong> (map + broadcast + nearby collectors), <strong>My requests</strong>
 (anything still active/in progress), and <strong>History</strong> (arrived, cancelled, rejected, or timed
-out — out of the way once there&#39;s nothing left to do).</p>
+out — out of the way once there&#39;s nothing left to do, newest-resolved first).</p>
 <ol>
 <li><strong>Home tab</strong>: a map centred on your current location (allow location access when the browser
 asks), with green dots for nearby online collectors.</li>
@@ -105,12 +105,20 @@ were notified. The pin auto-expires after 45 minutes if you forget it.</li>
 it from every collector&#39;s map immediately, so nobody else wastes a trip.</li>
 <li><strong>To request one specific collector</strong>: scroll to &quot;Nearby collectors,&quot; pick one, and tap
 <strong>Request</strong>. It shows up under <strong>My requests</strong> with a status chip: <em>Sent</em> → <em>Seen</em> →
-<em>On the way</em> → <em>Arrived</em>. If you&#39;ve requested more than one collector at once, the list
-automatically re-orders itself <strong>closest-first</strong>, live, as each collector&#39;s actual route
-distance changes — not just once when the page loads.</li>
+<em>On the way</em> → <em>Arrived</em>. <strong>My requests</strong> splits into two sections as things progress —
+<strong>Awaiting response</strong> (sent, not yet accepted) and <strong>On the way</strong> (accepted) — so a quick
+glance tells you which of your requests still need a collector&#39;s attention versus which are
+already in motion. If you&#39;ve requested more than one collector at once, the &quot;On the way&quot;
+section automatically re-orders itself <strong>closest-first</strong>, live, as each collector&#39;s actual
+route distance changes — not just once when the page loads. You can only have one live
+request (awaiting response <em>or</em> accepted) with the same collector at a time — tapping
+<strong>Request</strong> again on someone you&#39;ve already asked is turned down until that one resolves,
+rather than sending a confusing second copy.</li>
 <li><strong>Changed your mind?</strong> Tap <strong>Cancel request</strong> any time before the collector arrives —
 whether it&#39;s still awaiting a response or already accepted. Once the collector has arrived
-there&#39;s nothing left to cancel.</li>
+there&#39;s nothing left to cancel. If a collector doesn&#39;t respond in time, the request
+auto-cancels on its own — by default within about 90 seconds of sending it (an admin can
+tune this in Admin → Config, §5) — so you&#39;re never left staring at &quot;Sent&quot; forever.</li>
 <li><strong>Once accepted</strong>: tap <strong>Show contact</strong> to reveal the collector&#39;s phone number and call them
 directly. A small map also appears showing the <strong>route to your collector</strong> with distance and
 an estimated time — a straight line if the routing service is briefly unreachable, a real
@@ -139,7 +147,7 @@ here — Profile only shows the summary.</li>
 </ol>
 <h2>4. Collector walkthrough</h2>
 <p>Three tabs: <strong>Home</strong> (online toggle + map + nearby waste), <strong>Requests</strong> (incoming + on-the-way),
-and <strong>History</strong> (arrived, cancelled, rejected, or timed out).</p>
+and <strong>History</strong> (arrived, cancelled, rejected, or timed out, newest-resolved first).</p>
 <ol>
 <li><strong>Home tab</strong>: offline by default. The map here runs edge-to-edge (no side margins) so it
 feels like the main event rather than a small inset; once you&#39;re online, the <strong>Go offline</strong>
@@ -158,7 +166,9 @@ Accepting reveals the household&#39;s phone number to both of you and moves it i
 way,&quot; with a small map showing the <strong>route to that household</strong> (distance + estimated time),
 zooming in as you close the gap. If you have more than one on the way, they sort
 <strong>closest-first</strong>, live, as you move. Tap any route map to open it full-screen for a clearer
-look, with a dimmed background and a close button.</li>
+look, with a dimmed background and a close button — once open, feel free to pan or pinch-zoom
+to look around; it stays where you leave it instead of snapping back to your live position on
+the next update.</li>
 <li><strong>Cancel</strong> is available on anything you&#39;ve accepted but haven&#39;t reached yet — use it if
 you&#39;re no longer able to make the pickup.</li>
 <li><strong>Arrival is a button, not automatic</strong>: once your live position is close enough to the

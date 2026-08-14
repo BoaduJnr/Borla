@@ -59,7 +59,7 @@ console exactly as a real user would.</li>
 separate phase, which is appropriate at this scale.</p>
 <h2>2. Automated test results</h2>
 <h3>2.1 Server (<code>npm run test -w server</code>)</h3>
-<pre><code>✓ test/integration/requests.test.ts (9 tests)
+<pre><code>✓ test/integration/requests.test.ts (11 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/integration/admin.test.ts (5 tests)
@@ -71,17 +71,18 @@ separate phase, which is appropriate at this scale.</p>
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  55 passed (55)
-   Duration  ~708s (real Postgres+Redis, no mocks)
+      Tests  57 passed (57)
+   Duration  ~76s (real Postgres+Redis, no mocks)
 </code></pre>
 <p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); <code>broadcasts.test.ts</code>
 now polls for the async BullMQ <code>fanout</code> job&#39;s side effect (a <code>broadcast_notifications</code> row)
 instead of asserting on a field the old synchronous handler used to return directly.
 <code>requests.test.ts</code> grew again for the button-triggered, server-verified arrival confirmation
-(FR-29/FR-29a, TD-17) — replacing the old heartbeat-auto-arrival test with one exercising
-<code>POST /requests/:id/arrived</code>&#39;s near/far/role gating and <code>GET /requests/mine</code>&#39;s
-<code>can_mark_arrived</code> flag; <code>reviews.test.ts</code> for review-in-request-context (FR-31) and the
+(FR-29/FR-29a, TD-17) and again for the one-live-request-per-collector guard and
+recency-ordered History (FR-36/FR-37, T-79/T-80) — the latter addition legitimately tripped the
+app-wide rate limiter mid-file purely from added request volume, fixed as D-23 (test infra,
+not a product defect); <code>reviews.test.ts</code> for review-in-request-context (FR-31) and the
 rating-aggregate staleness fix (D-11).</p>
 <h3>2.2 Client (<code>npm run test -w client</code>)</h3>
 <pre><code>✓ src/pages/StatusChip.test.tsx (3 tests)
@@ -89,7 +90,7 @@ rating-aggregate staleness fix (D-11).</p>
  Test Files  1 passed (1)
       Tests  3 passed (3)
 </code></pre>
-<p><strong>Total: 58/58 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
+<p><strong>Total: 60/60 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
 <code>ReviewForm.tsx</code> and its test were retired along with the double-blind review model, TD-15).
 Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
@@ -646,6 +647,62 @@ defects, several found other ways, is in §4).</p>
 <td>Fail (splash content overflowed below the fold) → <strong>Fixed</strong> by replacing the hardcoded guess with <code>flex: 1</code> (matching <code>.content</code>&#39;s own approach elsewhere), now Pass</td>
 </tr>
 <tr>
+<td>T-76</td>
+<td><strong>(defect)</strong> D-20: switching between the Home and Profile tabs no longer visibly &quot;jumps&quot; — the topbar/tabbar chrome stays mounted across the navigation</td>
+<td>Manual (mobile device)</td>
+<td>Topbar and tab bar render once and stay stable in place; only the page content between them changes when tapping Home/Profile</td>
+<td><strong>Reported by the user</strong>, persisting even after the map-focused D-15/D-16 hardening had already shipped — traced to every route wrapping its own separate <code>&lt;Shell&gt;</code> instance, so React Router fully remounted the chrome on every navigation</td>
+<td>Fail (topbar/tabbar remounted, visibly resetting, on every navigation) → <strong>Fixed</strong> by hoisting <code>Shell</code> to a single shared layout route rendered via <code>&lt;Outlet/&gt;</code>, now Pass</td>
+</tr>
+<tr>
+<td>T-77</td>
+<td><strong>(defect)</strong> D-21: a socket-driven status banner (e.g. &quot;The household cancelled this request.&quot;) clears itself after a few seconds, and can also be dismissed manually</td>
+<td>Manual/component (<code>HouseholdHome</code>, <code>CollectorHome</code>)</td>
+<td>The banner disappears on its own roughly 6 seconds after appearing, or immediately on tapping &quot;Dismiss&quot;</td>
+<td><strong>Reported by the user</strong> (&quot;stuck after it appears&quot;) — traced to the <code>info</code> state having no dismiss mechanism, automatic or manual, at all</td>
+<td>Fail (banner persisted indefinitely) → <strong>Fixed</strong> via <code>useAutoDismiss</code> plus a manual &quot;Dismiss&quot; button, now Pass</td>
+</tr>
+<tr>
+<td>T-78</td>
+<td><strong>(defect)</strong> D-22: &quot;Borla is ready to work offline&quot; shows once, ever, not on every app launch</td>
+<td>Manual (reopen an installed PWA session twice)</td>
+<td>The banner appears the first time the service worker finishes precaching; reopening the app afterwards does not show it again</td>
+<td><strong>Reported by the user</strong> (&quot;keeps appearing&quot;) — traced to the dismissal only ever being in-memory component state, with nothing persisted across a fresh service-worker registration on relaunch</td>
+<td>Fail (reappeared on every relaunch) → <strong>Fixed</strong> via a <code>localStorage</code> &quot;seen&quot; flag, now Pass</td>
+</tr>
+<tr>
+<td>T-79</td>
+<td>FR-36: a household cannot send a second request to a collector while an earlier one is still pending or already accepted; a new request is allowed again once the earlier one resolves</td>
+<td>Integration</td>
+<td>Second attempt while pending/accepted → <code>409</code>; a different household is unaffected; a fresh request succeeds once the earlier one is cancelled</td>
+<td>Confirmed in <code>requests.test.ts</code> (&quot;a household cannot send a second request to a collector while one is already pending or accepted&quot;) — DB-enforced via a partial unique index, not just an application check, so it holds even under a race</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-80</td>
+<td>FR-37: <code>GET /requests/mine</code> orders by whichever event most recently made a request current (arrival/response), not strictly by creation time</td>
+<td>Integration</td>
+<td>An older request resolved <em>after</em> a newer, still-pending one sorts above it</td>
+<td>Confirmed in <code>requests.test.ts</code> (&quot;orders by whichever event most recently made a request current, not by when it was created&quot;)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-81</td>
+<td>FR-38: a household&#39;s Requests tab separates &quot;Awaiting response&quot; from &quot;On the way&quot;, mirroring the collector&#39;s Incoming/On-the-way split</td>
+<td>Manual/component (<code>HouseholdHome.tsx</code>)</td>
+<td>Pending (requested/seen) requests render under their own heading, separate from accepted ones; the tab&#39;s badge count still reflects both combined</td>
+<td>Confirmed by inspection of <code>pendingRequests</code>/<code>acceptedRequests</code> and the two-section JSX</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-82</td>
+<td>Investigation: how long an unanswered request takes to auto-cancel</td>
+<td>Manual (production config check + code inspection)</td>
+<td>A documented, admin-tunable duration, not a hidden or inconsistent one</td>
+<td><code>request_timeout_seconds</code> defaults to 90s (<code>server/src/config.ts</code>) and was confirmed still at its default (90) in production via <code>GET /admin/config</code>; the sweep (<code>requestTimeoutSweep</code>, <code>jobs/workers.ts</code>) runs every 15s, so a request actually flips to <code>timed_out</code> within 90–105s of being sent, depending on sweep timing. No defect found — reported to the user as a finding, and the exact number is visible/changeable in Admin → Config (&quot;Request timeout&quot;) per FR-26</td>
+<td>Pass (informational, no code change)</td>
+</tr>
+<tr>
 <td>T-54</td>
 <td>FR-31: <code>GET /requests/:id/reviews</code> shows both directions of review in the context of the request they belong to</td>
 <td>Integration</td>
@@ -834,13 +891,37 @@ defects, several found other ways, is in §4).</p>
 <td>Also surfaced by D-17&#39;s own fix: the first-launch splash screen hardcoded <code>minHeight: calc(100vh - 64px)</code>, guessing <code>.topbar</code>&#39;s height as a fixed 64px so the splash box would fill the rest of the viewport. Once <code>.topbar</code> grew by <code>env(safe-area-inset-top)</code> on a notched phone, the real topbar height exceeded that guess, so the splash&#39;s own box (still sized against the old assumption) overflowed the viewport and pushed the &quot;Get started&quot; button off the bottom of the screen on first open — the one moment every new user has no other way into the app. <strong>Reported by the user</strong> (&quot;get started is buried when app is open for the first time&quot;).</td>
 <td>Replaced the hardcoded <code>calc(100vh - 64px)</code> with <code>flex: 1</code> — <code>.app-shell</code> is already a flex column and <code>.content</code> already uses the same <code>flex: 1</code> approach elsewhere, so the splash now fills exactly whatever space is left below the topbar, however tall that topbar actually renders, with no magic number to fall out of sync again.</td>
 </tr>
+<tr>
+<td>D-20</td>
+<td><code>client/src/App.tsx</code> (<code>Shell</code>, route tree)</td>
+<td>A visible &quot;jump&quot; persisted when switching between the Home and Profile tabs even after every CSS-level safe-area/height fix (D-17–D-19) — because the actual root cause was never CSS at all. Every route wrapped its own separate <code>&lt;Shell&gt;{children}&lt;/Shell&gt;</code> element, so React Router fully unmounted and rebuilt the entire topbar/tabbar chrome (and re-ran the safe-area <code>env()</code> calculations from scratch) on <em>every single navigation</em> between pages, not just on first load. <strong>Reported by the user</strong>, persisting after D-15/D-16&#39;s map-focused hardening pass had already shipped and been confirmed live for the <em>map</em> overlay specifically — the tab-switch jump was a distinct, still-open issue.</td>
+<td>Restructured routing to a single shared layout route (<code>&lt;Route element={&lt;Shell/&gt;}&gt;</code> wrapping the page routes as children, rendered via <code>&lt;Outlet/&gt;</code>) — <code>Shell</code> now mounts exactly once for the whole authenticated session; navigating between Home/Requests/History/Profile only swaps the routed page content inside it, never the chrome around it. <code>wide</code> (admin&#39;s layout) is now derived from the current path instead of passed as a prop, since <code>Shell</code> no longer receives one per-route.</td>
+</tr>
+<tr>
+<td>D-21</td>
+<td><code>client/src/pages/HouseholdHome.tsx</code>, <code>client/src/pages/CollectorHome.tsx</code> (<code>info</code> banner)</td>
+<td>Every socket-driven status message (&quot;The household cancelled this request.&quot;, &quot;🎉 Your collector has arrived!&quot;, &quot;Request sent.&quot;, etc.) stayed on screen forever once shown — there was no auto-dismiss and no manual close button at all, only ever replaced if some <em>other</em> event happened to set a new message first. <strong>Reported by the user</strong>: &quot;&#39;The household cancelled this request&#39; and other, stuck after it appears.&quot;</td>
+<td>Added a small <code>useAutoDismiss</code> hook (<code>client/src/hooks/useAutoDismiss.ts</code>) that clears the message after 6 seconds, plus an explicit &quot;Dismiss&quot; button on the banner itself for immediate control — applied identically in both <code>HouseholdHome</code> and <code>CollectorHome</code>, since both shared the exact same unbounded <code>info</code> state pattern.</td>
+</tr>
+<tr>
+<td>D-22</td>
+<td><code>client/src/pwa/UpdatePrompt.tsx</code></td>
+<td>&quot;Borla is ready to work offline&quot; reappeared on every single app launch instead of once, ever. Root cause: the service worker re-registers (and re-fires <code>onOfflineReady</code>) each time the installed PWA is closed and reopened, and the previous dismissal (<code>setOfflineReady(false)</code>) was only ever in-memory component state — nothing persisted the fact that this purely informational, one-time message had already been shown. <strong>Reported by the user</strong>: &quot;&#39;Borla is ready to work offline&#39; that keeps appearing.&quot;</td>
+<td>Added a <code>localStorage</code> flag (<code>borla:offlineReadySeen</code>) set the first time the banner is genuinely earned; a value captured once at mount from a <em>previous</em> session&#39;s flag gates the render, so it still shows normally the first time it&#39;s actually true, but never again on subsequent launches.</td>
+</tr>
+<tr>
+<td>D-23 (test infra)</td>
+<td><code>server/src/app.ts</code> (general <code>express-rate-limit</code>, 120/min per IP)</td>
+<td>Not a product defect — found while adding the two new tests for FR-36/FR-37 (T-79/T-80): <code>requests.test.ts</code> had grown enough sequential Supertest calls within one shared <code>createApp()</code> instance to legitimately trip the app-wide 120-requests-per-minute safety net mid-file, failing an unrelated later test with a raw <code>429</code> instead of the JSON it expected. No test anywhere asserts on this middleware&#39;s exact threshold — it isn&#39;t the behaviour under test, just collateral from a growing suite sharing one rate-limited app instance.</td>
+<td>Limit is now <code>config.isProd ? 120 : 100,000</code> — the real, enforced production value is completely untouched; only non-production runs (including every test file) are effectively uncapped, so continued suite growth can&#39;t trip this again.</td>
+</tr>
 </tbody></table>
-<p>All nineteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14 through D-19, well after) the corresponding feature — eight by the automated suite (D-11
+<p>All twenty-two were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14 through D-22, well after) the corresponding feature — eight by the automated suite (D-11
 by reasoning through the code while building an unrelated feature, D-13 by directly observing
-stuck production queue items while manually verifying D-12), eleven by deliberately exercising
+stuck production queue items while manually verifying D-12), fourteen by deliberately exercising
 the live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
-D-12, and D-14 through D-19 reported back by the user; D-08 surfaced in production logs once
+D-12, and D-14 through D-22 reported back by the user; D-08 surfaced in production logs once
 the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the
 code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
 practice works, it just hasn&#39;t been extended to every corner of the app, including production
@@ -869,9 +950,21 @@ each caught within one round-trip of shipping it because the same user immediate
 the same real device — a reminder that a safe-area fix changes real, load-bearing pixel
 measurements (a fixed box height; a hardcoded viewport-height guess elsewhere in the codebase
 that had nothing to do with the fix itself) and every place that measurement was assumed
-constant needs re-checking, not just the one spot the original bug was reported in. Some
-defects are only found by putting the actual feature in front of the actual person it&#39;s for,
-and some are only found by watching your own fix operate for real.</p>
+constant needs re-checking, not just the one spot the original bug was reported in. D-20 is a
+reminder that a CSS-only fix can mask a symptom without curing the disease: D-15/D-16&#39;s
+map-focused hardening genuinely fixed the map overlay&#39;s own stacking, but the <em>general</em>
+Home↔Profile navigation jump the user kept seeing turned out to be an architectural issue one
+layer up (the whole chrome remounting per route) that no amount of further CSS tuning on the
+map itself would ever have touched — it needed the actual remounting to stop, not a better
+z-index. D-21 and D-22 are both instances of the same gap: a piece of transient UI state
+(<code>info</code>; <code>offlineReady</code>) with a clear &quot;this should eventually go away&quot; intent, but no code that
+actually implemented that intent — correct on the happy path (showing the message) and silently
+wrong on the other half (never un-showing it). D-23 is listed separately, deliberately outside
+the &quot;twenty-two&quot; count above — it&#39;s a test-harness capacity limit the suite&#39;s own growth ran
+into, not a defect in the product being tested, and is recorded here for the same reason
+everything else on this page is: a decision was made and it should be visible, not just quietly
+committed. Some defects are only found by putting the actual feature in front of the actual
+person it&#39;s for, and some are only found by watching your own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

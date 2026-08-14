@@ -12,6 +12,7 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
   isProd: process.env.NODE_ENV === "production",
+  isTest: process.env.NODE_ENV === "test",
   databaseUrl: required("DATABASE_URL", "postgres://borla:borla@localhost:5432/borla"),
   redisUrl: required("REDIS_URL", "redis://localhost:6380"),
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev-access-secret-change-me"),

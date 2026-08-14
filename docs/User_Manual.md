@@ -60,7 +60,7 @@ household, a collector, or an admin — **your phone number tells the app who yo
 
 Three tabs run across the top: **Home** (map + broadcast + nearby collectors), **My requests**
 (anything still active/in progress), and **History** (arrived, cancelled, rejected, or timed
-out — out of the way once there's nothing left to do).
+out — out of the way once there's nothing left to do, newest-resolved first).
 
 1. **Home tab**: a map centred on your current location (allow location access when the browser
    asks), with green dots for nearby online collectors.
@@ -71,12 +71,20 @@ out — out of the way once there's nothing left to do).
    it from every collector's map immediately, so nobody else wastes a trip.
 4. **To request one specific collector**: scroll to "Nearby collectors," pick one, and tap
    **Request**. It shows up under **My requests** with a status chip: *Sent* → *Seen* →
-   *On the way* → *Arrived*. If you've requested more than one collector at once, the list
-   automatically re-orders itself **closest-first**, live, as each collector's actual route
-   distance changes — not just once when the page loads.
+   *On the way* → *Arrived*. **My requests** splits into two sections as things progress —
+   **Awaiting response** (sent, not yet accepted) and **On the way** (accepted) — so a quick
+   glance tells you which of your requests still need a collector's attention versus which are
+   already in motion. If you've requested more than one collector at once, the "On the way"
+   section automatically re-orders itself **closest-first**, live, as each collector's actual
+   route distance changes — not just once when the page loads. You can only have one live
+   request (awaiting response *or* accepted) with the same collector at a time — tapping
+   **Request** again on someone you've already asked is turned down until that one resolves,
+   rather than sending a confusing second copy.
 5. **Changed your mind?** Tap **Cancel request** any time before the collector arrives —
    whether it's still awaiting a response or already accepted. Once the collector has arrived
-   there's nothing left to cancel.
+   there's nothing left to cancel. If a collector doesn't respond in time, the request
+   auto-cancels on its own — by default within about 90 seconds of sending it (an admin can
+   tune this in Admin → Config, §5) — so you're never left staring at "Sent" forever.
 6. **Once accepted**: tap **Show contact** to reveal the collector's phone number and call them
    directly. A small map also appears showing the **route to your collector** with distance and
    an estimated time — a straight line if the routing service is briefly unreachable, a real
@@ -106,7 +114,7 @@ out — out of the way once there's nothing left to do).
 ## 4. Collector walkthrough
 
 Three tabs: **Home** (online toggle + map + nearby waste), **Requests** (incoming + on-the-way),
-and **History** (arrived, cancelled, rejected, or timed out).
+and **History** (arrived, cancelled, rejected, or timed out, newest-resolved first).
 
 1. **Home tab**: offline by default. The map here runs edge-to-edge (no side margins) so it
    feels like the main event rather than a small inset; once you're online, the **Go offline**
@@ -125,7 +133,9 @@ and **History** (arrived, cancelled, rejected, or timed out).
    way," with a small map showing the **route to that household** (distance + estimated time),
    zooming in as you close the gap. If you have more than one on the way, they sort
    **closest-first**, live, as you move. Tap any route map to open it full-screen for a clearer
-   look, with a dimmed background and a close button.
+   look, with a dimmed background and a close button — once open, feel free to pan or pinch-zoom
+   to look around; it stays where you leave it instead of snapping back to your live position on
+   the next update.
 6. **Cancel** is available on anything you've accepted but haven't reached yet — use it if
    you're no longer able to make the pickup.
 7. **Arrival is a button, not automatic**: once your live position is close enough to the

@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
 import { useSocket } from "../hooks/SocketContext";
 import { useGeolocation, FALLBACK_COORDS } from "../hooks/useGeolocation";
+import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { MapView, type MapPoint } from "../components/MapView";
 import { RoutePanel } from "../components/RoutePanel";
 import { StatusChip } from "./HouseholdHome";
@@ -56,6 +57,7 @@ export default function CollectorHome() {
   const [reveal, setReveal] = useState<Record<string, string>>({});
   const [routeDistances, setRouteDistances] = useState<Record<string, number>>({});
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useAutoDismiss(info, setInfo);
 
   async function loadPins() {
     if (!online) return;
@@ -222,7 +224,14 @@ export default function CollectorHome() {
       </div>
 
       {error && <div className="banner err">{error}</div>}
-      {info && <div className="banner ok">{info}</div>}
+      {info && (
+        <div className="banner ok row" style={{ justifyContent: "space-between" }}>
+          <span>{info}</span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 10px" }} onClick={() => setInfo(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {!user?.verified && (
         <div className="banner">Your collector account is awaiting admin verification before you can go online.</div>
       )}
