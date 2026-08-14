@@ -22,12 +22,12 @@ export interface RouteInfo {
   roadFollowing: boolean; // false when this is the straight-line fallback, not a real route
 }
 
-function Recenter({ lon, lat }: { lon: number; lat: number }) {
+function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number }) {
   const map = useMap();
   useEffect(() => {
-    map.setView([lat, lon], map.getZoom());
+    map.setView([lat, lon], zoom ?? map.getZoom());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lon, lat]);
+  }, [lon, lat, zoom]);
   return null;
 }
 
@@ -110,23 +110,45 @@ export function MapView({
   className,
   route,
   onRouteInfo,
+  zoom = 14,
+  interactive = true,
 }: {
   center: { lon: number; lat: number };
   points: MapPoint[];
   className?: string;
   route?: { from: RouteEndpoint; to: RouteEndpoint };
   onRouteInfo?: (info: RouteInfo) => void;
+  /** Lets a route map zoom in as the two points get closer together (RoutePanel computes this
+   * from live distance) instead of sitting at one fixed zoom regardless of scale. */
+  zoom?: number;
+  /** false for a small preview meant to be wrapped in a "tap to enlarge" button — disables
+   * Leaflet's own pan/zoom handlers so they don't fight the button's click, and so scrolling
+   * the page past a small map doesn't accidentally zoom it. The enlarged lightbox stays fully
+   * interactive. */
+  interactive?: boolean;
 }) {
   const routeState = useRoute(route?.from, route?.to, onRouteInfo);
 
   return (
     <div className={className}>
-      <MapContainer center={[center.lat, center.lon]} zoom={14} style={{ height: "100%", width: "100%" }}>
+      <MapContainer
+        center={[center.lat, center.lon]}
+        zoom={zoom}
+        style={{ height: "100%", width: "100%" }}
+        dragging={interactive}
+        scrollWheelZoom={interactive}
+        touchZoom={interactive}
+        doubleClickZoom={interactive}
+        boxZoom={interactive}
+        keyboard={interactive}
+        zoomControl={interactive}
+        attributionControl={interactive}
+      >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Recenter lon={center.lon} lat={center.lat} />
+        <Recenter lon={center.lon} lat={center.lat} zoom={zoom} />
         {routeState && (
           <Polyline
             positions={routeState.path}

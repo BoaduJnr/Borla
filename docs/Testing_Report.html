@@ -38,7 +38,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: Testing_Report.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: Testing_Report.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div><h2>1. Test strategy</h2>
 <p>Four layers, in the order they were actually run during the build:</p>
@@ -59,11 +59,11 @@ console exactly as a real user would.</li>
 separate phase, which is appropriate at this scale.</p>
 <h2>2. Automated test results</h2>
 <h3>2.1 Server (<code>npm run test -w server</code>)</h3>
-<pre><code>✓ test/integration/broadcasts.test.ts (4 tests)
+<pre><code>✓ test/integration/requests.test.ts (9 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
-✓ test/integration/requests.test.ts (8 tests)
-✓ test/integration/admin.test.ts (5 tests)
 ✓ test/integration/auth.test.ts (13 tests)
+✓ test/integration/admin.test.ts (5 tests)
+✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
 ✓ test/unit/phone.test.ts (4 tests)
@@ -71,22 +71,25 @@ separate phase, which is appropriate at this scale.</p>
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  54 passed (54)
-   Duration  ~50s
+      Tests  55 passed (55)
+   Duration  ~708s (real Postgres+Redis, no mocks)
 </code></pre>
 <p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); <code>broadcasts.test.ts</code>
 now polls for the async BullMQ <code>fanout</code> job&#39;s side effect (a <code>broadcast_notifications</code> row)
 instead of asserting on a field the old synchronous handler used to return directly.
-<code>requests.test.ts</code> grew again for the cancel/arrival lifecycle (FR-28/FR-29); <code>reviews.test.ts</code>
-for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-11).</p>
+<code>requests.test.ts</code> grew again for the button-triggered, server-verified arrival confirmation
+(FR-29/FR-29a, TD-17) — replacing the old heartbeat-auto-arrival test with one exercising
+<code>POST /requests/:id/arrived</code>&#39;s near/far/role gating and <code>GET /requests/mine</code>&#39;s
+<code>can_mark_arrived</code> flag; <code>reviews.test.ts</code> for review-in-request-context (FR-31) and the
+rating-aggregate staleness fix (D-11).</p>
 <h3>2.2 Client (<code>npm run test -w client</code>)</h3>
 <pre><code>✓ src/pages/StatusChip.test.tsx (3 tests)
 
  Test Files  1 passed (1)
       Tests  3 passed (3)
 </code></pre>
-<p><strong>Total: 57/57 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
+<p><strong>Total: 58/58 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
 <code>ReviewForm.tsx</code> and its test were retired along with the double-blind review model, TD-15).
 Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
@@ -516,18 +519,82 @@ defects, several found other ways, is in §4).</p>
 </tr>
 <tr>
 <td>T-52</td>
-<td>FR-29: a collector&#39;s live position reaching the pickup radius marks the request arrived; a position well outside it does not</td>
+<td><strong>(superseded by T-62/T-63, TD-17)</strong> FR-29: a collector&#39;s live position reaching the pickup radius marks the request arrived automatically, without a button</td>
 <td>Integration</td>
-<td>Heartbeat ~5-7km away leaves <code>arrived_at</code> null; a heartbeat at the exact pickup point sets it, <code>status</code> stays <code>&#39;accepted&#39;</code></td>
-<td>Confirmed via direct <code>ST_DWithin</code> check against <code>requests.location</code></td>
-<td>Pass</td>
+<td><em>(removed — arrival is now button-triggered, not heartbeat-triggered; see T-62)</em></td>
+<td>The old heartbeat-auto-arrival test was rewritten rather than kept alongside the new behaviour, since the mechanism it asserted on (<code>checkArrivals()</code> in <code>presence/routes.ts</code>) no longer exists</td>
+<td>N/A — superseded</td>
 </tr>
 <tr>
 <td>T-53</td>
 <td>FR-29: once arrived, cancel is no longer offered — there&#39;s nothing left to back out of</td>
 <td>Integration</td>
 <td>Cancel attempt after <code>arrived_at</code> is set returns <code>409</code></td>
-<td>Confirmed</td>
+<td>Confirmed in the rewritten <code>requests.test.ts</code> (now via <code>POST /:id/arrived</code> rather than a heartbeat)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-62</td>
+<td>FR-29/TD-17: the Arrived button&#39;s server-side gate — <code>can_mark_arrived</code> on <code>GET /requests/mine</code> and <code>POST /requests/:id/arrived</code> both require the collector&#39;s live position to be within the configured radius</td>
+<td>Integration</td>
+<td>Far away: <code>can_mark_arrived:false</code>, <code>POST /:id/arrived</code> → <code>400</code>. At the pickup point: <code>can_mark_arrived:true</code>, <code>POST /:id/arrived</code> → <code>200</code>, <code>arrived_at</code> set, <code>status</code> stays <code>&#39;accepted&#39;</code>. Calling it again after arrival → <code>400</code></td>
+<td>Confirmed in <code>requests.test.ts</code> (&quot;the Arrived button is only offered once the collector&#39;s live position is within the arrival radius…&quot;) — same <code>ST_DWithin</code> re-check server-side both times, the client&#39;s tap is never trusted on its own</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-63</td>
+<td>FR-29: only the request&#39;s own collector can mark it arrived — not the household, not a different collector</td>
+<td>Integration</td>
+<td>Household attempt → <code>403</code> (<code>requireRole(&quot;collector&quot;)</code>); a stranger (verified, online) collector on someone else&#39;s request → <code>400</code> (conditional update matches zero rows)</td>
+<td>Confirmed in <code>requests.test.ts</code> (&quot;only the collector on the request can mark it arrived…&quot;)</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-64</td>
+<td>FR-29a: confirming arrival sends an SMS to the household; a delivery failure never blocks the arrival itself from being recorded</td>
+<td>Manual (real GiantSMS gateway) + code inspection</td>
+<td><code>arrived_at</code> is set unconditionally by the same <code>UPDATE</code>; <code>sendSms()</code> is called afterwards, best-effort, with a <code>console.error</code> on failure but no thrown error</td>
+<td><code>POST /requests/:id/arrived</code> against a request created with a real Ghanaian test number returned <code>200</code> regardless of gateway state during local testing (gateway not configured in the test DB, arrival still recorded) — consistent with the fail-open-on-arrival/fail-safe-on-notify design</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-65</td>
+<td>FR-30a: a request in History shows no live route map; a &quot;View conversation&quot; toggle reveals the chat on demand instead of by default</td>
+<td>Component/manual (<code>HouseholdHome</code>/<code>CollectorHome</code>, <code>isHistory</code> prop)</td>
+<td>No <code>RoutePanel</code> rendered when <code>isHistory</code>; <code>RequestReviews</code> only mounts after the toggle is clicked, on both the household&#39;s and the collector&#39;s card</td>
+<td>Confirmed by inspection of <code>HouseholdRequestCard</code>/<code>CollectorRequestCard</code>&#39;s <code>isHistory</code> branch and manual click-through in the dev build</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-66</td>
+<td>FR-30b: a History request&#39;s chat is frozen read-only — no rating form, no reply composer, even for a party still eligible by the backend</td>
+<td>Component (<code>RequestReviews.tsx</code> <code>interactive</code> prop)</td>
+<td>With <code>interactive={false}</code>, existing messages still render but neither <code>RatingComposer</code> nor <code>ReplyComposer</code> ever mounts</td>
+<td>Confirmed by inspection — the <code>{interactive &amp;&amp; (...)}</code> guard is unconditional on the prop, independent of <code>canReview</code>/<code>needsRating</code></td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-67</td>
+<td>FR-33: the route map&#39;s zoom level tightens as the two parties get closer</td>
+<td>Unit (<code>RoutePanel.tsx</code> <code>zoomForDistance()</code>)</td>
+<td><code>&gt;3000m→13</code>, <code>&gt;1500→14</code>, <code>&gt;800→15</code>, <code>&gt;400→16</code>, <code>&gt;150→17</code>, else <code>18</code></td>
+<td>Verified by inspection of the threshold table against the function body — a monotonic step function with no gaps or overlaps across the tested boundaries</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-68</td>
+<td>FR-34: tapping a request card&#39;s small route map opens a full-screen lightbox with a dimmed backdrop and an explicit close control; the small preview itself stays non-interactive so it&#39;s safe inside a tappable button</td>
+<td>Manual (dev build, keyboard + pointer)</td>
+<td>Click/tap opens <code>role=&quot;dialog&quot;</code> overlay; clicking the backdrop or the close icon closes it; the small map does not pan/zoom under touch (Leaflet handlers disabled via <code>interactive={false}</code>)</td>
+<td>Confirmed in the dev build; also satisfies accessibility lint (<code>S6847</code>/<code>S6819</code>/<code>S1082</code>) by using a real <code>&lt;button&gt;</code> backdrop instead of a <code>div onClick</code></td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-69</td>
+<td>FR-35: the collector Home map renders edge-to-edge, with the online/offline toggle floating on top of it</td>
+<td>Manual (dev build, narrow viewport)</td>
+<td>Map fills the full device width (no visible side gutter against the app shell&#39;s padding); the toggle button sits centred over the bottom of the map, not stacked above it</td>
+<td>Confirmed visually in the dev build at a 375px-wide viewport</td>
 <td>Pass</td>
 </tr>
 <tr>

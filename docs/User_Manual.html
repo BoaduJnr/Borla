@@ -38,7 +38,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: User_Manual.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: User_Manual.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div><h2>1. What Borla is</h2>
 <p>Borla connects households that have waste to dispose of with nearby collectors who are online
@@ -114,10 +114,14 @@ there&#39;s nothing left to cancel.</li>
 <li><strong>Once accepted</strong>: tap <strong>Show contact</strong> to reveal the collector&#39;s phone number and call them
 directly. A small map also appears showing the <strong>route to your collector</strong> with distance and
 an estimated time — a straight line if the routing service is briefly unreachable, a real
-road route otherwise.</li>
-<li><strong>Arrival</strong>: the moment the collector&#39;s live position reaches the pickup point, you get a
-&quot;🎉 Your collector has arrived!&quot; banner automatically — no need to refresh or ask. The
-request then moves to <strong>History</strong>.</li>
+road route otherwise. The map <strong>zooms in as the collector gets closer</strong> — wide while they&#39;re
+still crossing the neighbourhood, tight once they&#39;re at your gate. Tap the map to open it
+full-screen (dimmed background, tap the ✕ or anywhere outside the map to close it) for a
+better look.</li>
+<li><strong>Arrival</strong>: once the collector is right at your pickup point, <em>they</em> confirm it on their end
+with an <strong>Arrived</strong> button — you&#39;ll get an SMS (&quot;Your Borla collector has arrived!&quot;) plus an
+in-app notification the moment they do, no need to refresh or ask. The request then moves to
+<strong>History</strong>.</li>
 <li><strong>Reviews</strong>: rate 1–5 and optionally comment, right there on the request card. It joins a
 <strong>shared thread</strong> with the collector&#39;s own rating — the moment either one clears moderation,
 <em>both of you</em> see it, at the same time, in the same place. Either side can then reply, as
@@ -125,7 +129,10 @@ many times as you like, building a real back-and-forth (also moderated) instead 
 capped reply. Nothing is held back waiting for the other person to review first — that&#39;s a
 deliberate change (see Technical_Debt_Plan.md TD-15) after early testers found the old
 &quot;hidden until both sides reviewed&quot; behaviour confusing (the same request looked different
-depending on who was looking at it).</li>
+depending on who was looking at it). <strong>Once a request is in History</strong>, its map is gone (there&#39;s
+nothing left to navigate to) and the conversation itself is tucked behind a <strong>&quot;View
+conversation&quot;</strong> toggle rather than shown by default — tap it to read the full thread. It&#39;s
+frozen at that point: no new rating, no new reply, on either side.</li>
 <li><strong>Profile tab</strong>: adjust your alert radius and whether standing alerts are on; see your
 overall star rating and review count. Individual comments live on their request card, not
 here — Profile only shows the summary.</li>
@@ -134,7 +141,9 @@ here — Profile only shows the summary.</li>
 <p>Three tabs: <strong>Home</strong> (online toggle + map + nearby waste), <strong>Requests</strong> (incoming + on-the-way),
 and <strong>History</strong> (arrived, cancelled, rejected, or timed out).</p>
 <ol>
-<li><strong>Home tab</strong>: offline by default.</li>
+<li><strong>Home tab</strong>: offline by default. The map here runs edge-to-edge (no side margins) so it
+feels like the main event rather than a small inset; once you&#39;re online, the <strong>Go offline</strong>
+button floats right on top of the map instead of sitting above it.</li>
 <li><strong>New collector accounts start unverified</strong> — you&#39;ll see a banner saying an admin must
 approve you before you can go online. This is a deliberate anti-abuse gate (only verified
 collectors ever receive broadcasts); ask an admin to verify your account (§5).</li>
@@ -146,13 +155,22 @@ TD-03; keep the tab open and the screen on while actively collecting).</li>
 with a one-tap <strong>📞 Call</strong> button.</li>
 <li><strong>Requests tab</strong>: incoming direct requests appear as a card with <strong>Accept</strong>/<strong>Reject</strong>.
 Accepting reveals the household&#39;s phone number to both of you and moves it into &quot;On the
-way,&quot; with a small map showing the <strong>route to that household</strong> (distance + estimated time).
-If you have more than one on the way, they sort <strong>closest-first</strong>, live, as you move.</li>
+way,&quot; with a small map showing the <strong>route to that household</strong> (distance + estimated time),
+zooming in as you close the gap. If you have more than one on the way, they sort
+<strong>closest-first</strong>, live, as you move. Tap any route map to open it full-screen for a clearer
+look, with a dimmed background and a close button.</li>
 <li><strong>Cancel</strong> is available on anything you&#39;ve accepted but haven&#39;t reached yet — use it if
 you&#39;re no longer able to make the pickup.</li>
-<li><strong>Arrival is automatic</strong>: once your live position reaches the household&#39;s pickup point, you
-get a &quot;🎉 You&#39;ve arrived&quot; banner and the household is notified at the same moment — nothing
-to tap. The request then moves to <strong>History</strong>, where you can leave (and see) a review.</li>
+<li><strong>Arrival is a button, not automatic</strong>: once your live position is close enough to the
+household&#39;s pickup point (the <strong>arrival radius</strong>, tuned by an admin in §5), an <strong>Arrived</strong>
+button appears on the request card. Tap it to confirm — the server double-checks you&#39;re
+actually within range before accepting the tap (your device claiming it isn&#39;t enough on its
+own), then texts the household (&quot;Your Borla collector has arrived!&quot;) and notifies both of you
+in real time. The request then moves to <strong>History</strong>.</li>
+<li><strong>History</strong>: once a request is resolved, its map disappears and the review thread is hidden
+behind a <strong>&quot;View conversation&quot;</strong> toggle instead of showing by default; tap it to read (or
+leave/reply to) the review — though once there, the thread is frozen read-only, so any
+rating or reply needs to happen before the card leaves the active list.</li>
 <li><strong>Go offline</strong> when you&#39;re done — this immediately removes you from the matchable set.</li>
 </ol>
 <h2>5. Admin walkthrough</h2>
@@ -174,7 +192,9 @@ still awaiting moderation entirely (shown here whenever no <code>GEMINI_API_KEY<
 with a one-click <strong>Approve</strong>.</li>
 <li><strong>Audit</strong>: every privileged action taken by any admin, with a timestamp.</li>
 <li><strong>Config</strong>: live-editable operational settings (pin TTL, broadcast radius, request
-timeout, notification cap, arrival radius) — changes apply immediately, no redeploy.</li>
+timeout, notification cap, arrival radius — how close a collector&#39;s live position must get
+to the pickup point before the Arrived button appears) — changes apply immediately, no
+redeploy.</li>
 </ul>
 </li>
 </ol>

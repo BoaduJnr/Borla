@@ -69,6 +69,7 @@
 }
 
 .map-wrap {
+  position: relative;
   height: 260px;
   border-radius: var(--r);
   overflow: hidden;
@@ -77,6 +78,22 @@
 }
 .map-wrap.tall {
   height: 360px;
+}
+/* Stretches edge-to-edge within the app shell instead of sitting inside .content's padding —
+   used for the collector Home map, which wants to feel expansive rather than boxed in. */
+.map-wrap.full-bleed {
+  margin-left: -16px;
+  margin-right: -16px;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+.map-wrap.hero {
+  height: 46vh;
+}
+.map-overlay-btn {
+  position: absolute;
+  z-index: 15;
 }
 
 /* Signature broadcast ring (borla_UI_design.html "signature screen") — the collector's bell,

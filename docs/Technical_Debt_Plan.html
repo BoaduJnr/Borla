@@ -38,7 +38,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: Technical_Debt_Plan.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: Technical_Debt_Plan.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div><h2>1. How debt was tracked during the build</h2>
 <p>Every deliberate shortcut was written down <strong>as the decision was made</strong>, not reconstructed
@@ -141,7 +141,7 @@ or a meaningful scale-up.</li>
 </tr>
 <tr>
 <td><strong>TD-10</strong></td>
-<td><strong>Automated test coverage is broad, not deep.</strong> 53 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects, reveal-on-accept location gating, given-vs-received review visibility, cancel/arrival lifecycle, review-in-request-context, rating-aggregate correctness across every path that touches it); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
+<td><strong>Automated test coverage is broad, not deep.</strong> 55 server tests cover every route&#39;s happy path and its most important failure mode (idempotency guards, role gates, moderation gating, phone normalization, Redis rate limiting, async job side-effects, reveal-on-accept location gating, given-vs-received review visibility, cancel/arrival lifecycle, review-in-request-context, rating-aggregate correctness across every path that touches it); there is no fuzzing, no load testing, and client tests cover 2 of ~9 components.</td>
 <td>A time-boxed exam favoured &quot;every module has real integration tests&quot; over &quot;one module is exhaustively tested&quot; — a deliberate breadth-over-depth call, consistent with §7.7 of the SRS.</td>
 <td>Edge cases in less-tested paths (e.g. concurrent double-accept races under real network latency, malformed geo payloads) are not proven safe, only reasoned about.</td>
 <td>🟡 Scheduled</td>
@@ -194,6 +194,14 @@ or a meaningful scale-up.</li>
 <td>Households and collectors who match via a broadcast (no direct request) currently have no way to rate each other at all through the UI, even though the anti-fraud/interaction-tied backend logic is ready for it.</td>
 <td>🟡 Scheduled</td>
 <td>Add a <code>RequestReviews</code>-equivalent panel to <code>ConfirmPickup</code>&#39;s &quot;Yes, they came&quot; branch, passing <code>broadcastId</code> instead of <code>requestId</code> — the shared thread endpoint (<code>GET /requests/:id/reviews</code>) would need a broadcast-scoped sibling, or a small parameterisation, since it currently only accepts a request id.</td>
+</tr>
+<tr>
+<td><strong>TD-17</strong></td>
+<td><strong>Arrival detection was deliberately changed from automatic to manual, button-triggered, still server-verified.</strong> The original build (see the now-removed <code>presence/routes.ts</code> <code>checkArrivals()</code>) inferred arrival silently from the collector&#39;s own periodic heartbeat crossing the arrival radius — no tap, no explicit moment. It has been replaced with a collector-facing &quot;Arrived&quot; button, offered only once <code>GET /requests/mine</code>&#39;s server-computed <code>can_mark_arrived</code> flag is true, whose tap calls <code>POST /requests/:id/arrived</code>. <strong>Cause</strong>: the user asked explicitly for &quot;an arrived button which appear for collector after he arrives... which send sms to household and moves the card to history&quot; — an explicit confirmation moment with a household-facing SMS side-effect, not a silent background inference.</td>
+<td>Silent, heartbeat-driven arrival had no natural moment to hang an SMS notification off of without either spamming on every heartbeat inside the radius or adding separate de-dup state; a button gives one unambiguous, user-intended trigger, and doubles as the moment the request moves to History. The endpoint still never trusts the client&#39;s claim — <code>POST /:id/arrived</code>&#39;s <code>UPDATE ... WHERE ... AND EXISTS (SELECT 1 FROM collectors WHERE last_location ST_DWithin(...))</code> re-derives proximity from the collector&#39;s own last known server-side position, exactly as the removed automatic path did; only the trigger moved from &quot;every heartbeat&quot; to &quot;one explicit tap&quot;.</td>
+<td><strong>What&#39;s lost</strong>: a collector who never taps the button (forgets, or the app is backgrounded — see TD-03) never resolves the request automatically the way the old heartbeat sweep would have; the household has no automatic fallback signal either. <strong>What&#39;s gained</strong>: a real, attributable arrival event to hang the household SMS off of; no more &quot;why did this silently move to accepted-and-done without me doing anything&quot; confusion; the request lifecycle now has one authoritative user action instead of an invisible background poll.</td>
+<td>🟢 Acceptable (an explicit, reasoned trade-off, not a shortcut)</td>
+<td>If the &quot;collector forgets to tap&quot; case proves common in real use, reintroduce a background heartbeat-driven <em>reminder</em> (a push/SMS nudge: &quot;You&#39;re at the pickup point — tap Arrived&quot;) without reintroducing the old silent auto-transition — keeps the explicit-confirmation UX this pivot was for.</td>
 </tr>
 </tbody></table>
 <h2>3. Debt NOT taken — deliberate design choices worth naming</h2>

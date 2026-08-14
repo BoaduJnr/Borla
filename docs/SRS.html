@@ -38,7 +38,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: SRS.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: SRS.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div><h2>1. Introduction</h2>
 <h3>1.1 Purpose</h3>
@@ -389,15 +389,33 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 </tr>
 <tr>
 <td>FR-29</td>
-<td>The system detects a collector&#39;s arrival at the pickup point automatically — server-side, from the same position updates already sent for presence — and notifies both parties in real time</td>
+<td>The collector&#39;s app offers an &quot;Arrived&quot; button only once their own live position is within a configurable radius of the pickup point; tapping it records the arrival, texts the household, and notifies both sides in real time. The button is a UX hint only — the server independently re-checks proximity against the collector&#39;s last known position before accepting it, never trusting a client-supplied claim</td>
 <td>Should</td>
-<td><code>presence/routes.ts</code> <code>checkArrivals()</code> (<code>ST_DWithin</code> against <code>requests.location</code>), <code>request:arrived</code> socket event to both sides</td>
+<td><code>requests/routes.ts</code> <code>POST /:id/arrived</code> (<code>ST_DWithin</code> against <code>requests.location</code>, conditional <code>UPDATE ... WHERE ... AND EXISTS (...)</code>); <code>can_mark_arrived</code> computed column on <code>GET /requests/mine</code>; <code>request:arrived</code> socket event to both sides</td>
+</tr>
+<tr>
+<td>FR-29a</td>
+<td>Confirming arrival sends an SMS to the household (&quot;Your Borla collector has arrived!&quot;) via the same gateway as OTP delivery; a delivery failure is logged but never blocks the arrival itself from being recorded</td>
+<td>Should</td>
+<td><code>requests/routes.ts</code> <code>POST /:id/arrived</code> calling <code>utils/sms.ts</code> <code>sendSms()</code>, best-effort</td>
 </tr>
 <tr>
 <td>FR-30</td>
 <td>Resolved requests (arrived, cancelled, rejected, timed out) move out of the active Requests view into a separate History view</td>
 <td>Should</td>
 <td><code>client/src/pages/{HouseholdHome,CollectorHome}.tsx</code> three-tab layout (Home / Requests / History)</td>
+</tr>
+<tr>
+<td>FR-30a</td>
+<td>A request&#39;s live route map is not shown once it is in History (there is nothing left to navigate to); its review/chat thread is available on demand behind a &quot;View conversation&quot; toggle instead of being shown by default</td>
+<td>Should</td>
+<td><code>HouseholdRequestCard</code>/<code>CollectorRequestCard</code>&#39;s <code>isHistory</code> branch in <code>client/src/pages/{HouseholdHome,CollectorHome}.tsx</code></td>
+</tr>
+<tr>
+<td>FR-30b</td>
+<td>Once a request is in History, its review/chat thread is frozen read-only — no new rating can be left and no new reply can be posted, on either side</td>
+<td>Should</td>
+<td><code>RequestReviews</code>&#39;s <code>interactive={false}</code> prop (hides <code>RatingComposer</code>/<code>ReplyComposer</code>, still renders existing messages)</td>
 </tr>
 <tr>
 <td>FR-31</td>
@@ -410,6 +428,24 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <td>Active requests are ordered closest-first by live route distance, re-sorting as either party&#39;s position updates</td>
 <td>Should</td>
 <td><code>RoutePanel</code>&#39;s <code>onDistanceChange</code> callback feeding a sort in <code>HouseholdHome</code>/<code>CollectorHome</code></td>
+</tr>
+<tr>
+<td>FR-33</td>
+<td>A request&#39;s route map zooms in as the two parties get closer together, so a 5 km approach and a 20 m final stretch each render at a legible scale</td>
+<td>Should</td>
+<td><code>RoutePanel.tsx</code> <code>zoomForDistance()</code>, fed by <code>onRouteInfo</code>&#39;s live distance; <code>MapView</code>&#39;s <code>zoom</code> prop</td>
+</tr>
+<tr>
+<td>FR-34</td>
+<td>Tapping a request card&#39;s route map opens it full-screen with a dimmed backdrop and an explicit close control, instead of only ever showing a small fixed preview</td>
+<td>Should</td>
+<td><code>RoutePanel.tsx</code> lightbox (<code>expanded</code> state); small preview map is non-interactive (<code>MapView</code>&#39;s <code>interactive={false}</code>) so it can safely sit inside a tappable button, the enlarged copy is fully interactive</td>
+</tr>
+<tr>
+<td>FR-35</td>
+<td>The collector&#39;s Home map is shown edge-to-edge (full device width) rather than boxed in by the page&#39;s side padding, with the online/offline toggle floating on top of the map instead of stacked above it</td>
+<td>Could</td>
+<td><code>client/src/styles/app.css</code> <code>.map-wrap.full-bleed</code>/<code>.hero</code>/<code>.map-overlay-btn</code>; <code>CollectorHome.tsx</code> Home tab</td>
 </tr>
 </tbody></table>
 <h2>5. Non-functional requirements</h2>
@@ -469,7 +505,7 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <tr>
 <td>NFR-10 (Testability)</td>
 <td>Core business logic is covered by automated tests</td>
-<td>53 server tests (unit + Supertest integration, against real Postgres+Redis) + 5 client component tests, all passing — see <code>Testing_Report.md</code></td>
+<td>55 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see <code>Testing_Report.md</code></td>
 </tr>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
@@ -477,9 +513,11 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 two-plane matching engine, masked contact, the full review/moderation/shared-thread pipeline,
 and the admin console.</p>
 <p><strong>Should-have (built, lighter-touch)</strong>: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
-server-side arrival detection, active/history split, review-in-context, closest-first sort) —
-all present, but not stress-tested to the same depth as Must-Have items.</p>
+(user reporting), FR-26 (live config tuning), FR-27–FR-34 (accepted-request route, cancel,
+button-triggered/server-verified arrival confirmation + SMS, active/history split with a
+frozen read-only thread, review-in-context, closest-first sort, distance-based map zoom, map
+lightbox) — all present, but not stress-tested to the same depth as Must-Have items. FR-35
+(full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11&#39;s already-Must map.</p>
 <p><strong>Could-have (explicitly deferred — see <code>Technical_Debt_Plan.md</code>)</strong>: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
 beyond English. (Real SMS OTP and Redis/BullMQ + Socket.IO Redis adapter were originally on
@@ -606,22 +644,25 @@ GET  /api/pins/nearby             ?lon&amp;lat&amp;radius
 POST /api/confirmations           {broadcastId, came, collectorId?}
 
 POST /api/requests                {collectorId, lon, lat, wasteType?, note?}
-GET  /api/requests/mine
+GET  /api/requests/mine           (collector rows include a server-computed can_mark_arrived)
 GET  /api/requests/:id
 POST /api/requests/:id/seen
 POST /api/requests/:id/accept
 POST /api/requests/:id/reject
+POST /api/requests/:id/cancel
+POST /api/requests/:id/arrived    collector-only; re-verifies ST_DWithin server-side; texts the household
+GET  /api/requests/:id/reviews    {messages, mine, canReview} — one shared thread, same for both parties
 
 POST /api/reviews                 {subjectId, requestId?|broadcastId?, rating, comment?}
 GET  /api/users/:id/reviews
-POST /api/reviews/:id/reply       {body}
+POST /api/reviews/:id/reply       {body} — either party to the request, any number of times
 POST /api/reviews/:id/report      {reason}
 
 GET/POST /api/admin/*             stats, live-map, users, moderation queue, audit log, config
 </code></pre>
 <h3>8.2 Realtime events (Socket.IO, JWT-authed, room <code>user:{id}</code>)</h3>
 <p><code>broadcast:new</code>, <code>broadcast:cleared</code>, <code>request:new</code>, <code>request:seen</code>, <code>request:accepted</code>,
-<code>request:rejected</code>, <code>request:timed_out</code>.</p>
+<code>request:rejected</code>, <code>request:timed_out</code>, <code>request:arrived</code>.</p>
 <hr>
 <h2>9. Data requirements</h2>
 <p>See <code>Project_Documentation.md</code> §9.2 for the full ER diagram; the schema itself lives at

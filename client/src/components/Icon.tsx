@@ -14,6 +14,14 @@ export function IconBack({ size = 20, color = "currentColor" }: IconProps) {
   );
 }
 
+export function IconClose({ size = 20, color = "currentColor" }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M6 6l12 12M18 6L6 18" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function IconSearch({ size = 18, color = "currentColor" }: IconProps) {
   return (
     <svg {...base(size)}>

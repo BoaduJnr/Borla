@@ -5,6 +5,8 @@ import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { emitToUser } from "../../realtime/socket.js";
+import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
+import { sendSms, isSmsConfigured } from "../../utils/sms.js";
 
 export const requestsRouter = Router();
 
@@ -70,30 +72,85 @@ requestsRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const user = req.user!;
-    const rows =
-      user.role === "household"
-        ? await query(
-            `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
-                    r.arrived_at, r.cancelled_by,
-                    u.id AS collector_id, u.display_name AS collector_name,
-                    CASE WHEN r.status = 'accepted' THEN c.last_lon END AS collector_lon,
-                    CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat
-             FROM requests r
-             JOIN users u ON u.id = r.collector_id
-             LEFT JOIN collectors c ON c.user_id = r.collector_id
-             WHERE r.household_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
-            [user.id]
-          )
-        : await query(
-            `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
-                    r.arrived_at, r.cancelled_by,
-                    r.lon AS household_lon, r.lat AS household_lat,
-                    u.id AS household_id, u.display_name AS household_name
-             FROM requests r JOIN users u ON u.id = r.household_id
-             WHERE r.collector_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
-            [user.id]
-          );
+    let rows;
+    if (user.role === "household") {
+      rows = await query(
+        `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
+                r.arrived_at, r.cancelled_by,
+                u.id AS collector_id, u.display_name AS collector_name,
+                CASE WHEN r.status = 'accepted' THEN c.last_lon END AS collector_lon,
+                CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat
+         FROM requests r
+         JOIN users u ON u.id = r.collector_id
+         LEFT JOIN collectors c ON c.user_id = r.collector_id
+         WHERE r.household_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
+        [user.id]
+      );
+    } else {
+      // can_mark_arrived: whether the "Arrived" button should show at all — computed here
+      // (not on the client) from the collector's own last-known position vs. the request's
+      // stored pickup point, the same ST_DWithin check `POST /:id/arrived` re-verifies before
+      // actually accepting the click. A client-reported "I'm close" can't be trusted; the
+      // button showing is a UX hint, not the security boundary — that's the check below on
+      // arrival itself.
+      const radiusM = await getConfigNumber(AppConfigKeys.arrivalRadiusM, defaults.arrivalRadiusM);
+      rows = await query(
+        `SELECT r.id, r.status, r.waste_type, r.note, r.requested_at, r.responded_at,
+                r.arrived_at, r.cancelled_by,
+                r.lon AS household_lon, r.lat AS household_lat,
+                u.id AS household_id, u.display_name AS household_name,
+                (r.status = 'accepted' AND r.arrived_at IS NULL AND c.last_location IS NOT NULL
+                 AND ST_DWithin(r.location, c.last_location, $2)) AS can_mark_arrived
+         FROM requests r
+         JOIN users u ON u.id = r.household_id
+         LEFT JOIN collectors c ON c.user_id = r.collector_id
+         WHERE r.collector_id = $1 ORDER BY r.requested_at DESC LIMIT 50`,
+        [user.id, radiusM]
+      );
+    }
     res.json({ requests: rows });
+  })
+);
+
+/**
+ * POST /requests/:id/arrived — the collector confirms arrival at the pickup point (an explicit
+ * button, not an automatic background detection): shown once `can_mark_arrived` (above) says
+ * they're close enough, but re-verified here regardless, server-side, against their own
+ * last-known position — the same `ST_DWithin` check, never trusting a client-supplied
+ * lon/lat for a business-logic decision. Sends the household an SMS (best-effort, same
+ * fail-open-to-devOtp-style fallback philosophy as OTP delivery — a failed send never blocks
+ * the arrival itself from being recorded) and moves the request into History on both sides.
+ */
+requestsRouter.post(
+  "/:id/arrived",
+  requireAuth,
+  requireRole("collector"),
+  asyncHandler(async (req, res) => {
+    const radiusM = await getConfigNumber(AppConfigKeys.arrivalRadiusM, defaults.arrivalRadiusM);
+    const row = await queryOne<{ id: string; household_id: string }>(
+      `UPDATE requests r SET arrived_at = now()
+       WHERE r.id = $1 AND r.collector_id = $2 AND r.status = 'accepted' AND r.arrived_at IS NULL
+         AND EXISTS (
+           SELECT 1 FROM collectors c
+           WHERE c.user_id = $2 AND c.last_location IS NOT NULL
+             AND ST_DWithin(r.location, c.last_location, $3)
+         )
+       RETURNING id, household_id`,
+      [req.params.id, req.user!.id, radiusM]
+    );
+    if (!row) {
+      throw new ApiError(400, "You're not close enough to the pickup point yet, or this request is no longer active");
+    }
+
+    const household = await queryOne<{ phone: string }>(`SELECT phone FROM users WHERE id = $1`, [row.household_id]);
+    if (household && isSmsConfigured()) {
+      const sent = await sendSms(household.phone, "Your Borla collector has arrived!");
+      if (!sent.ok) console.error(`[requests] arrival SMS failed for ${household.phone}: ${sent.error}`);
+    }
+
+    emitToUser(row.household_id, "request:arrived", { requestId: row.id });
+    emitToUser(req.user!.id, "request:arrived", { requestId: row.id });
+    res.json({ ok: true });
   })
 );
 

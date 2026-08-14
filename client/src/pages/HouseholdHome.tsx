@@ -357,7 +357,7 @@ export default function HouseholdHome() {
       <div className="stack">
         {historyRequests.length === 0 && <p className="muted">Nothing here yet.</p>}
         {historyRequests.map((r) => (
-          <HouseholdRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} />
+          <HouseholdRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} isHistory />
         ))}
       </div>
       )}
@@ -372,6 +372,7 @@ function HouseholdRequestCard({
   onRevealContact,
   onCancel,
   onDistanceChange,
+  isHistory,
 }: {
   r: RequestRow;
   center: { lon: number; lat: number };
@@ -379,8 +380,10 @@ function HouseholdRequestCard({
   onRevealContact: (id: string) => void;
   onCancel?: (id: string) => void;
   onDistanceChange?: (distanceM: number) => void;
+  isHistory?: boolean;
 }) {
   const arrived = Boolean(r.arrived_at);
+  const [showChat, setShowChat] = useState(false);
   return (
     <div className="card stack">
       <div className="spread">
@@ -401,7 +404,7 @@ function HouseholdRequestCard({
               Show contact
             </button>
           )}
-          {r.collector_lon != null && r.collector_lat != null && (
+          {!isHistory && r.collector_lon != null && r.collector_lat != null && (
             <RoutePanel
               from={center}
               to={{ lon: r.collector_lon, lat: r.collector_lat }}
@@ -409,7 +412,16 @@ function HouseholdRequestCard({
               onDistanceChange={onDistanceChange}
             />
           )}
-          <RequestReviews requestId={r.id} subjectId={r.collector_id} canReview />
+          {isHistory ? (
+            <>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setShowChat((s) => !s)}>
+                {showChat ? "Hide conversation" : "View conversation"}
+              </button>
+              {showChat && <RequestReviews requestId={r.id} subjectId={r.collector_id} canReview={false} interactive={false} />}
+            </>
+          ) : (
+            <RequestReviews requestId={r.id} subjectId={r.collector_id} canReview interactive />
+          )}
           {onCancel && (
             <button className="btn btn-coral btn-sm" style={{ marginTop: 8 }} onClick={() => onCancel(r.id)}>
               Cancel request

@@ -33,6 +33,7 @@ interface RequestRow {
   household_name: string | null;
   household_lon: number | null;
   household_lat: number | null;
+  can_mark_arrived: boolean;
 }
 
 const HEARTBEAT_MS = 25_000;
@@ -99,7 +100,7 @@ export default function CollectorHome() {
     const onCleared = (payload: { broadcastId: string }) =>
       setPins((p) => p.filter((pin) => pin.id !== payload.broadcastId));
     const onArrived = () => {
-      setInfo("🎉 You've arrived — the household has been notified.");
+      setInfo("🎉 Arrival confirmed — the household has been notified by SMS.");
       loadRequests();
     };
     const onCancelled = (payload: { cancelledBy: string }) => {
@@ -159,6 +160,17 @@ export default function CollectorHome() {
       loadRequests();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not cancel");
+    }
+  }
+
+  async function markArrived(requestId: string) {
+    setError(null);
+    try {
+      await api(`/requests/${requestId}/arrived`, { method: "POST" });
+      setInfo("🎉 Arrival confirmed — the household has been notified by SMS.");
+      loadRequests();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not confirm arrival");
     }
   }
 
@@ -230,14 +242,19 @@ export default function CollectorHome() {
           </p>
         </div>
       )}
-      {online && (
-        <button className="power-dial online" onClick={toggleOnline} aria-label="Go offline" style={{ width: 64, height: 64, margin: "0 0 8px" }}>
-          <IconPower size={22} />
-        </button>
-      )}
 
-      <div className="map-wrap tall">
-        <MapView center={center} points={points} className="map-wrap tall" />
+      <div className="map-wrap hero full-bleed">
+        <MapView center={center} points={points} className="map-wrap hero full-bleed" />
+        {online && (
+          <button
+            className="power-dial online map-overlay-btn"
+            onClick={toggleOnline}
+            aria-label="Go offline"
+            style={{ width: 64, height: 64, left: "50%", bottom: 14, transform: "translateX(-50%)" }}
+          >
+            <IconPower size={22} />
+          </button>
+        )}
       </div>
 
       <h3 className="h-disp" style={{ fontSize: 16 }}>
@@ -309,6 +326,7 @@ export default function CollectorHome() {
                 reveal={reveal}
                 onRevealContact={revealContact}
                 onCancel={cancelRequest}
+                onArrived={markArrived}
                 onDistanceChange={(m) => setRouteDistances((d) => ({ ...d, [r.id]: m }))}
               />
             ))}
@@ -323,7 +341,7 @@ export default function CollectorHome() {
         <div className="stack">
           {history.length === 0 && <p className="muted">Nothing here yet.</p>}
           {history.map((r) => (
-            <CollectorRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} />
+            <CollectorRequestCard key={r.id} r={r} center={center} reveal={reveal} onRevealContact={revealContact} isHistory />
           ))}
         </div>
       )}
@@ -337,16 +355,23 @@ function CollectorRequestCard({
   reveal,
   onRevealContact,
   onCancel,
+  onArrived,
   onDistanceChange,
+  isHistory,
 }: {
   r: RequestRow;
   center: { lon: number; lat: number };
   reveal: Record<string, string>;
   onRevealContact: (id: string) => void;
   onCancel?: (id: string) => void;
+  onArrived?: (id: string) => void;
   onDistanceChange?: (distanceM: number) => void;
+  /** In History, the route is gone (nothing left to navigate to) and the conversation is frozen —
+   * shown only on request, mirroring HouseholdHome's HouseholdRequestCard. */
+  isHistory?: boolean;
 }) {
   const arrived = Boolean(r.arrived_at);
+  const [showChat, setShowChat] = useState(false);
   return (
     <div className="card stack">
       <div className="spread">
@@ -364,7 +389,7 @@ function CollectorRequestCard({
               Show contact
             </button>
           )}
-          {r.household_lon != null && r.household_lat != null && (
+          {!isHistory && r.household_lon != null && r.household_lat != null && (
             <RoutePanel
               from={center}
               to={{ lon: r.household_lon, lat: r.household_lat }}
@@ -372,7 +397,21 @@ function CollectorRequestCard({
               onDistanceChange={onDistanceChange}
             />
           )}
-          <RequestReviews requestId={r.id} subjectId={r.household_id} canReview />
+          {!isHistory && onArrived && r.can_mark_arrived && (
+            <button className="btn btn-gold btn-sm" style={{ marginTop: 8 }} onClick={() => onArrived(r.id)}>
+              I've arrived
+            </button>
+          )}
+          {isHistory ? (
+            <>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setShowChat((s) => !s)}>
+                {showChat ? "Hide conversation" : "View conversation"}
+              </button>
+              {showChat && <RequestReviews requestId={r.id} subjectId={r.household_id} canReview={false} interactive={false} />}
+            </>
+          ) : (
+            <RequestReviews requestId={r.id} subjectId={r.household_id} canReview interactive />
+          )}
           {onCancel && (
             <button className="btn btn-coral btn-sm" style={{ marginTop: 8 }} onClick={() => onCancel(r.id)}>
               Cancel request

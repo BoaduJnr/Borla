@@ -34,10 +34,14 @@ export function RequestReviews({
   requestId,
   subjectId,
   canReview,
+  interactive = true,
 }: {
   requestId: string;
   subjectId: string;
   canReview: boolean;
+  /** false once the request has moved to History — the conversation is frozen, read-only, no
+   * rating form and no reply composer. Rate/reply while the request is still active. */
+  interactive?: boolean;
 }) {
   const [messages, setMessages] = useState<ThreadMessage[] | null>(null);
   const [mine, setMine] = useState<MyReview | null>(null);
@@ -82,11 +86,12 @@ export function RequestReviews({
         </div>
       )}
 
-      {needsRating && canReview ? (
-        <RatingComposer requestId={requestId} subjectId={subjectId} onSent={load} />
-      ) : (
-        canReview && <ReplyComposer messages={messages} onSent={load} />
-      )}
+      {interactive &&
+        (needsRating && canReview ? (
+          <RatingComposer requestId={requestId} subjectId={subjectId} onSent={load} />
+        ) : (
+          canReview && <ReplyComposer messages={messages} onSent={load} />
+        ))}
     </div>
   );
 }

@@ -5,7 +5,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: Project_Documentation.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: Project_Documentation.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div>
 
@@ -435,16 +435,24 @@ a Socket.IO Redis adapter, since Technical_Debt_Plan.md TD-05 was resolved; FR-2
 collector-to-household / household-to-collector **route** once a direct request is accepted —
 a road-following route where the routing service resolves, a straight line otherwise, with
 distance/ETA — respecting the same reveal-on-accept timing as the phone number (TD-14 covers
-the third-party routing dependency this introduces); and a fuller **request lifecycle**
-(FR-28–FR-32): either party can **cancel** a request any time before arrival (a household
-previously had no way to withdraw one at all); the server itself detects a collector's
-**arrival** at the pickup point from the same position updates already used for presence
-(`ST_DWithin` against the request's stored location, no client self-reporting to trust) and
-notifies both sides in real time; resolved requests (arrived/cancelled/rejected/timed-out) move
-into a separate **History** tab so the active Requests view stays focused on what needs
-attention; a review and its reply now show **on the request they belong to**, not only in a
-flat Profile list; and the active-requests list sorts **closest-first by live route distance**,
-re-sorting as either side's position updates rather than only reflecting distance at load time.
+the third-party routing dependency this introduces), and the route map **zooms in as the two
+parties get closer** (FR-33) and expands into a full-screen lightbox with a dimmed backdrop and
+a close control on tap (FR-34); and a fuller **request lifecycle** (FR-28–FR-35): either party
+can **cancel** a request any time before arrival (a household previously had no way to withdraw
+one at all); the collector is offered a button-triggered **Arrived** confirmation the instant
+their own live position is within a configurable radius of the pickup point — the button is
+only a UX hint, the server independently re-verifies proximity (`ST_DWithin` against the
+request's stored location) before accepting the tap, texts the household on success, and this
+was a deliberate pivot away from an earlier fully-automatic, silent heartbeat-driven design
+(TD-17); resolved requests (arrived/cancelled/rejected/timed-out) move into a separate
+**History** tab so the active Requests view stays focused on what needs attention, where the
+live route map is dropped (nothing left to navigate to) and the review/chat thread is shown
+only on request, frozen read-only once there (FR-30a/FR-30b); a review and its reply now show
+**on the request they belong to**, not only in a flat Profile list; the active-requests list
+sorts **closest-first by live route distance**, re-sorting as either side's position updates
+rather than only reflecting distance at load time; and the collector's Home map now renders
+**edge-to-edge**, with the online/offline toggle floating on top of it instead of stacked above
+(FR-35).
 
 ### 10.3 Code organisation
 ```

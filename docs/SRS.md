@@ -5,7 +5,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: SRS.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: SRS.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div>
 
@@ -152,10 +152,16 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-26 | An admin can retune operational config (pin TTL, radius, timeouts, review window) without a redeploy | Should | `admin/routes.ts` `app_config` |
 | FR-27 | Once a direct request is accepted, each side sees a route to the other (road route where available, straight-line otherwise) with distance/ETA — a collector's target household, and a household's accepted collector | Should | `client/src/components/{MapView,RoutePanel}.tsx`; collector's live position is reveal-on-accept, same timing as FR-16's phone number |
 | FR-28 | Either party can cancel a direct request any time before the collector arrives (a household previously had no way to withdraw one at all) | Should | `POST /requests/:id/cancel`; conditional `WHERE status IN (...) AND arrived_at IS NULL` update, same idempotency pattern as accept/reject |
-| FR-29 | The system detects a collector's arrival at the pickup point automatically — server-side, from the same position updates already sent for presence — and notifies both parties in real time | Should | `presence/routes.ts` `checkArrivals()` (`ST_DWithin` against `requests.location`), `request:arrived` socket event to both sides |
+| FR-29 | The collector's app offers an "Arrived" button only once their own live position is within a configurable radius of the pickup point; tapping it records the arrival, texts the household, and notifies both sides in real time. The button is a UX hint only — the server independently re-checks proximity against the collector's last known position before accepting it, never trusting a client-supplied claim | Should | `requests/routes.ts` `POST /:id/arrived` (`ST_DWithin` against `requests.location`, conditional `UPDATE ... WHERE ... AND EXISTS (...)`); `can_mark_arrived` computed column on `GET /requests/mine`; `request:arrived` socket event to both sides |
+| FR-29a | Confirming arrival sends an SMS to the household ("Your Borla collector has arrived!") via the same gateway as OTP delivery; a delivery failure is logged but never blocks the arrival itself from being recorded | Should | `requests/routes.ts` `POST /:id/arrived` calling `utils/sms.ts` `sendSms()`, best-effort |
 | FR-30 | Resolved requests (arrived, cancelled, rejected, timed out) move out of the active Requests view into a separate History view | Should | `client/src/pages/{HouseholdHome,CollectorHome}.tsx` three-tab layout (Home / Requests / History) |
+| FR-30a | A request's live route map is not shown once it is in History (there is nothing left to navigate to); its review/chat thread is available on demand behind a "View conversation" toggle instead of being shown by default | Should | `HouseholdRequestCard`/`CollectorRequestCard`'s `isHistory` branch in `client/src/pages/{HouseholdHome,CollectorHome}.tsx` |
+| FR-30b | Once a request is in History, its review/chat thread is frozen read-only — no new rating can be left and no new reply can be posted, on either side | Should | `RequestReviews`'s `interactive={false}` prop (hides `RatingComposer`/`ReplyComposer`, still renders existing messages) |
 | FR-31 | A review and its reply are shown in the context of the request they belong to, not only in a flat profile list | Should | `GET /requests/:id/reviews`, `client/src/components/RequestReviews.tsx` |
 | FR-32 | Active requests are ordered closest-first by live route distance, re-sorting as either party's position updates | Should | `RoutePanel`'s `onDistanceChange` callback feeding a sort in `HouseholdHome`/`CollectorHome` |
+| FR-33 | A request's route map zooms in as the two parties get closer together, so a 5 km approach and a 20 m final stretch each render at a legible scale | Should | `RoutePanel.tsx` `zoomForDistance()`, fed by `onRouteInfo`'s live distance; `MapView`'s `zoom` prop |
+| FR-34 | Tapping a request card's route map opens it full-screen with a dimmed backdrop and an explicit close control, instead of only ever showing a small fixed preview | Should | `RoutePanel.tsx` lightbox (`expanded` state); small preview map is non-interactive (`MapView`'s `interactive={false}`) so it can safely sit inside a tappable button, the enlarged copy is fully interactive |
+| FR-35 | The collector's Home map is shown edge-to-edge (full device width) rather than boxed in by the page's side padding, with the online/offline toggle floating on top of the map instead of stacked above it | Could | `client/src/styles/app.css` `.map-wrap.full-bleed`/`.hero`/`.map-overlay-btn`; `CollectorHome.tsx` Home tab |
 
 ## 5. Non-functional requirements
 
@@ -170,7 +176,7 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | NFR-7 (Availability) | The deployed instance stays reachable for grading | Render health check (`/api/health`) wired into `render.yaml` |
 | NFR-8 (Data integrity) | A review can never be posted about a fabricated interaction | DB-level `UNIQUE(author_id, request_id)` / `UNIQUE(author_id, broadcast_id)` plus application-level interaction checks |
 | NFR-9 (Fail-safe moderation) | Unmoderated content never goes public by default | Fail-closed: no verdict (missing key, timeout, error) ⇒ stays hidden in the manual queue |
-| NFR-10 (Testability) | Core business logic is covered by automated tests | 53 server tests (unit + Supertest integration, against real Postgres+Redis) + 5 client component tests, all passing — see `Testing_Report.md` |
+| NFR-10 (Testability) | Core business logic is covered by automated tests | 55 server tests (unit + Supertest integration, against real Postgres+Redis) + 3 client component tests, all passing — see `Testing_Report.md` |
 
 ## 6. Requirement prioritisation (MoSCoW)
 
@@ -179,9 +185,11 @@ two-plane matching engine, masked contact, the full review/moderation/shared-thr
 and the admin console.
 
 **Should-have (built, lighter-touch)**: FR-17 (Did-they-come confirmation, minimal UI), FR-22
-(user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
-server-side arrival detection, active/history split, review-in-context, closest-first sort) —
-all present, but not stress-tested to the same depth as Must-Have items.
+(user reporting), FR-26 (live config tuning), FR-27–FR-34 (accepted-request route, cancel,
+button-triggered/server-verified arrival confirmation + SMS, active/history split with a
+frozen read-only thread, review-in-context, closest-first sort, distance-based map zoom, map
+lightbox) — all present, but not stress-tested to the same depth as Must-Have items. FR-35
+(full-bleed Home map) is Could-have polish layered on top of FR-10/FR-11's already-Must map.
 
 **Could-have (explicitly deferred — see `Technical_Debt_Plan.md`)**: native background
 geolocation, provider call-masking, photo → waste-type AI classification, admin 2FA, i18n
@@ -298,15 +306,18 @@ GET  /api/pins/nearby             ?lon&lat&radius
 POST /api/confirmations           {broadcastId, came, collectorId?}
 
 POST /api/requests                {collectorId, lon, lat, wasteType?, note?}
-GET  /api/requests/mine
+GET  /api/requests/mine           (collector rows include a server-computed can_mark_arrived)
 GET  /api/requests/:id
 POST /api/requests/:id/seen
 POST /api/requests/:id/accept
 POST /api/requests/:id/reject
+POST /api/requests/:id/cancel
+POST /api/requests/:id/arrived    collector-only; re-verifies ST_DWithin server-side; texts the household
+GET  /api/requests/:id/reviews    {messages, mine, canReview} — one shared thread, same for both parties
 
 POST /api/reviews                 {subjectId, requestId?|broadcastId?, rating, comment?}
 GET  /api/users/:id/reviews
-POST /api/reviews/:id/reply       {body}
+POST /api/reviews/:id/reply       {body} — either party to the request, any number of times
 POST /api/reviews/:id/report      {reason}
 
 GET/POST /api/admin/*             stats, live-map, users, moderation queue, audit log, config
@@ -314,7 +325,7 @@ GET/POST /api/admin/*             stats, live-map, users, moderation queue, audi
 
 ### 8.2 Realtime events (Socket.IO, JWT-authed, room `user:{id}`)
 `broadcast:new`, `broadcast:cleared`, `request:new`, `request:seen`, `request:accepted`,
-`request:rejected`, `request:timed_out`.
+`request:rejected`, `request:timed_out`, `request:arrived`.
 
 ---
 

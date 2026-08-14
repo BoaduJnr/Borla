@@ -142,28 +142,38 @@ describe("request plane (design §3.2 state machine)", () => {
     expect(check.body.request.cancelled_by).toBe("collector");
   });
 
-  it("a collector's live position reaching the pickup point marks the request arrived, without a new status", async () => {
+  it("the Arrived button is only offered once the collector's live position is within the arrival radius, and the request keeps its status when confirmed", async () => {
     const household = await signup(app, "household");
     const collector = await verifiedOnlineCollector();
     const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
     const requestId = created.body.request.id;
     await request(app).post(`/api/requests/${requestId}/accept`).set(auth(collector.access));
 
-    // A heartbeat reported well outside the arrival radius must NOT mark it arrived.
-    const farHeartbeat = await request(app)
+    // Far away: neither the can_mark_arrived hint nor the endpoint itself allow marking arrived.
+    await request(app)
       .post("/api/presence/heartbeat")
       .set(auth(collector.access))
       .send({ lon: POINT.lon + 0.05, lat: POINT.lat + 0.05 }); // ~5-7km away
-    expect(farHeartbeat.status).toBe(200);
+    const mineFar = await request(app).get("/api/requests/mine").set(auth(collector.access));
+    const rowFar = mineFar.body.requests.find((r: any) => r.id === requestId);
+    expect(rowFar.can_mark_arrived).toBe(false);
+
+    const arriveTooFar = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(collector.access));
+    expect(arriveTooFar.status).toBe(400);
     const stillOnTheWay = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
     expect(stillOnTheWay.body.request.arrived_at).toBeNull();
     expect(stillOnTheWay.body.request.status).toBe("accepted");
 
-    // A heartbeat right at the pickup point marks it arrived — status stays 'accepted' (arrival
-    // is a fact recorded on the request, not a new terminal status), so review eligibility is
-    // untouched.
-    const closeHeartbeat = await request(app).post("/api/presence/heartbeat").set(auth(collector.access)).send({ ...POINT });
-    expect(closeHeartbeat.status).toBe(200);
+    // Right at the pickup point: can_mark_arrived flips true, and the button's request succeeds.
+    // Status stays 'accepted' (arrival is a fact recorded on the request, not a new terminal
+    // status), so review eligibility is untouched.
+    await request(app).post("/api/presence/heartbeat").set(auth(collector.access)).send({ ...POINT });
+    const mineClose = await request(app).get("/api/requests/mine").set(auth(collector.access));
+    const rowClose = mineClose.body.requests.find((r: any) => r.id === requestId);
+    expect(rowClose.can_mark_arrived).toBe(true);
+
+    const arrive = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(collector.access));
+    expect(arrive.status).toBe(200);
     const arrived = await request(app).get(`/api/requests/${requestId}`).set(auth(household.access));
     expect(arrived.body.request.status).toBe("accepted");
     expect(arrived.body.request.arrived_at).not.toBeNull();
@@ -171,5 +181,25 @@ describe("request plane (design §3.2 state machine)", () => {
     // Once arrived, cancel is no longer offered — there's nothing left to back out of.
     const cancelAfterArrival = await request(app).post(`/api/requests/${requestId}/cancel`).set(auth(household.access));
     expect(cancelAfterArrival.status).toBe(409);
+
+    // Calling it again is rejected — already arrived, can_mark_arrived's precondition no longer holds.
+    const arriveAgain = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(collector.access));
+    expect(arriveAgain.status).toBe(400);
+  });
+
+  it("only the collector on the request can mark it arrived — not the household, not a stranger collector", async () => {
+    const household = await signup(app, "household");
+    const collector = await verifiedOnlineCollector();
+    const created = await request(app).post("/api/requests").set(auth(household.access)).send({ collectorId: collector.user.id, ...POINT });
+    const requestId = created.body.request.id;
+    await request(app).post(`/api/requests/${requestId}/accept`).set(auth(collector.access));
+    await request(app).post("/api/presence/heartbeat").set(auth(collector.access)).send({ ...POINT });
+
+    const householdAttempt = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(household.access));
+    expect(householdAttempt.status).toBe(403); // requireRole("collector")
+
+    const stranger = await verifiedOnlineCollector();
+    const strangerAttempt = await request(app).post(`/api/requests/${requestId}/arrived`).set(auth(stranger.access));
+    expect(strangerAttempt.status).toBe(400); // not this request's collector — conditional update matches zero rows
   });
 });

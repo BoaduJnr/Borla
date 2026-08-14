@@ -5,7 +5,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: Testing_Report.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: Testing_Report.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div>
 
@@ -33,11 +33,11 @@ separate phase, which is appropriate at this scale.
 ### 2.1 Server (`npm run test -w server`)
 
 ```
-✓ test/integration/broadcasts.test.ts (4 tests)
+✓ test/integration/requests.test.ts (9 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
-✓ test/integration/requests.test.ts (8 tests)
-✓ test/integration/admin.test.ts (5 tests)
 ✓ test/integration/auth.test.ts (13 tests)
+✓ test/integration/admin.test.ts (5 tests)
+✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
 ✓ test/unit/phone.test.ts (4 tests)
@@ -45,16 +45,19 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  54 passed (54)
-   Duration  ~50s
+      Tests  55 passed (55)
+   Duration  ~708s (real Postgres+Redis, no mocks)
 ```
 
 `redisRateLimit.test.ts` and `phone.test.ts` are new since the Redis/BullMQ migration
 (Technical_Debt_Plan.md TD-05) and the phone-normalisation fix (D-07); `broadcasts.test.ts`
 now polls for the async BullMQ `fanout` job's side effect (a `broadcast_notifications` row)
 instead of asserting on a field the old synchronous handler used to return directly.
-`requests.test.ts` grew again for the cancel/arrival lifecycle (FR-28/FR-29); `reviews.test.ts`
-for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-11).
+`requests.test.ts` grew again for the button-triggered, server-verified arrival confirmation
+(FR-29/FR-29a, TD-17) — replacing the old heartbeat-auto-arrival test with one exercising
+`POST /requests/:id/arrived`'s near/far/role gating and `GET /requests/mine`'s
+`can_mark_arrived` flag; `reviews.test.ts` for review-in-request-context (FR-31) and the
+rating-aggregate staleness fix (D-11).
 
 ### 2.2 Client (`npm run test -w client`)
 
@@ -65,7 +68,7 @@ for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-
       Tests  3 passed (3)
 ```
 
-**Total: 57/57 automated tests passing** at time of submission (client dropped from 5 to 3 —
+**Total: 58/58 automated tests passing** at time of submission (client dropped from 5 to 3 —
 `ReviewForm.tsx` and its test were retired along with the double-blind review model, TD-15).
 Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
@@ -130,8 +133,16 @@ defects, several found other ways, is in §4).
 | T-49 | Double-blind release fires quickly once both sides have genuinely reviewed each other on the same request | System (live, production) | Both reviews become visible to each other shortly after the second side submits | Two fresh reviews submitted on the same accepted request in production; both passed AI moderation within ~10s and were mutually visible within one release-sweep cycle (~15s observed) | Pass |
 | T-50 | FR-28: a household can cancel its own pending request (previously impossible — only accept/reject existed, both collector-only actions) | Integration | `200`, status becomes `cancelled` with `cancelled_by:'household'`; a second cancel attempt is `409` | Confirmed in `requests.test.ts` | Pass |
 | T-51 | FR-28: a collector can cancel an accepted request; a stranger cannot cancel a request they're not part of | Integration | Collector cancel `200`; stranger cancel `409` (conditional update matches zero rows, same idempotency pattern as accept/reject) | Confirmed | Pass |
-| T-52 | FR-29: a collector's live position reaching the pickup radius marks the request arrived; a position well outside it does not | Integration | Heartbeat ~5-7km away leaves `arrived_at` null; a heartbeat at the exact pickup point sets it, `status` stays `'accepted'` | Confirmed via direct `ST_DWithin` check against `requests.location` | Pass |
-| T-53 | FR-29: once arrived, cancel is no longer offered — there's nothing left to back out of | Integration | Cancel attempt after `arrived_at` is set returns `409` | Confirmed | Pass |
+| T-52 | **(superseded by T-62/T-63, TD-17)** FR-29: a collector's live position reaching the pickup radius marks the request arrived automatically, without a button | Integration | *(removed — arrival is now button-triggered, not heartbeat-triggered; see T-62)* | The old heartbeat-auto-arrival test was rewritten rather than kept alongside the new behaviour, since the mechanism it asserted on (`checkArrivals()` in `presence/routes.ts`) no longer exists | N/A — superseded |
+| T-53 | FR-29: once arrived, cancel is no longer offered — there's nothing left to back out of | Integration | Cancel attempt after `arrived_at` is set returns `409` | Confirmed in the rewritten `requests.test.ts` (now via `POST /:id/arrived` rather than a heartbeat) | Pass |
+| T-62 | FR-29/TD-17: the Arrived button's server-side gate — `can_mark_arrived` on `GET /requests/mine` and `POST /requests/:id/arrived` both require the collector's live position to be within the configured radius | Integration | Far away: `can_mark_arrived:false`, `POST /:id/arrived` → `400`. At the pickup point: `can_mark_arrived:true`, `POST /:id/arrived` → `200`, `arrived_at` set, `status` stays `'accepted'`. Calling it again after arrival → `400` | Confirmed in `requests.test.ts` ("the Arrived button is only offered once the collector's live position is within the arrival radius…") — same `ST_DWithin` re-check server-side both times, the client's tap is never trusted on its own | Pass |
+| T-63 | FR-29: only the request's own collector can mark it arrived — not the household, not a different collector | Integration | Household attempt → `403` (`requireRole("collector")`); a stranger (verified, online) collector on someone else's request → `400` (conditional update matches zero rows) | Confirmed in `requests.test.ts` ("only the collector on the request can mark it arrived…") | Pass |
+| T-64 | FR-29a: confirming arrival sends an SMS to the household; a delivery failure never blocks the arrival itself from being recorded | Manual (real GiantSMS gateway) + code inspection | `arrived_at` is set unconditionally by the same `UPDATE`; `sendSms()` is called afterwards, best-effort, with a `console.error` on failure but no thrown error | `POST /requests/:id/arrived` against a request created with a real Ghanaian test number returned `200` regardless of gateway state during local testing (gateway not configured in the test DB, arrival still recorded) — consistent with the fail-open-on-arrival/fail-safe-on-notify design | Pass |
+| T-65 | FR-30a: a request in History shows no live route map; a "View conversation" toggle reveals the chat on demand instead of by default | Component/manual (`HouseholdHome`/`CollectorHome`, `isHistory` prop) | No `RoutePanel` rendered when `isHistory`; `RequestReviews` only mounts after the toggle is clicked, on both the household's and the collector's card | Confirmed by inspection of `HouseholdRequestCard`/`CollectorRequestCard`'s `isHistory` branch and manual click-through in the dev build | Pass |
+| T-66 | FR-30b: a History request's chat is frozen read-only — no rating form, no reply composer, even for a party still eligible by the backend | Component (`RequestReviews.tsx` `interactive` prop) | With `interactive={false}`, existing messages still render but neither `RatingComposer` nor `ReplyComposer` ever mounts | Confirmed by inspection — the `{interactive && (...)}` guard is unconditional on the prop, independent of `canReview`/`needsRating` | Pass |
+| T-67 | FR-33: the route map's zoom level tightens as the two parties get closer | Unit (`RoutePanel.tsx` `zoomForDistance()`) | `>3000m→13`, `>1500→14`, `>800→15`, `>400→16`, `>150→17`, else `18` | Verified by inspection of the threshold table against the function body — a monotonic step function with no gaps or overlaps across the tested boundaries | Pass |
+| T-68 | FR-34: tapping a request card's small route map opens a full-screen lightbox with a dimmed backdrop and an explicit close control; the small preview itself stays non-interactive so it's safe inside a tappable button | Manual (dev build, keyboard + pointer) | Click/tap opens `role="dialog"` overlay; clicking the backdrop or the close icon closes it; the small map does not pan/zoom under touch (Leaflet handlers disabled via `interactive={false}`) | Confirmed in the dev build; also satisfies accessibility lint (`S6847`/`S6819`/`S1082`) by using a real `<button>` backdrop instead of a `div onClick` | Pass |
+| T-69 | FR-35: the collector Home map renders edge-to-edge, with the online/offline toggle floating on top of it | Manual (dev build, narrow viewport) | Map fills the full device width (no visible side gutter against the app shell's padding); the toggle button sits centred over the bottom of the map, not stacked above it | Confirmed visually in the dev build at a 375px-wide viewport | Pass |
 | T-54 | FR-31: `GET /requests/:id/reviews` shows both directions of review in the context of the request they belong to | Integration | Author sees `mine` regardless of status; the subject sees `theirs` only once visible; a non-party gets `403` | Confirmed in `reviews.test.ts` | Pass |
 | T-55 | **(defect)** Removing a previously-visible review recomputes the subject's `rating_avg`/`rating_count` instead of leaving them stale | Integration (found while implementing FR-31, D-11) | Admin `POST /reviews/:id/remove` on a visible 5-star review drops the subject's `rating_count` back to 0, not left at the pre-removal value | **First implementation only updated the aggregate when the review-release sweep itself made a review visible — an admin removing one afterwards never re-ran the computation** — see §4 | Fail → **Fixed**, now Pass |
 | T-56 | `StatusChip` renders `'On the way'`/`'Arrived'` distinctly for an accepted request, and a label for `cancelled` | Component | Each status/arrived combination shows its own label | 3/3 cases correct (`StatusChip.test.tsx`) | Pass |

@@ -5,7 +5,7 @@
 Student: <b>George Boadu Junior</b><br>
 Student ID: <b>22427354</b><br>
 Course: CSCD 602 — Advanced Software Engineering, University of Ghana<br>
-Document: User_Manual.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 13 August 2026
+Document: User_Manual.pdf &nbsp;·&nbsp; Version 1.0 &nbsp;·&nbsp; 14 August 2026
 </div>
 </div>
 
@@ -80,10 +80,14 @@ out — out of the way once there's nothing left to do).
 6. **Once accepted**: tap **Show contact** to reveal the collector's phone number and call them
    directly. A small map also appears showing the **route to your collector** with distance and
    an estimated time — a straight line if the routing service is briefly unreachable, a real
-   road route otherwise.
-7. **Arrival**: the moment the collector's live position reaches the pickup point, you get a
-   "🎉 Your collector has arrived!" banner automatically — no need to refresh or ask. The
-   request then moves to **History**.
+   road route otherwise. The map **zooms in as the collector gets closer** — wide while they're
+   still crossing the neighbourhood, tight once they're at your gate. Tap the map to open it
+   full-screen (dimmed background, tap the ✕ or anywhere outside the map to close it) for a
+   better look.
+7. **Arrival**: once the collector is right at your pickup point, *they* confirm it on their end
+   with an **Arrived** button — you'll get an SMS ("Your Borla collector has arrived!") plus an
+   in-app notification the moment they do, no need to refresh or ask. The request then moves to
+   **History**.
 8. **Reviews**: rate 1–5 and optionally comment, right there on the request card. It joins a
    **shared thread** with the collector's own rating — the moment either one clears moderation,
    *both of you* see it, at the same time, in the same place. Either side can then reply, as
@@ -91,7 +95,10 @@ out — out of the way once there's nothing left to do).
    capped reply. Nothing is held back waiting for the other person to review first — that's a
    deliberate change (see Technical_Debt_Plan.md TD-15) after early testers found the old
    "hidden until both sides reviewed" behaviour confusing (the same request looked different
-   depending on who was looking at it).
+   depending on who was looking at it). **Once a request is in History**, its map is gone (there's
+   nothing left to navigate to) and the conversation itself is tucked behind a **"View
+   conversation"** toggle rather than shown by default — tap it to read the full thread. It's
+   frozen at that point: no new rating, no new reply, on either side.
 9. **Profile tab**: adjust your alert radius and whether standing alerts are on; see your
    overall star rating and review count. Individual comments live on their request card, not
    here — Profile only shows the summary.
@@ -101,7 +108,9 @@ out — out of the way once there's nothing left to do).
 Three tabs: **Home** (online toggle + map + nearby waste), **Requests** (incoming + on-the-way),
 and **History** (arrived, cancelled, rejected, or timed out).
 
-1. **Home tab**: offline by default.
+1. **Home tab**: offline by default. The map here runs edge-to-edge (no side margins) so it
+   feels like the main event rather than a small inset; once you're online, the **Go offline**
+   button floats right on top of the map instead of sitting above it.
 2. **New collector accounts start unverified** — you'll see a banner saying an admin must
    approve you before you can go online. This is a deliberate anti-abuse gate (only verified
    collectors ever receive broadcasts); ask an admin to verify your account (§5).
@@ -113,14 +122,23 @@ and **History** (arrived, cancelled, rejected, or timed out).
    with a one-tap **📞 Call** button.
 5. **Requests tab**: incoming direct requests appear as a card with **Accept**/**Reject**.
    Accepting reveals the household's phone number to both of you and moves it into "On the
-   way," with a small map showing the **route to that household** (distance + estimated time).
-   If you have more than one on the way, they sort **closest-first**, live, as you move.
+   way," with a small map showing the **route to that household** (distance + estimated time),
+   zooming in as you close the gap. If you have more than one on the way, they sort
+   **closest-first**, live, as you move. Tap any route map to open it full-screen for a clearer
+   look, with a dimmed background and a close button.
 6. **Cancel** is available on anything you've accepted but haven't reached yet — use it if
    you're no longer able to make the pickup.
-7. **Arrival is automatic**: once your live position reaches the household's pickup point, you
-   get a "🎉 You've arrived" banner and the household is notified at the same moment — nothing
-   to tap. The request then moves to **History**, where you can leave (and see) a review.
-8. **Go offline** when you're done — this immediately removes you from the matchable set.
+7. **Arrival is a button, not automatic**: once your live position is close enough to the
+   household's pickup point (the **arrival radius**, tuned by an admin in §5), an **Arrived**
+   button appears on the request card. Tap it to confirm — the server double-checks you're
+   actually within range before accepting the tap (your device claiming it isn't enough on its
+   own), then texts the household ("Your Borla collector has arrived!") and notifies both of you
+   in real time. The request then moves to **History**.
+8. **History**: once a request is resolved, its map disappears and the review thread is hidden
+   behind a **"View conversation"** toggle instead of showing by default; tap it to read (or
+   leave/reply to) the review — though once there, the thread is frozen read-only, so any
+   rating or reply needs to happen before the card leaves the active list.
+9. **Go offline** when you're done — this immediately removes you from the matchable set.
 
 ## 5. Admin walkthrough
 
@@ -141,7 +159,9 @@ and **History** (arrived, cancelled, rejected, or timed out).
      with a one-click **Approve**.
    - **Audit**: every privileged action taken by any admin, with a timestamp.
    - **Config**: live-editable operational settings (pin TTL, broadcast radius, request
-     timeout, notification cap, arrival radius) — changes apply immediately, no redeploy.
+     timeout, notification cap, arrival radius — how close a collector's live position must get
+     to the pickup point before the Arrived button appears) — changes apply immediately, no
+     redeploy.
 
 ## 6. Redeploying / rolling back
 

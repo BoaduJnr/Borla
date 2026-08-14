@@ -337,7 +337,7 @@ const CONFIG_META: Record<string, { label: string; description: string; unit: st
   },
   arrival_radius_m: {
     label: "Arrival radius",
-    description: "How close a collector's live position must get to the pickup point to be marked arrived.",
+    description: "How close a collector's live position must get to the pickup point to show the Arrived button.",
     unit: "metres",
   },
 };
