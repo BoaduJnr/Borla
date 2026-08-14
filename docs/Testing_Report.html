@@ -626,8 +626,24 @@ defects, several found other ways, is in §4).</p>
 <td><strong>(defect)</strong> D-17: the topbar (logo, logout button) and tab bar clear a notched iPhone&#39;s status bar and home-indicator strip</td>
 <td>Manual (iPhone 17)</td>
 <td>Logo/logout button fully visible below the network/battery/time icons; tab labels clear of the home-indicator strip</td>
-<td><strong>Reported by the user</strong> (&quot;on iphone 17, the logo and the logout button is hidden under network and battery icons&quot;) — traced to <code>viewport-fit=cover</code> + <code>black-translucent</code> drawing content under the status bar with no matching <code>env(safe-area-inset-*)</code> padding anywhere in the CSS</td>
+<td><strong>Reported by the user</strong> (&quot;on iphone 17, the logo and the logout button is hidden under network and battery icons&quot;) — traced to <code>viewport-fit=cover</code> + <code>black-translucent</code> drawing content under the status bar with no matching <code>env(safe-area-inset-*)</code> padding anywhere in the CSS. The topbar/tabbar visibility itself was fixed correctly; see T-74/T-75 for two follow-on regressions this same fix introduced elsewhere, caught on the same device immediately after</td>
 <td>Fail (topbar content under the status bar icons) → <strong>Fixed</strong> via <code>env(safe-area-inset-top/bottom)</code> padding on <code>.topbar</code>/<code>.tabbar</code>, now Pass</td>
+</tr>
+<tr>
+<td>T-74</td>
+<td><strong>(defect)</strong> D-18: the tab bar&#39;s icons/labels stay correctly centred and full-height on a notched device, instead of being squeezed by the same safe-area padding that fixed T-73</td>
+<td>Manual (iPhone 17)</td>
+<td>Tab icons sit at the same vertical position/size as on a non-notched device; only the reserved strip below them (over the home indicator) grows</td>
+<td><strong>Reported by the user</strong> immediately after T-73 shipped (&quot;the layout in the button pane is now off. The icon don&#39;t sit right in the pane.&quot;) — traced to <code>.tabbar</code> keeping a fixed <code>height: 64px</code> while gaining <code>padding-bottom: env(safe-area-inset-bottom)</code>, which (under <code>box-sizing: border-box</code>) shrank the icon area instead of growing the box</td>
+<td>Fail (icons squeezed by the fixed-height/padding interaction) → <strong>Fixed</strong> via <code>height: calc(64px + env(safe-area-inset-bottom))</code>, now Pass</td>
+</tr>
+<tr>
+<td>T-75</td>
+<td><strong>(defect)</strong> D-19: the first-launch splash screen&#39;s &quot;Get started&quot; button stays on-screen on a notched device, instead of being pushed off the bottom by the taller topbar</td>
+<td>Manual (iPhone 17, fresh session / logged out)</td>
+<td>The full splash — language picker and &quot;Get started&quot; button included — fits within the viewport below the topbar with no scrolling needed</td>
+<td><strong>Reported by the user</strong> (&quot;also get started is buried when app is open for the first time&quot;) — traced to the splash&#39;s hardcoded <code>minHeight: calc(100vh - 64px)</code>, a guess at the topbar&#39;s height that stopped matching once T-73 made the topbar taller on notched devices</td>
+<td>Fail (splash content overflowed below the fold) → <strong>Fixed</strong> by replacing the hardcoded guess with <code>flex: 1</code> (matching <code>.content</code>&#39;s own approach elsewhere), now Pass</td>
 </tr>
 <tr>
 <td>T-54</td>
@@ -806,38 +822,56 @@ defects, several found other ways, is in §4).</p>
 <td>On notched iPhones (reported on iPhone 17), the brand logo and the logout button rendered underneath the status bar&#39;s network/battery/time icons, and the bottom tab bar sat flush against the home-indicator strip. Root cause: the app deliberately draws edge-to-edge under the status bar (<code>viewport-fit=cover</code> + <code>black-translucent</code>, needed for the full-bleed map work, FR-35) but nothing in the CSS ever added the matching <code>env(safe-area-inset-*)</code> padding those two settings require — every other device without a notch happened to have zero inset, so the gap was invisible until tested on real notched hardware. <strong>Reported by the user.</strong></td>
 <td>Added <code>padding-top: calc(14px + env(safe-area-inset-top))</code> to <code>.topbar</code> and <code>padding-bottom: env(safe-area-inset-bottom)</code> to <code>.tabbar</code> (with <code>.content</code>&#39;s bottom padding bumped to match the now-taller tab bar) — <code>env()</code> resolves to <code>0</code> on any device without a safe-area inset, so this is a no-op everywhere else.</td>
 </tr>
+<tr>
+<td>D-18</td>
+<td><code>client/src/styles/app.css</code> (<code>.tabbar</code>)</td>
+<td>D-17&#39;s own fix introduced a new bug on the exact devices it was meant to help: <code>.tabbar</code> kept its fixed <code>height: 64px</code> while gaining <code>padding-bottom: env(safe-area-inset-bottom)</code> — with the project&#39;s global <code>box-sizing: border-box</code>, that padding ate into the fixed height instead of growing the box, squeezing the tab icons/labels into a shorter content area on any notched device. <strong>Reported by the user</strong> (&quot;the layout in the button pane is now off. The icon don&#39;t sit right in the pane.&quot;) immediately after D-17 shipped.</td>
+<td>Changed <code>.tabbar</code>&#39;s <code>height</code> to <code>calc(64px + env(safe-area-inset-bottom))</code> so the inset grows the box instead of shrinking the icon area — the icons&#39; own 64px stays exactly as it was on every device; only the reserved strip below them grows on a notched one.</td>
+</tr>
+<tr>
+<td>D-19</td>
+<td><code>client/src/pages/Login.tsx</code> (splash screen)</td>
+<td>Also surfaced by D-17&#39;s own fix: the first-launch splash screen hardcoded <code>minHeight: calc(100vh - 64px)</code>, guessing <code>.topbar</code>&#39;s height as a fixed 64px so the splash box would fill the rest of the viewport. Once <code>.topbar</code> grew by <code>env(safe-area-inset-top)</code> on a notched phone, the real topbar height exceeded that guess, so the splash&#39;s own box (still sized against the old assumption) overflowed the viewport and pushed the &quot;Get started&quot; button off the bottom of the screen on first open — the one moment every new user has no other way into the app. <strong>Reported by the user</strong> (&quot;get started is buried when app is open for the first time&quot;).</td>
+<td>Replaced the hardcoded <code>calc(100vh - 64px)</code> with <code>flex: 1</code> — <code>.app-shell</code> is already a flex column and <code>.content</code> already uses the same <code>flex: 1</code> approach elsewhere, so the splash now fills exactly whatever space is left below the topbar, however tall that topbar actually renders, with no magic number to fall out of sync again.</td>
+</tr>
 </tbody></table>
-<p>All seventeen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14/D-15/D-16/D-17, well after) the corresponding feature — eight by the automated suite
-(D-11 by reasoning through the code while building an unrelated feature, D-13 by directly
-observing stuck production queue items while manually verifying D-12), nine by deliberately
-exercising the live deployed app or reading its logs (D-05 by me re-testing production myself;
-D-07, D-10, D-12, D-14, D-15, D-16, and D-17 reported back by the user; D-08 surfaced in
-production logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather
-than by reading the code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot;
-not &quot;critical&quot;: the practice works, it just hasn&#39;t been extended to every corner of the app,
-including production behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em>
-backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users
-if either its state is never surfaced (D-10) or it&#39;s only kept correct along one of several
-paths that touch it (D-11) — functional correctness on the happy path and correctness
-everywhere the same data can change are different bars. D-12 is a step further still: the
-mechanism was working <em>exactly as designed</em>, and the design itself was the problem — no amount
-of additional testing against the original spec would have caught it, because the spec
-(double-blind release) was what the user was objecting to. D-13, found while manually
-re-verifying D-12&#39;s own fix in production, is a reminder that verification itself can surface
-new defects — the retry/backoff infrastructure existed since TD-05 but had never actually been
-exercised until real usage hit it. D-14 and D-15 are UI-layer versions of the same lesson as
-D-10/D-11: a component that individually works correctly (<code>InstallButton</code>&#39;s own state; a
-Leaflet map rendering fine on its own) can still produce a visibly broken experience once placed
-next to something else that doesn&#39;t share its state (a stale hardcoded label) or contend with
-its stacking (an overlay button) — neither is caught by a unit test of the component in
-isolation, only by looking at the assembled screen. D-16 and D-17 are squarely device-class
-gaps: nothing in this project&#39;s own dev environment (desktop browsers, an Android emulator) has
-a notch or a GPS that streams position updates every few seconds while a person is physically
-walking with the page open — both defects are entirely invisible until a real person tests on
-real mobile hardware, which is exactly what surfaced them, well after both features individually
-passed their own review. Some defects are only found by putting the actual feature in front of
-the actual person it&#39;s for, and some are only found by watching your own fix operate for real.</p>
+<p>All nineteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14 through D-19, well after) the corresponding feature — eight by the automated suite (D-11
+by reasoning through the code while building an unrelated feature, D-13 by directly observing
+stuck production queue items while manually verifying D-12), eleven by deliberately exercising
+the live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
+D-12, and D-14 through D-19 reported back by the user; D-08 surfaced in production logs once
+the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the
+code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
+practice works, it just hasn&#39;t been extended to every corner of the app, including production
+behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em> backend mechanism
+(the double-blind release sweep; the rating aggregate) can still fail users if either its state
+is never surfaced (D-10) or it&#39;s only kept correct along one of several paths that touch it
+(D-11) — functional correctness on the happy path and correctness everywhere the same data can
+change are different bars. D-12 is a step further still: the mechanism was working <em>exactly as
+designed</em>, and the design itself was the problem — no amount of additional testing against the
+original spec would have caught it, because the spec (double-blind release) was what the user
+was objecting to. D-13, found while manually re-verifying D-12&#39;s own fix in production, is a
+reminder that verification itself can surface new defects — the retry/backoff infrastructure
+existed since TD-05 but had never actually been exercised until real usage hit it. D-14 and
+D-15 are UI-layer versions of the same lesson as D-10/D-11: a component that individually works
+correctly (<code>InstallButton</code>&#39;s own state; a Leaflet map rendering fine on its own) can still
+produce a visibly broken experience once placed next to something else that doesn&#39;t share its
+state (a stale hardcoded label) or contend with its stacking (an overlay button) — neither is
+caught by a unit test of the component in isolation, only by looking at the assembled screen.
+D-16 and D-17 are squarely device-class gaps: nothing in this project&#39;s own dev environment
+(desktop browsers, an Android emulator) has a notch or a GPS that streams position updates
+every few seconds while a person is physically walking with the page open — both defects are
+entirely invisible until a real person tests on real mobile hardware, which is exactly what
+surfaced them, well after both features individually passed their own review. D-18 and D-19
+are the sharpest lesson of the batch: they are regressions introduced <em>by D-17&#39;s own fix</em>,
+each caught within one round-trip of shipping it because the same user immediately re-tested on
+the same real device — a reminder that a safe-area fix changes real, load-bearing pixel
+measurements (a fixed box height; a hardcoded viewport-height guess elsewhere in the codebase
+that had nothing to do with the fix itself) and every place that measurement was assumed
+constant needs re-checking, not just the one spot the original bug was reported in. Some
+defects are only found by putting the actual feature in front of the actual person it&#39;s for,
+and some are only found by watching your own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

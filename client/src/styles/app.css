@@ -50,7 +50,11 @@
   transform: translateX(-50%);
   width: 100%;
   max-width: 480px;
-  height: 64px;
+  /* The safe-area inset must GROW the box, not eat into the fixed 64px — with box-sizing:
+     border-box, padding-bottom alone (without also growing height) shrinks the icon/label
+     area by the inset amount, squeezing them off-centre. calc() here keeps the icons' own
+     64px exactly as before on every device; only the reserved space below them grows. */
+  height: calc(64px + env(safe-area-inset-bottom));
   /* Keeps the tab labels clear of the home-indicator strip on notched iPhones, same reasoning
      as .topbar above — 0 on devices without one. */
   padding-bottom: env(safe-area-inset-bottom);

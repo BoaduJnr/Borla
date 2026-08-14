@@ -134,7 +134,12 @@ export default function Login() {
       <div
         className="stack"
         style={{
-          minHeight: "calc(100vh - 64px)",
+          // Fills whatever space is left below .topbar in the app-shell's flex column — same
+          // approach .content already uses. A hardcoded `calc(100vh - 64px)` here used to guess
+          // the topbar's height, but that guess broke once the topbar grew by
+          // env(safe-area-inset-top) on notched phones: the splash box overflowed the viewport
+          // and pushed "Get started" off the bottom on first launch.
+          flex: 1,
           background: "linear-gradient(160deg, var(--green), var(--green-d))",
           color: "#fff",
           padding: "40px 24px 26px",
