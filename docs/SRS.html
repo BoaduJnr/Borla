@@ -87,8 +87,8 @@ instance</strong> once the user provisioned one — see <code>Technical_Debt_Pla
 <td>Phone numbers stay hidden until a request is accepted</td>
 </tr>
 <tr>
-<td>Double-blind release</td>
-<td>A review stays hidden until both sides have reviewed (or the review window closes)</td>
+<td>Shared review thread</td>
+<td>A request&#39;s rating(s) and every reply, from either party, shown identically to both sides the moment each individually clears moderation — no reciprocal waiting (this replaced an earlier double-blind design; see Technical_Debt_Plan.md)</td>
 </tr>
 <tr>
 <td>UCP</td>
@@ -335,15 +335,15 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 </tr>
 <tr>
 <td>FR-20</td>
-<td>A review is only shown once both sides have reviewed, or the review window has closed (double-blind release)</td>
+<td>A review or reply becomes visible to <em>both</em> parties the moment it individually clears moderation — not gated on the other side having reviewed back</td>
 <td>Must</td>
-<td><code>jobs/workers.ts</code> review-release sweep (BullMQ repeatable job)</td>
+<td><code>jobs/workers.ts</code> <code>processModerate</code> sets <code>status=&#39;visible&#39;</code> directly; <code>GET /requests/:id/reviews</code> returns one identical thread to both callers</td>
 </tr>
 <tr>
 <td>FR-21</td>
-<td>The reviewed party may post exactly one public reply</td>
+<td>Either party may reply to a request&#39;s review thread, any number of times, each reply independently moderated — a real chat, not one capped reply from the reviewed party only</td>
 <td>Must</td>
-<td><code>reviews/routes.ts</code></td>
+<td><code>reviews/routes.ts</code> <code>POST /reviews/:id/reply</code>; <code>review_replies</code> no longer has a one-per-review constraint</td>
 </tr>
 <tr>
 <td>FR-22</td>
@@ -474,8 +474,8 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 </tbody></table>
 <h2>6. Requirement prioritisation (MoSCoW)</h2>
 <p><strong>Must-have (built, this submission)</strong>: FR-01–FR-16, FR-18–FR-21, FR-23–FR-25 — the complete
-two-plane matching engine, masked contact, the full review/moderation/double-blind pipeline, and
-the admin console.</p>
+two-plane matching engine, masked contact, the full review/moderation/shared-thread pipeline,
+and the admin console.</p>
 <p><strong>Should-have (built, lighter-touch)</strong>: FR-17 (Did-they-come confirmation, minimal UI), FR-22
 (user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
 server-side arrival detection, active/history split, review-in-context, closest-first sort) —
@@ -537,7 +537,7 @@ exercise where the reasoning must be shown, not just a number.</p>
 <p>26 use cases from §4/§6 were classified by transaction count: <strong>4 Complex</strong> (15 pts) — fan-out
 broadcast creation, request accept/reject with idempotency + reveal, review submission with
 interaction validation, AI/manual moderation; <strong>8 Average</strong> (10 pts) — OTP login, direct
-request creation, auto-timeout, auto-expiry, double-blind release, reply, admin
+request creation, auto-timeout, auto-expiry, review-thread release, reply, admin
 verify/suspend, admin moderation resolution; <strong>13 Simple</strong> (5 pts) — the remaining CRUD/toggle
 use cases (profile edits, presence toggle/heartbeat, nearby queries, pin clear, admin
 stats/config, reporting, pickup confirmation).</p>

@@ -84,13 +84,17 @@ out — out of the way once there's nothing left to do).
 7. **Arrival**: the moment the collector's live position reaches the pickup point, you get a
    "🎉 Your collector has arrived!" banner automatically — no need to refresh or ask. The
    request then moves to **History**.
-8. **Reviews**: rate 1–5 and optionally comment, right there on the request card — you'll also
-   see the collector's review of you (once visible) and can reply to it in the same place, not
-   a separate screen. Your own review stays private until it passes moderation *and* the other
-   side has also reviewed (or the review window closes); its exact status shows inline.
-9. **Profile tab**: adjust your alert radius and whether standing alerts are on; see **Reviews
-   received** (visible ones, from collectors) and **Reviews I've given** (every review you've
-   written, across every request, with its current status).
+8. **Reviews**: rate 1–5 and optionally comment, right there on the request card. It joins a
+   **shared thread** with the collector's own rating — the moment either one clears moderation,
+   *both of you* see it, at the same time, in the same place. Either side can then reply, as
+   many times as you like, building a real back-and-forth (also moderated) instead of one
+   capped reply. Nothing is held back waiting for the other person to review first — that's a
+   deliberate change (see Technical_Debt_Plan.md TD-15) after early testers found the old
+   "hidden until both sides reviewed" behaviour confusing (the same request looked different
+   depending on who was looking at it).
+9. **Profile tab**: adjust your alert radius and whether standing alerts are on; see your
+   overall star rating and review count. Individual comments live on their request card, not
+   here — Profile only shows the summary.
 
 ## 4. Collector walkthrough
 
@@ -137,8 +141,7 @@ and **History** (arrived, cancelled, rejected, or timed out).
      with a one-click **Approve**.
    - **Audit**: every privileged action taken by any admin, with a timestamp.
    - **Config**: live-editable operational settings (pin TTL, broadcast radius, request
-     timeout, review window, notification cap, arrival radius) — changes apply immediately, no
-     redeploy.
+     timeout, notification cap, arrival radius) — changes apply immediately, no redeploy.
 
 ## 6. Redeploying / rolling back
 
@@ -157,5 +160,5 @@ you also revert `server/migrations/`.
 | "Your collector account is not verified yet" | New collector account, not yet admin-approved | Log in as admin → Users → Verify |
 | No collectors/pins showing on the map | Location permission denied, or nobody online nearby | Allow location access; try again once a collector/household is nearby in the seed data |
 | OTP screen shows the code instead of "sent via SMS" | SMS gateway not configured or the send failed | Expected fallback — use the shown code; see Technical_Debt_Plan.md TD-02 |
-| A review you wrote never shows up | Awaiting moderation, and/or the other side hasn't reviewed yet | Check Profile → Reviews I've given for its exact status; an admin can also check Admin → Moderation. Double-blind release also waits up to the configured review window if the other side never reviews back |
+| A review you wrote never shows up | Still awaiting moderation | It joins the shared thread on that request card the moment it clears — there's no waiting on the other person any more. An admin can check Admin → Moderation if it seems stuck |
 | Build fails on Render with "vite: not found" | `NODE_ENV=production` made `npm ci` skip devDependencies | Already fixed in `render.yaml` (`--include=dev` on the build command) |

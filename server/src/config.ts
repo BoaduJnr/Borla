@@ -30,7 +30,6 @@ export const config = {
     broadcastRadiusM: 1200,
     pinTtlMinutes: 45,
     requestTimeoutSeconds: 90,
-    reviewWindowDays: 7,
     notifCapPer10Min: 10,
     arrivalRadiusM: 40,
   },

@@ -59,7 +59,7 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
     expect(res.status).toBe(403);
   });
 
-  it("stays hidden until an admin (or AI) clears moderation, then a reply is capped at one", async () => {
+  it("a review joins the shared thread the moment it clears moderation — no double-blind wait for the other side", async () => {
     const { household, collector, requestId } = await acceptedRequest();
     const review = await request(app)
       .post("/api/reviews")
@@ -75,20 +75,29 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
     const earlyReply = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(collector.access)).send({ body: "Thanks!" });
     expect(earlyReply.status).toBe(400);
 
-    // Force it visible directly (equivalent to moderation_passed=true + release sweep having run).
+    // Moderation clears it (equivalent to what processModerate now does directly, no sweep) —
+    // it's visible to BOTH sides immediately, not gated on the collector having reviewed back.
     await query(`UPDATE reviews SET status = 'visible', moderation_passed = true, visible_at = now() WHERE id = $1`, [reviewId]);
+    const bothSee = await request(app).get(`/api/users/${collector.user.id}/reviews`).set(auth(household.access));
+    expect(bothSee.body.reviews.find((r: any) => r.id === reviewId)).toBeDefined();
 
+    // Either party can reply now, more than once each — a real chat thread, not "the subject
+    // gets exactly one reply".
     const reply1 = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(collector.access)).send({ body: "Thanks!" });
     expect(reply1.status).toBe(201);
 
-    const reply2 = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(collector.access)).send({ body: "Again!" });
-    expect(reply2.status).toBe(409); // one public reply per review
+    const reply2 = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(household.access)).send({ body: "You're welcome!" });
+    expect(reply2.status).toBe(201);
 
-    const notSubject = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(household.access)).send({ body: "Sneaky" });
-    expect(notSubject.status).toBe(403);
+    const reply3 = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(collector.access)).send({ body: "See you next time." });
+    expect(reply3.status).toBe(201);
+
+    const outsider = await signup(app, "household");
+    const notAParty = await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(outsider.access)).send({ body: "Sneaky" });
+    expect(notAParty.status).toBe(403);
   });
 
-  it("GET /reviews/mine lets the author see their own review regardless of visibility (unlike GET /users/:id/reviews)", async () => {
+  it("GET /reviews/mine lets the author see their own review regardless of visibility", async () => {
     const { household, collector, requestId } = await acceptedRequest();
     const review = await request(app)
       .post("/api/reviews")
@@ -96,8 +105,6 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
       .send({ subjectId: collector.user.id, requestId, rating: 4, comment: "Good service" });
     const reviewId = review.body.review.id;
 
-    // Author can see it immediately, still pending — this is exactly what's missing from
-    // GET /users/:id/reviews (visible-only), which would show nothing at all here.
     const mineBefore = await request(app).get("/api/reviews/mine").set(auth(household.access));
     const rowBefore = mineBefore.body.reviews.find((r: any) => r.id === reviewId);
     expect(rowBefore).toBeDefined();
@@ -114,7 +121,7 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
     expect(strangerMine.body.reviews.find((r: any) => r.id === reviewId)).toBeUndefined();
   });
 
-  it("GET /requests/:id/reviews shows the review + reply on the request they belong to, not just in a flat list", async () => {
+  it("GET /requests/:id/reviews returns one identical shared thread to both parties, plus each caller's own pending state", async () => {
     const { household, collector, requestId } = await acceptedRequest();
     const review = await request(app)
       .post("/api/reviews")
@@ -122,25 +129,33 @@ describe("reviews (design §16 — two-sided, tied to real interactions)", () =>
       .send({ subjectId: collector.user.id, requestId, rating: 5, comment: "Great!" });
     const reviewId = review.body.review.id;
 
-    // Before release: the author sees `mine` regardless of status; the subject sees no `theirs`
-    // at all (same reveal-on-visible rule as everywhere else).
-    const collectorView = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(collector.access));
-    expect(collectorView.body.mine).toBeNull();
-    expect(collectorView.body.theirs).toBeNull();
+    // Before moderation clears: neither party's shared `messages` list contains it yet — but
+    // the author can still see their own submission is pending via `mine`.
+    const collectorBefore = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(collector.access));
+    expect(collectorBefore.body.messages).toHaveLength(0);
+    expect(collectorBefore.body.mine).toBeNull();
+    expect(collectorBefore.body.canReview).toBe(true);
 
-    const householdView = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(household.access));
-    expect(householdView.body.mine.id).toBe(reviewId);
-    expect(householdView.body.mine.status).toBe("pending");
-    expect(householdView.body.theirs).toBeNull(); // no one has reviewed the household back
+    const householdBefore = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(household.access));
+    expect(householdBefore.body.messages).toHaveLength(0);
+    expect(householdBefore.body.mine.id).toBe(reviewId);
+    expect(householdBefore.body.mine.status).toBe("pending");
+    expect(householdBefore.body.canReview).toBe(false); // already reviewed, even though not visible yet
 
     await query(`UPDATE reviews SET status = 'visible', moderation_passed = true, visible_at = now() WHERE id = $1`, [reviewId]);
+    await request(app).post(`/api/reviews/${reviewId}/reply`).set(auth(collector.access)).send({ body: "Thanks!" });
+    const replyId = (await query<{ id: string }>(`SELECT id FROM review_replies WHERE review_id = $1`, [reviewId]))[0].id;
+    await query(`UPDATE review_replies SET status = 'visible', moderation_passed = true WHERE id = $1`, [replyId]);
 
-    const collectorAfter = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(collector.access));
-    expect(collectorAfter.body.theirs.id).toBe(reviewId);
-    expect(collectorAfter.body.theirs.comment).toBe("Great!");
-    expect(collectorAfter.body.theirs.reply_body).toBeNull();
+    // Now BOTH sides see the exact same two-message thread, in order — no asymmetry at all.
+    for (const access of [collector.access, household.access]) {
+      const view = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(access));
+      expect(view.body.messages).toHaveLength(2);
+      expect(view.body.messages[0]).toMatchObject({ type: "review", rating: 5, body: "Great!" });
+      expect(view.body.messages[1]).toMatchObject({ type: "reply", body: "Thanks!" });
+    }
 
-    // Someone not part of this request gets a clean 403, not a leak of either side's review.
+    // Someone not part of this request gets a clean 403, not a leak of the thread.
     const outsider = await signup(app, "household");
     const outsiderAttempt = await request(app).get(`/api/requests/${requestId}/reviews`).set(auth(outsider.access));
     expect(outsiderAttempt.status).toBe(403);

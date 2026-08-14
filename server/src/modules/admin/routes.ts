@@ -149,9 +149,9 @@ adminRouter.post(
     await query(`UPDATE ${table} SET status = $1, moderation_passed = true WHERE id = $2`, [newStatus, flag.target_id]);
     await query(`UPDATE moderation_flags SET resolved = true, resolution = $1 WHERE id = $2`, [req.body.action, req.params.id]);
     await logAudit(req.user!.id, `moderation_${req.body.action}`, flag.target_id, { flagId: req.params.id, note: req.body.note });
-    // A review's status changing to/from 'visible' outside the review-release sweep (an admin
-    // acting on a flag, here) must recompute rating_avg/rating_count itself — the sweep only
-    // ever runs the aggregate for reviews *it* just released, so this was previously left stale.
+    // A review's status changing to/from 'visible' here (an admin resolving a flag) must
+    // recompute rating_avg/rating_count itself — nothing else does this automatically now that
+    // reviews go visible on their own moderation pass rather than via a release sweep.
     if (flag.target_type === "review") {
       const review = await queryOne<{ subject_id: string }>(`SELECT subject_id FROM reviews WHERE id = $1`, [flag.target_id]);
       if (review) await recomputeRatingAggregate(review.subject_id);
@@ -160,15 +160,21 @@ adminRouter.post(
   })
 );
 
-/** POST /admin/reviews/:id/approve — manual moderation pass (used when no Gemini key is set). */
+/**
+ * POST /admin/reviews/:id/approve — manual moderation pass (used when no Gemini key is set, or
+ * when AI declined to classify). Goes visible immediately, same as an AI "allow" verdict — there
+ * is no separate double-blind wait for either path (Technical_Debt_Plan.md).
+ */
 adminRouter.post(
   "/reviews/:id/approve",
   asyncHandler(async (req, res) => {
-    const row = await queryOne(
-      `UPDATE reviews SET moderation_passed = true WHERE id = $1 AND status = 'pending' RETURNING id`,
+    const row = await queryOne<{ id: string; subject_id: string }>(
+      `UPDATE reviews SET moderation_passed = true, status = 'visible', visible_at = now()
+       WHERE id = $1 AND status = 'pending' RETURNING id, subject_id`,
       [req.params.id]
     );
     if (!row) throw new ApiError(404, "Pending review not found");
+    await recomputeRatingAggregate(row.subject_id);
     await logAudit(req.user!.id, "manual_approve_review", req.params.id);
     res.json({ ok: true });
   })

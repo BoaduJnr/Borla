@@ -42,7 +42,7 @@ instance** once the user provisioned one — see `Technical_Debt_Plan.md` TD-05.
 | Request | A household's direct ask to one specific collector, with a real accept/reject/timeout lifecycle |
 | Presence | Whether a collector is currently "online" and matchable |
 | Reveal-on-accept | Phone numbers stay hidden until a request is accepted |
-| Double-blind release | A review stays hidden until both sides have reviewed (or the review window closes) |
+| Shared review thread | A request's rating(s) and every reply, from either party, shown identically to both sides the moment each individually clears moderation — no reciprocal waiting (this replaced an earlier double-blind design; see Technical_Debt_Plan.md) |
 | UCP | Use Case Points, the effort-estimation technique used in §7 |
 
 ### 1.4 Why the scope was reduced from the original design
@@ -143,8 +143,8 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 | FR-17 | A household confirms whether a collector actually came for a broadcast pickup ("Did they come?") | Should | `POST /confirmations` |
 | FR-18 | Either side of a resolved interaction (accepted request, or a confirmed broadcast) can leave a 1–5 rating + comment for the other | Must | `server/src/modules/reviews` |
 | FR-19 | A review/reply is screened (AI if configured, else queued for manual admin approval) before it can go public | Must | `server/src/ai/moderation.ts` |
-| FR-20 | A review is only shown once both sides have reviewed, or the review window has closed (double-blind release) | Must | `jobs/workers.ts` review-release sweep (BullMQ repeatable job) |
-| FR-21 | The reviewed party may post exactly one public reply | Must | `reviews/routes.ts` |
+| FR-20 | A review or reply becomes visible to *both* parties the moment it individually clears moderation — not gated on the other side having reviewed back | Must | `jobs/workers.ts` `processModerate` sets `status='visible'` directly; `GET /requests/:id/reviews` returns one identical thread to both callers |
+| FR-21 | Either party may reply to a request's review thread, any number of times, each reply independently moderated — a real chat, not one capped reply from the reviewed party only | Must | `reviews/routes.ts` `POST /reviews/:id/reply`; `review_replies` no longer has a one-per-review constraint |
 | FR-22 | Any user can report a review for moderation | Should | `POST /reviews/:id/report` |
 | FR-23 | An admin can verify a collector, and suspend/reinstate any user | Must | `server/src/modules/admin` |
 | FR-24 | An admin can view a moderation queue (AI-flagged + user-reported + awaiting-manual) and resolve items | Must | `admin/routes.ts` |
@@ -175,8 +175,8 @@ Each requirement is tagged with its MoSCoW priority (§6) and the module that im
 ## 6. Requirement prioritisation (MoSCoW)
 
 **Must-have (built, this submission)**: FR-01–FR-16, FR-18–FR-21, FR-23–FR-25 — the complete
-two-plane matching engine, masked contact, the full review/moderation/double-blind pipeline, and
-the admin console.
+two-plane matching engine, masked contact, the full review/moderation/shared-thread pipeline,
+and the admin console.
 
 **Should-have (built, lighter-touch)**: FR-17 (Did-they-come confirmation, minimal UI), FR-22
 (user reporting), FR-26 (live config tuning), FR-27–FR-32 (accepted-request route, cancel,
@@ -214,7 +214,7 @@ exercise where the reasoning must be shown, not just a number.
 26 use cases from §4/§6 were classified by transaction count: **4 Complex** (15 pts) — fan-out
 broadcast creation, request accept/reject with idempotency + reveal, review submission with
 interaction validation, AI/manual moderation; **8 Average** (10 pts) — OTP login, direct
-request creation, auto-timeout, auto-expiry, double-blind release, reply, admin
+request creation, auto-timeout, auto-expiry, review-thread release, reply, admin
 verify/suspend, admin moderation resolution; **13 Simple** (5 pts) — the remaining CRUD/toggle
 use cases (profile edits, presence toggle/heartbeat, nearby queries, pin clear, admin
 stats/config, reporting, pickup confirmation).

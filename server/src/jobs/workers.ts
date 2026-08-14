@@ -1,6 +1,6 @@
 import { Worker, type Job } from "bullmq";
 import { bullRedis } from "../redis/client.js";
-import { query } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
 import { emitToUser } from "../realtime/socket.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../utils/appConfig.js";
 import { sweepStalePresence, pinCleared, nearbyCollectors } from "../redis/presence.js";
@@ -53,34 +53,6 @@ async function requestTimeoutSweep() {
   if (rows.length) console.log(`[jobs] request timeout: ${rows.length} request(s) timed out`);
 }
 
-/** Double-blind review release (design §16): reveal together, or once the window closes. */
-async function reviewReleaseSweep() {
-  const bothSides = await query<{ id: string; subject_id: string }>(
-    `UPDATE reviews r SET status = 'visible', visible_at = now()
-     WHERE r.status = 'pending' AND r.moderation_passed = true
-       AND EXISTS (
-         SELECT 1 FROM reviews r2
-         WHERE r2.status = 'pending' AND r2.moderation_passed = true AND r2.id <> r.id
-           AND COALESCE(r2.request_id, r2.broadcast_id) = COALESCE(r.request_id, r.broadcast_id)
-           AND r2.author_role <> r.author_role
-       )
-     RETURNING id, subject_id`
-  );
-
-  const windowDays = await getConfigNumber(AppConfigKeys.reviewWindowDays, defaults.reviewWindowDays);
-  const windowClosed = await query<{ id: string; subject_id: string }>(
-    `UPDATE reviews SET status = 'visible', visible_at = now()
-     WHERE status = 'pending' AND moderation_passed = true
-       AND created_at <= now() - interval '${windowDays} days'
-     RETURNING id, subject_id`
-  );
-
-  const released = [...bothSides, ...windowClosed];
-  const subjects = new Set(released.map((r) => r.subject_id));
-  for (const subjectId of subjects) await recomputeRatingAggregate(subjectId);
-  if (released.length) console.log(`[jobs] review release: ${released.length} review(s) made visible`);
-}
-
 /**
  * Recomputes one user's rating_avg/rating_count from scratch against currently-visible reviews.
  * `UNIQUE(author_id, request_id)`/`UNIQUE(author_id, broadcast_id)` already guarantee at most
@@ -112,7 +84,6 @@ const sweepHandlers: Record<string, () => Promise<void>> = {
   "presence-sweep": presenceSweep,
   "pin-expiry": pinExpirySweep,
   "request-timeout": requestTimeoutSweep,
-  "review-release": reviewReleaseSweep,
 };
 
 // ---------------------------------------------------------------- fan-out (design §7)
@@ -186,6 +157,14 @@ interface ModerateJobData {
   text: string;
 }
 
+/**
+ * Both a review (a request's chat thread opens with one) and a reply (any later message in
+ * that thread, from either party) go visible the moment they individually clear moderation —
+ * there is no more double-blind "wait for the other side" gate. That gate used to mean the two
+ * participants in the same request could see different things on the same request card
+ * depending on who had reviewed whom; removing it is a deliberate trade-off (documented in
+ * Technical_Debt_Plan.md) in favour of both sides always seeing one identical, shared thread.
+ */
 async function processModerate(job: Job<ModerateJobData>) {
   const { targetType, targetId, text } = job.data;
   const verdict = await classifyText(text || "(no comment, rating only)", targetType === "review" ? "review comment" : "review reply");
@@ -193,10 +172,14 @@ async function processModerate(job: Job<ModerateJobData>) {
 
   const table = targetType === "review" ? "reviews" : "review_replies";
   if (verdict.verdict === "allow") {
-    if (targetType === "reply") {
-      await query(`UPDATE review_replies SET moderation_passed = true, status = 'visible' WHERE id = $1`, [targetId]);
+    if (targetType === "review") {
+      const row = await queryOne<{ subject_id: string }>(
+        `UPDATE reviews SET moderation_passed = true, status = 'visible', visible_at = now() WHERE id = $1 RETURNING subject_id`,
+        [targetId]
+      );
+      if (row) await recomputeRatingAggregate(row.subject_id);
     } else {
-      await query(`UPDATE reviews SET moderation_passed = true WHERE id = $1`, [targetId]);
+      await query(`UPDATE review_replies SET moderation_passed = true, status = 'visible' WHERE id = $1`, [targetId]);
     }
   } else {
     await query(`UPDATE ${table} SET status = 'flagged' WHERE id = $1`, [targetId]);

@@ -332,11 +332,6 @@ const CONFIG_META: Record<string, { label: string; description: string; unit: st
     description: "How long a collector has to respond before a direct request times out.",
     unit: "seconds",
   },
-  review_window_days: {
-    label: "Review window",
-    description: "How long to wait for both sides to review before releasing a solo review anyway.",
-    unit: "days",
-  },
   notif_cap_per_10min: {
     label: "Notification cap",
     description: "The most broadcast alerts one collector can receive in a 10-minute window.",

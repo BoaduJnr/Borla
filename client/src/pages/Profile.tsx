@@ -1,22 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
 import { InstallButton } from "../pwa/InstallButton";
-import { givenStatusLabel, givenStatusChipClass } from "../utils/reviewStatus";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
-  const [reviews, setReviews] = useState<any[]>([]);
-  const [given, setGiven] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (user) api<{ reviews: any[] }>(`/users/${user.id}/reviews`).then((d) => setReviews(d.reviews));
-    api<{ reviews: any[] }>(`/reviews/mine`).then((d) => setGiven(d.reviews));
-  }, [user?.id]);
 
   if (!user) return null;
 
@@ -123,79 +115,6 @@ export default function Profile() {
           <button className="btn btn-green">Save</button>
         </form>
       )}
-
-      <h3 className="h-disp" style={{ fontSize: 16 }}>
-        Reviews received
-      </h3>
-      <div className="stack">
-        {reviews.length === 0 && <p className="muted">No visible reviews yet.</p>}
-        {reviews.map((r) => (
-          <div key={r.id} className="card stack">
-            <div className="spread">
-              <div className="row">
-                <Avatar name={r.author_name} size={28} />
-                <b>{r.author_name ?? "Anonymous"}</b>
-              </div>
-              <Stars rating={r.rating} />
-            </div>
-            {r.comment && <p>{r.comment}</p>}
-            {r.reply_body ? (
-              <div className="card" style={{ background: "var(--paper)" }}>
-                <b style={{ fontSize: 12.5 }}>Reply:</b> {r.reply_body}
-              </div>
-            ) : (
-              <ReplyBox reviewId={r.id} onSent={() => setReviews((rs) => rs.map((x) => (x.id === r.id ? { ...x, reply_body: "(pending moderation)" } : x)))} />
-            )}
-          </div>
-        ))}
-      </div>
-
-      <h3 className="h-disp" style={{ fontSize: 16, marginTop: 10 }}>
-        Reviews I've given
-      </h3>
-      <div className="stack">
-        {given.length === 0 && <p className="muted">You haven't reviewed anyone yet.</p>}
-        {given.map((r) => (
-          <div key={r.id} className="card stack">
-            <div className="spread">
-              <b>{r.subject_name ?? "Someone"}</b>
-              <Stars rating={r.rating} />
-            </div>
-            {r.comment && <p>{r.comment}</p>}
-            <span className={`tag-chip ${givenStatusChipClass(r)}`} style={{ alignSelf: "flex-start" }}>
-              {givenStatusLabel(r)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReplyBox({ reviewId, onSent }: { reviewId: string; onSent: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [body, setBody] = useState("");
-  const [sent, setSent] = useState(false);
-
-  async function send() {
-    await api(`/reviews/${reviewId}/reply`, { method: "POST", body: { body } }).catch(() => null);
-    setSent(true);
-    onSent();
-  }
-
-  if (sent) return <p className="muted" style={{ fontSize: 12 }}>Reply submitted (awaiting moderation).</p>;
-  if (!open)
-    return (
-      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
-        Reply
-      </button>
-    );
-  return (
-    <div className="row">
-      <input className="field" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} placeholder="Your reply…" />
-      <button className="btn btn-green btn-sm" onClick={send}>
-        Send
-      </button>
     </div>
   );
 }

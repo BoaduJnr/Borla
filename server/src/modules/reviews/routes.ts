@@ -103,12 +103,11 @@ reviewsRouter.get(
 );
 
 /**
- * GET /reviews/mine — reviews the current user has *written*, any status. Reviews received
- * (GET /users/:id/reviews) only ever returns `status='visible'` rows, by design — a review
- * sits hidden until the double-blind release condition is met (both sides reviewed, or the
- * review window closed; `jobs/workers.ts` reviewReleaseSweep). Without this endpoint, the
- * author of a review has no way to confirm it was actually submitted and is just waiting on
- * the other side, rather than lost — this is exactly that visibility.
+ * GET /reviews/mine — reviews the current user has *written*, any status, across every request.
+ * `GET /requests/:id/reviews` is the primary way a review's status is surfaced now (inline on
+ * its own request card); this stays as a cross-request "everything I've written" view — no
+ * comment text is shown from it in the UI (Profile intentionally shows only the aggregate
+ * rating, not individual comments), but the shape is kept for anything that only needs status.
  */
 reviewsRouter.get(
   "/reviews/mine",
@@ -129,12 +128,13 @@ reviewsRouter.get(
 );
 
 /**
- * GET /requests/:id/reviews — both directions of review for one specific interaction, so a
- * review + its reply live where the user actually experiences them: on the request itself, not
- * only in a flat Profile list. `mine` is visible to its own author regardless of moderation
- * state (same rule as GET /reviews/mine); `theirs` (the review *about* the caller) only appears
- * once genuinely visible (same reveal rule as GET /users/:id/reviews) — one query, the WHERE
- * clause itself enforces both privacy rules at once.
+ * GET /requests/:id/reviews — one shared, moderated chat thread for the request, identical for
+ * both parties. Every review and every reply that has individually cleared moderation shows up
+ * for both sides the moment it does — there is no more double-blind "wait for the other side"
+ * gate (that used to mean the same request card could show different content to each party;
+ * see Technical_Debt_Plan.md for the trade-off). `mine` is the caller's own review row
+ * regardless of its status, purely so they can see their own submission is "awaiting
+ * moderation" for the few seconds before it joins the shared `messages` list for everyone.
  */
 reviewsRouter.get(
   "/requests/:id/reviews",
@@ -150,46 +150,59 @@ reviewsRouter.get(
       throw new ApiError(403, "Not part of this request");
     }
 
-    const rows = await query<any>(
-      `SELECT r.id, r.author_id, r.subject_id, r.rating, r.comment, r.status, r.moderation_passed,
-              a.display_name AS author_name, rr.id AS reply_id, rr.body AS reply_body
-       FROM reviews r
-       JOIN users a ON a.id = r.author_id
-       LEFT JOIN review_replies rr ON rr.review_id = r.id AND rr.status = 'visible'
-       WHERE r.request_id = $1 AND (r.author_id = $2 OR (r.subject_id = $2 AND r.status = 'visible'))`,
+    const messages = await query<any>(
+      `SELECT 'review' AS type, r.id, r.author_id, a.display_name AS author_name, r.rating,
+              r.comment AS body, r.created_at
+       FROM reviews r JOIN users a ON a.id = r.author_id
+       WHERE r.request_id = $1 AND r.status = 'visible'
+       UNION ALL
+       SELECT 'reply' AS type, rr.id, rr.author_id, a2.display_name AS author_name, NULL AS rating,
+              rr.body, rr.created_at
+       FROM review_replies rr
+       JOIN reviews r2 ON r2.id = rr.review_id
+       JOIN users a2 ON a2.id = rr.author_id
+       WHERE r2.request_id = $1 AND rr.status = 'visible'
+       ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+
+    const mine = await queryOne<any>(
+      `SELECT id, rating, comment, status, moderation_passed, created_at
+       FROM reviews WHERE request_id = $1 AND author_id = $2`,
       [req.params.id, user.id]
     );
-    res.json({
-      mine: rows.find((r) => r.author_id === user.id) ?? null,
-      theirs: rows.find((r) => r.subject_id === user.id) ?? null,
-    });
+
+    res.json({ messages, mine, canReview: !mine });
   })
 );
 
-/** POST /reviews/:id/reply — the reviewed party gets exactly one public reply. */
+/**
+ * POST /reviews/:id/reply — a chat message in that same shared thread. Either party to the
+ * underlying request may post one (not just "the reviewed party", and not capped at one) —
+ * `review.author_id`/`review.subject_id` together are exactly the request's two participants,
+ * so no extra join is needed to check membership. Each message is independently AI-moderated
+ * (`moderateReplyAsync`) before joining the shared thread, same as the opening review.
+ */
 reviewsRouter.post(
   "/reviews/:id/reply",
   requireAuth,
   validateBody(z.object({ body: z.string().min(1).max(500) })),
   asyncHandler(async (req, res) => {
-    const review = await queryOne<{ subject_id: string; status: string }>(
-      `SELECT subject_id, status FROM reviews WHERE id = $1`,
+    const review = await queryOne<{ author_id: string; subject_id: string; status: string }>(
+      `SELECT author_id, subject_id, status FROM reviews WHERE id = $1`,
       [req.params.id]
     );
     if (!review) throw new ApiError(404, "Review not found");
-    if (review.subject_id !== req.user!.id) throw new ApiError(403, "Only the reviewed party may reply");
+    const user = req.user!;
+    if (review.author_id !== user.id && review.subject_id !== user.id) {
+      throw new ApiError(403, "You are not part of this conversation");
+    }
     if (review.status !== "visible") throw new ApiError(400, "Cannot reply until the review is published");
 
-    let row;
-    try {
-      row = await queryOne(
-        `INSERT INTO review_replies (review_id, author_id, body) VALUES ($1, $2, $3) RETURNING id`,
-        [req.params.id, req.user!.id, req.body.body]
-      );
-    } catch (err: any) {
-      if (err?.code === "23505") throw new ApiError(409, "This review already has a reply");
-      throw err;
-    }
+    const row = await queryOne(
+      `INSERT INTO review_replies (review_id, author_id, body) VALUES ($1, $2, $3) RETURNING id`,
+      [req.params.id, user.id, req.body.body]
+    );
     await moderateReplyAsync(row!.id, req.body.body).catch((err) => console.error("[reviews] failed to enqueue moderation", err));
     res.status(201).json({ reply: { id: row!.id, status: "pending" } });
   })

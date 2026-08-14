@@ -82,12 +82,13 @@ instead of asserting on a field the old synchronous handler used to return direc
 for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-11).</p>
 <h3>2.2 Client (<code>npm run test -w client</code>)</h3>
 <pre><code>✓ src/pages/StatusChip.test.tsx (3 tests)
-✓ src/components/ReviewForm.test.tsx (2 tests)
 
- Test Files  2 passed (2)
-      Tests  5 passed (5)
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
 </code></pre>
-<p><strong>Total: 58/58 automated tests passing</strong> at time of submission. Re-run with <code>npm test</code> from the
+<p><strong>Total: 56/56 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
+<code>ReviewForm.tsx</code> and its test were retired along with the double-blind review model, TD-15).
+Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
 <h2>3. Test case log</h2>
 <p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
@@ -552,6 +553,30 @@ development (rows T-08, T-19, and T-39).</p>
 <td>3/3 cases correct (<code>StatusChip.test.tsx</code>)</td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-57</td>
+<td><strong>(defect)</strong> TD-15: a review now joins the shared thread the moment it clears moderation, instead of waiting for the other side to also review</td>
+<td>Integration</td>
+<td>A review approved via moderation appears in <code>GET /users/:id/reviews</code> immediately — no dependency on the other party&#39;s own review</td>
+<td>Confirmed in <code>reviews.test.ts</code> — visible right after <code>status=&#39;visible&#39;</code>, with no second review on the request at all</td>
+<td>Fail (old double-blind behaviour) → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-58</td>
+<td>TD-15: either party can reply to a review, more than once each</td>
+<td>Integration</td>
+<td>Both the review&#39;s author and its subject can each post multiple replies; a non-party gets <code>403</code></td>
+<td>3 successive replies from both sides confirmed in <code>reviews.test.ts</code>, outsider correctly rejected</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>T-59</td>
+<td>TD-15: <code>GET /requests/:id/reviews</code> returns one identical shared thread to both parties, in order</td>
+<td>Integration</td>
+<td>Both callers see the same <code>messages</code> array (review + reply, chronological); each caller&#39;s own not-yet-visible submission only shows to them via <code>mine</code></td>
+<td>Confirmed — both sides&#39; responses matched exactly once cleared; pre-clearance, only the author saw their own <code>mine.status=&#39;pending&#39;</code></td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -629,20 +654,30 @@ development (rows T-08, T-19, and T-39).</p>
 <td><code>rating_avg</code>/<code>rating_count</code> were only ever recomputed from inside the review-release sweep, for the reviews <em>it</em> just released. Admin actions that change a review&#39;s status outside that sweep — removing a visible review directly, or resolving a moderation flag as &quot;remove&quot;/&quot;clear&quot; — updated <code>reviews.status</code> but never touched the subject&#39;s aggregate, leaving it stale (e.g. a removed 5-star review would keep inflating <code>rating_count</code> forever). <strong>Found while adding FR-31&#39;s review-in-context view</strong>, reasoning through every path that changes review visibility rather than just the sweep.</td>
 <td>Exported <code>recomputeRatingAggregate</code> from <code>jobs/index.ts</code>; both <code>/admin/reviews/:id/remove</code> and <code>/admin/moderation/flags/:id/resolve</code> now call it for the affected subject after updating status. Also hardened the function itself to reset to zero (not leave the previous value) when a subject ends up with no visible reviews at all. Regression test added (T-55).</td>
 </tr>
+<tr>
+<td>D-12</td>
+<td><code>server/src/jobs/workers.ts</code> (<code>reviewReleaseSweep</code>, now removed), <code>server/src/modules/reviews/routes.ts</code></td>
+<td>The double-blind release model meant the two parties to the <em>same</em> request could see different content on the <em>same</em> request card at the same time — whichever side hadn&#39;t reviewed yet saw nothing, making the card look inconsistent or broken rather than &quot;waiting on the other person&quot;. <strong>Reported directly by the user</strong> (&quot;why can&#39;t both users see the same comments on the request card&quot;) together with a concrete ask: an open reply chain/chat, either party, AI-moderated.</td>
+<td>This is TD-15, not a small patch: removed the reciprocal-release sweep entirely; a review or reply now goes <code>visible</code> the moment it individually clears moderation (same as replies always worked); <code>review_replies</code>&#39; one-per-review cap and subject-only restriction were both dropped so either party can reply, any number of times; <code>GET /requests/:id/reviews</code> now returns one identical <code>messages</code> thread to both callers. Documented as a deliberate trade-off (dropped collusion-resistance in exchange for consistency and a real chat) rather than a silent regression — see Technical_Debt_Plan.md TD-15. Tests: T-57–T-59.</td>
+</tr>
 </tbody></table>
-<p>All eleven were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well
-after) the corresponding feature — six by the automated suite (D-11 by reasoning through the
-code while building an unrelated feature, not by a user report or production incident), four by
+<p>All twelve were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12, well
+after) the corresponding feature — seven by the automated suite (D-11 by reasoning through the
+code while building an unrelated feature, not by a user report or production incident), five by
 deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07 and D-10 reported back by the user; D-08 surfaced in production logs
-once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading
-the code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;:
-the practice works, it just hasn&#39;t been extended to every corner of the app, including
-production behaviour, yet. D-10 and D-11 both make the same point from different angles: a
-<em>correctly working</em> backend mechanism (the double-blind release sweep; the rating aggregate)
-can still fail users if either its state is never surfaced (D-10) or it&#39;s only kept correct
-along one of several paths that touch it (D-11) — functional correctness on the happy path and
-correctness everywhere the same data can change are different bars.</p>
+production myself; D-07, D-10, and D-12 reported back by the user; D-08 surfaced in production
+logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by
+reading the code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not
+&quot;critical&quot;: the practice works, it just hasn&#39;t been extended to every corner of the app,
+including production behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em>
+backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users if
+either its state is never surfaced (D-10) or it&#39;s only kept correct along one of several paths
+that touch it (D-11) — functional correctness on the happy path and correctness everywhere the
+same data can change are different bars. D-12 is a step further still: the mechanism was working
+<em>exactly as designed</em>, and the design itself was the problem — no amount of additional testing
+against the original spec would have caught it, because the spec (double-blind release) was
+what the user was objecting to. Some defects are only found by putting the actual feature in
+front of the actual person it&#39;s for.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

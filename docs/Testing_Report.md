@@ -60,13 +60,14 @@ for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-
 
 ```
 ✓ src/pages/StatusChip.test.tsx (3 tests)
-✓ src/components/ReviewForm.test.tsx (2 tests)
 
- Test Files  2 passed (2)
-      Tests  5 passed (5)
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
 ```
 
-**Total: 58/58 automated tests passing** at time of submission. Re-run with `npm test` from the
+**Total: 56/56 automated tests passing** at time of submission (client dropped from 5 to 3 —
+`ReviewForm.tsx` and its test were retired along with the double-blind review model, TD-15).
+Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
 
 ## 3. Test case log
@@ -133,6 +134,9 @@ development (rows T-08, T-19, and T-39).
 | T-54 | FR-31: `GET /requests/:id/reviews` shows both directions of review in the context of the request they belong to | Integration | Author sees `mine` regardless of status; the subject sees `theirs` only once visible; a non-party gets `403` | Confirmed in `reviews.test.ts` | Pass |
 | T-55 | **(defect)** Removing a previously-visible review recomputes the subject's `rating_avg`/`rating_count` instead of leaving them stale | Integration (found while implementing FR-31, D-11) | Admin `POST /reviews/:id/remove` on a visible 5-star review drops the subject's `rating_count` back to 0, not left at the pre-removal value | **First implementation only updated the aggregate when the review-release sweep itself made a review visible — an admin removing one afterwards never re-ran the computation** — see §4 | Fail → **Fixed**, now Pass |
 | T-56 | `StatusChip` renders `'On the way'`/`'Arrived'` distinctly for an accepted request, and a label for `cancelled` | Component | Each status/arrived combination shows its own label | 3/3 cases correct (`StatusChip.test.tsx`) | Pass |
+| T-57 | **(defect)** TD-15: a review now joins the shared thread the moment it clears moderation, instead of waiting for the other side to also review | Integration | A review approved via moderation appears in `GET /users/:id/reviews` immediately — no dependency on the other party's own review | Confirmed in `reviews.test.ts` — visible right after `status='visible'`, with no second review on the request at all | Fail (old double-blind behaviour) → **Fixed**, now Pass |
+| T-58 | TD-15: either party can reply to a review, more than once each | Integration | Both the review's author and its subject can each post multiple replies; a non-party gets `403` | 3 successive replies from both sides confirmed in `reviews.test.ts`, outsider correctly rejected | Pass |
+| T-59 | TD-15: `GET /requests/:id/reviews` returns one identical shared thread to both parties, in order | Integration | Both callers see the same `messages` array (review + reply, chronological); each caller's own not-yet-visible submission only shows to them via `mine` | Confirmed — both sides' responses matched exactly once cleared; pre-clearance, only the author saw their own `mine.status='pending'` | Pass |
 
 ## 4. Defects found during development
 
@@ -149,20 +153,25 @@ development (rows T-08, T-19, and T-39).
 | D-09 | `client/src/components/Avatar.tsx`, `client/src/styles/tokens.css` | Two related defects, both found by the §6 screenshot pass rather than by reading the code: (1) the `Avatar` component referenced `.avatar`/`.avatar.g` classes that had never actually been added to `tokens.css`, so initials rendered as bare unstyled text with no circular background; (2) the initials helper took the first character of the *last* whitespace-separated token without checking it started with a letter, so `"Ama (Osu)"` produced `"A("`. | Added the missing `.avatar`/`.avatar.g` rule block; filtered the initials helper to letter-led words only. Re-screenshotted to confirm both fixes. |
 | D-10 | `client/src/pages/Profile.tsx`, `client/src/components/ReviewForm.tsx` | The double-blind release mechanism itself was working correctly (confirmed by T-49), but nothing in the UI *said* so: `GET /users/:id/reviews` only ever returns `status='visible'` rows by design, and there was no way for the author of a review to see their own submission anywhere — not on Profile, not after the initial "submitted" moment. A one-sided review (the common case until the other party also reviews) looked indistinguishable from a silently-broken or lost one. **Reported by the user** ("why is approved reviews and given reviews not seen by either party") after testing the flow themselves. | Added `GET /reviews/mine` (any status, author-only) and a "Reviews I've given" section on Profile showing each review's real status (`Awaiting moderation` / `Approved — waiting on the other side…` / `Public` / etc.); reworded `ReviewForm`'s post-submit message to explain the hold instead of a bare "thanks". |
 | D-11 | `server/src/jobs/workers.ts` (`recomputeRatingAggregate`), `server/src/modules/admin/routes.ts` | `rating_avg`/`rating_count` were only ever recomputed from inside the review-release sweep, for the reviews *it* just released. Admin actions that change a review's status outside that sweep — removing a visible review directly, or resolving a moderation flag as "remove"/"clear" — updated `reviews.status` but never touched the subject's aggregate, leaving it stale (e.g. a removed 5-star review would keep inflating `rating_count` forever). **Found while adding FR-31's review-in-context view**, reasoning through every path that changes review visibility rather than just the sweep. | Exported `recomputeRatingAggregate` from `jobs/index.ts`; both `/admin/reviews/:id/remove` and `/admin/moderation/flags/:id/resolve` now call it for the affected subject after updating status. Also hardened the function itself to reset to zero (not leave the previous value) when a subject ends up with no visible reviews at all. Regression test added (T-55). |
+| D-12 | `server/src/jobs/workers.ts` (`reviewReleaseSweep`, now removed), `server/src/modules/reviews/routes.ts` | The double-blind release model meant the two parties to the *same* request could see different content on the *same* request card at the same time — whichever side hadn't reviewed yet saw nothing, making the card look inconsistent or broken rather than "waiting on the other person". **Reported directly by the user** ("why can't both users see the same comments on the request card") together with a concrete ask: an open reply chain/chat, either party, AI-moderated. | This is TD-15, not a small patch: removed the reciprocal-release sweep entirely; a review or reply now goes `visible` the moment it individually clears moderation (same as replies always worked); `review_replies`' one-per-review cap and subject-only restriction were both dropped so either party can reply, any number of times; `GET /requests/:id/reviews` now returns one identical `messages` thread to both callers. Documented as a deliberate trade-off (dropped collusion-resistance in exchange for consistency and a real chat) rather than a silent regression — see Technical_Debt_Plan.md TD-15. Tests: T-57–T-59. |
 
-All eleven were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10, well
-after) the corresponding feature — six by the automated suite (D-11 by reasoning through the
-code while building an unrelated feature, not by a user report or production incident), four by
+All twelve were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12, well
+after) the corresponding feature — seven by the automated suite (D-11 by reasoning through the
+code while building an unrelated feature, not by a user report or production incident), five by
 deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07 and D-10 reported back by the user; D-08 surfaced in production logs
-once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading
-the code — direct evidence for why TD-10 (test depth) is listed as "scheduled," not "critical":
-the practice works, it just hasn't been extended to every corner of the app, including
-production behaviour, yet. D-10 and D-11 both make the same point from different angles: a
-*correctly working* backend mechanism (the double-blind release sweep; the rating aggregate)
-can still fail users if either its state is never surfaced (D-10) or it's only kept correct
-along one of several paths that touch it (D-11) — functional correctness on the happy path and
-correctness everywhere the same data can change are different bars.
+production myself; D-07, D-10, and D-12 reported back by the user; D-08 surfaced in production
+logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by
+reading the code — direct evidence for why TD-10 (test depth) is listed as "scheduled," not
+"critical": the practice works, it just hasn't been extended to every corner of the app,
+including production behaviour, yet. D-10 and D-11 make a related point: a *correctly working*
+backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users if
+either its state is never surfaced (D-10) or it's only kept correct along one of several paths
+that touch it (D-11) — functional correctness on the happy path and correctness everywhere the
+same data can change are different bars. D-12 is a step further still: the mechanism was working
+*exactly as designed*, and the design itself was the problem — no amount of additional testing
+against the original spec would have caught it, because the spec (double-blind release) was
+what the user was objecting to. Some defects are only found by putting the actual feature in
+front of the actual person it's for.
 
 ## 5. Security testing
 

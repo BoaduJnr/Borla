@@ -359,32 +359,38 @@ Guard on every transition out of REQUESTED/SEEN:
   0 rows affected ⇒ already resolved ⇒ respond 409, never resurrect a stale transition.
 ```
 
-### 9.6 Activity: two-sided review, double-blind release (design §16)
+### 9.6 Activity: shared review thread per request (design §16, revised — TD-15)
+
+The original design (and this build's first version) released reviews double-blind: hidden
+until *both* sides had reviewed, or a review window closed. User testing against the live app
+surfaced a real problem with that: the two parties to the same request could see different
+content on the same card depending on who had reviewed whom, which read as broken rather than
+intentional. TD-15 documents the decision to remove it in favour of one shared, symmetric,
+AI-moderated chat thread per request:
 
 ```
-accepted request OR confirmed broadcast pickup
+accepted request
         │
         ▼
-either party submits {rating, comment} ──► status=pending, moderation_passed=false
+either party submits {rating, comment} ──► reviews row: status=pending, moderation_passed=false
         │
         ▼
-moderation (Gemini if configured, else queued for admin)
+moderation (Gemini if configured, else queued for admin) — per message, independently
         │
    ┌────┴────┐
-allow      flag/block
-   │            │
-moderation_    status=flagged
-passed=true    → admin queue
-   │
+ allow       flag/block
+   │              │
+status=visible   status=flagged → admin queue
+visible_at=now()      │
+rating_avg/count   admin resolves (remove/clear) — clear also → visible + recompute
+recomputed right       │
+here, immediately         ▼
+   │                same shared thread either way once cleared
    ▼
-release sweep (every 2 min): BOTH sides moderation_passed=true?
-   │                                  │
-  yes → status=visible now            no → still pending until the
-                                            review window closes, then
-                                            released solo
-   │
-   ▼
-rolling rating_avg/rating_count recomputed for the reviewed party
+GET /requests/:id/reviews returns the identical message list to BOTH parties from this
+moment on — no reciprocal wait. Either party may then post a reply (review_replies, no
+per-review cap, either author_id or subject_id may post), each independently moderated the
+same way, extending the same shared thread.
 ```
 
 ## 10. Implementation
@@ -415,8 +421,10 @@ logs straight in), with real SMS delivery attempted first; presence toggle/heart
 self-healing offline detection; the full broadcast plane (create/fan-out/clear/auto-expire);
 the full request plane (create/seen/accept/reject/auto-timeout with idempotent transitions);
 reveal-on-accept masked contact; two-sided reviews with real-interaction enforcement;
-AI-or-manual moderation; one capped public reply; double-blind release with rolling rating
-aggregates; the full admin console (verify/suspend/reinstate, moderation queue, audit log, live
+AI-or-manual moderation, per message; an open reply thread (either party, unlimited messages —
+TD-15) shown identically to both sides on the request card the moment each message clears
+moderation, with rolling rating aggregates recomputed on every visibility change, not just at
+release time; the full admin console (verify/suspend/reinstate, moderation queue, audit log, live
 stats, live ops map, live config tuning); a real installable PWA (manifest, icons, a
 Workbox service worker precaching the app shell, an explicit "Update available" prompt, and a
 native "Install app" button) — verified by checking `navigator.serviceWorker.getRegistrations()`
@@ -445,8 +453,7 @@ server/src/redis/{client,presence,rateLimit}.ts                                 
 server/src/jobs/{queues,scheduler,workers,index}.ts                             — BullMQ queues/schedulers/workers
 server/src/ai/moderation.ts, server/src/utils/{otp,sms,jwt,quietHours,phone}.ts  — isolated, unit-testable logic
 client/src/pages/{Login,HouseholdHome,CollectorHome,AdminDashboard,Profile}.tsx  — one screen per role/concern
-client/src/components/{MapView,RoutePanel,RequestReviews,ReviewForm,ProtectedRoute}.tsx — shared, reusable
-client/src/utils/reviewStatus.ts                                                — one status→label mapping, shared by Profile and RequestReviews
+client/src/components/{MapView,RoutePanel,RequestReviews,ProtectedRoute}.tsx     — shared, reusable (RequestReviews is the whole shared review-thread UI, TD-15)
 ```
 
 ### 10.4 Security controls actually implemented
@@ -461,8 +468,9 @@ verdict ⇒ stays hidden).
 
 ## 11. Testing (summary)
 
-58/58 automated tests passing (53 server — unit + Supertest integration against a real
-PostgreSQL+PostGIS instance *and* a real Redis instance; 5 client — React Testing Library) at
+56/56 automated tests passing (53 server — unit + Supertest integration against a real
+PostgreSQL+PostGIS instance *and* a real Redis instance; 3 client — React Testing Library, down
+from 5 after `ReviewForm.tsx`/its test were retired along with the double-blind model, TD-15) at
 time of submission, plus a scripted manual system/UAT pass and a security/usability review.
 Eleven real defects were caught and fixed during development — seven in the automated suite (a
 broken first-time-signup code path, a review-reply status gap, a rating-aggregate staleness bug
@@ -480,12 +488,14 @@ defect write-ups are in `Testing_Report.md`.
 
 ## 12. Technical debt
 
-Fourteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
-Resolution. One is 🔴 Critical (admin has no 2FA), five are 🟡 Scheduled — including the
+Sixteen tracked items (`Technical_Debt_Plan.md`), each with Debt→Cause→Impact→Priority→
+Resolution. One is 🔴 Critical (admin has no 2FA), six are 🟡 Scheduled — including the
 GiantSMS OTP integration, which was **confirmed live in production** (the gateway accepted a
 real send request end-to-end) but not yet confirmed to a real handset — and the rest are 🟢
 Acceptable/Resolved, including TD-01 (AI moderation) and TD-05 (Redis/BullMQ), both confirmed
-working end-to-end rather than just configured. The single largest remaining item is the
+working end-to-end rather than just configured, and TD-15, the explicit, reasoned decision to
+drop double-blind review release in favour of a shared, symmetric review thread (§9.6, both
+prompted by direct user feedback on the live app). The single largest remaining item is the
 missing native background-location collector app
 (TD-03) — the original design's own #1 risk — deliberately left as the biggest future-evolution
 item rather than attempted unsafely inside the exam window. Full register, priorities, and a
@@ -519,7 +529,7 @@ what appears; an admin lands on `/admin` after the password step.
 
 | Type | Approach |
 |---|---|
-| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 48 server tests are the regression net — this is exactly how D-07 (phone normalisation) was closed, with `phone.test.ts` added before the fix. |
+| **Corrective** | GitHub issue → reproduce with an integration test that fails → fix → test passes → deploy. The existing 53 server tests are the regression net — this is exactly how D-07 (phone normalisation) and D-11 (rating-aggregate staleness) were both closed, with a failing test added before each fix. |
 | **Adaptive** | Config changes (radius, TTLs, timeouts) go through `app_config` and the admin UI — no redeploy needed for the most likely "the environment changed" adjustments. |
 | **Perfective** | Tracked as the technical-debt repayment plan (`Technical_Debt_Plan.md` §4) — i18n, offline shell, deeper test coverage. |
 | **Preventive** | `npm audit` run before any dependency bump; the health-check endpoint (`/api/health`) lets Render auto-restart a wedged instance. |

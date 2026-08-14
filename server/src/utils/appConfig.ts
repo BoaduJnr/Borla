@@ -17,7 +17,6 @@ export const AppConfigKeys = {
   broadcastRadiusM: "broadcast_radius_m",
   pinTtlMinutes: "pin_ttl_minutes",
   requestTimeoutSeconds: "request_timeout_seconds",
-  reviewWindowDays: "review_window_days",
   notifCapPer10Min: "notif_cap_per_10min",
   arrivalRadiusM: "arrival_radius_m",
 } as const;

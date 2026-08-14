@@ -1,28 +1,34 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { Stars } from "./Stars";
-import { ReviewForm } from "./ReviewForm";
-import { givenStatusLabel, givenStatusChipClass } from "../utils/reviewStatus";
+import { Avatar } from "./Avatar";
+import { Stars, StarPicker } from "./Stars";
 
-interface ReviewSide {
+interface ThreadMessage {
+  type: "review" | "reply";
   id: string;
   author_id: string;
-  subject_id: string;
+  author_name: string | null;
+  rating: number | null;
+  body: string | null;
+  created_at: string;
+}
+
+interface MyReview {
+  id: string;
   rating: number;
   comment: string | null;
   status: string;
   moderation_passed: boolean;
-  author_name?: string;
-  reply_id?: string | null;
-  reply_body?: string | null;
+  created_at: string;
 }
 
 /**
- * Review + reply shown *on the request they belong to*, not only in a flat Profile list — the
- * request card is where the interaction actually happened, so that's where its review lives.
- * `GET /requests/:id/reviews` returns both directions in one call: `mine` (what I wrote, any
- * status) and `theirs` (what they wrote about me, only once visible — same privacy rule as
- * everywhere else review visibility is checked).
+ * One shared, AI-moderated chat thread per request — both parties always see the exact same
+ * messages, in the same order, right on the request card. There is no more double-blind hold:
+ * a review or reply joins the thread the moment it individually clears moderation, for everyone
+ * at once (Technical_Debt_Plan.md documents this as a deliberate trade-off against the original
+ * design's double-blind release). Nothing here is duplicated on Profile — that page only shows
+ * the aggregate rating.
  */
 export function RequestReviews({
   requestId,
@@ -33,64 +39,121 @@ export function RequestReviews({
   subjectId: string;
   canReview: boolean;
 }) {
-  const [data, setData] = useState<{ mine: ReviewSide | null; theirs: ReviewSide | null } | null>(null);
+  const [messages, setMessages] = useState<ThreadMessage[] | null>(null);
+  const [mine, setMine] = useState<MyReview | null>(null);
+  const [needsRating, setNeedsRating] = useState(false);
 
-  useEffect(() => {
-    api<{ mine: ReviewSide | null; theirs: ReviewSide | null }>(`/requests/${requestId}/reviews`)
-      .then(setData)
-      .catch(() => setData({ mine: null, theirs: null }));
-  }, [requestId]);
+  function load() {
+    api<{ messages: ThreadMessage[]; mine: MyReview | null; canReview: boolean }>(`/requests/${requestId}/reviews`)
+      .then((d) => {
+        setMessages(d.messages);
+        setMine(d.mine);
+        setNeedsRating(d.canReview);
+      })
+      .catch(() => setMessages([]));
+  }
 
-  if (!data) return null;
+  useEffect(load, [requestId]);
+
+  if (!messages) return null;
 
   return (
     <div className="stack" style={{ marginTop: 8 }}>
-      {data.theirs && (
+      {(messages.length > 0 || mine) && (
         <div className="card stack" style={{ background: "var(--paper)" }}>
-          <div className="spread">
-            <b style={{ fontSize: 12.5 }}>{data.theirs.author_name ?? "Review"}</b>
-            <Stars rating={data.theirs.rating} size={12} />
-          </div>
-          {data.theirs.comment && <p style={{ fontSize: 13 }}>{data.theirs.comment}</p>}
-          {data.theirs.reply_body ? (
-            <p className="muted" style={{ fontSize: 12 }}>
-              <b>Your reply:</b> {data.theirs.reply_body}
+          {messages.map((m) => (
+            <div key={`${m.type}-${m.id}`} className="stack" style={{ gap: 2 }}>
+              <div className="row" style={{ gap: 6 }}>
+                <Avatar name={m.author_name} size={20} />
+                <b style={{ fontSize: 12 }}>{m.author_name ?? "Someone"}</b>
+                {m.rating != null && <Stars rating={m.rating} size={11} />}
+              </div>
+              {m.body && (
+                <p style={{ fontSize: 13, marginLeft: 26 }}>{m.body}</p>
+              )}
+            </div>
+          ))}
+          {mine && mine.status !== "visible" && (
+            <p className="muted" style={{ fontSize: 11.5 }}>
+              Your rating is {mine.status === "flagged" ? "flagged — awaiting admin review" : "awaiting moderation"} —
+              it'll appear here for both of you once it clears.
             </p>
-          ) : (
-            <InlineReply
-              reviewId={data.theirs.id}
-              onSent={(body) => setData((d) => (d && d.theirs ? { ...d, theirs: { ...d.theirs, reply_body: body } } : d))}
-            />
           )}
         </div>
       )}
 
-      {data.mine ? (
-        <div className="row" style={{ gap: 6, alignItems: "center" }}>
-          <Stars rating={data.mine.rating} size={12} />
-          <span className={`tag-chip ${givenStatusChipClass(data.mine)}`} style={{ fontSize: 11 }}>
-            {givenStatusLabel(data.mine)}
-          </span>
-        </div>
+      {needsRating && canReview ? (
+        <RatingComposer requestId={requestId} subjectId={subjectId} onSent={load} />
       ) : (
-        canReview && <ReviewForm requestId={requestId} subjectId={subjectId} />
+        canReview && <ReplyComposer messages={messages} onSent={load} />
       )}
     </div>
   );
 }
 
-function InlineReply({ reviewId, onSent }: { reviewId: string; onSent: (body: string) => void }) {
+function RatingComposer({ requestId, subjectId, onSent }: { requestId: string; subjectId: string; onSent: () => void }) {
   const [open, setOpen] = useState(false);
-  const [body, setBody] = useState("");
-  const [sent, setSent] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  async function send() {
-    await api(`/reviews/${reviewId}/reply`, { method: "POST", body: { body } }).catch(() => null);
-    setSent(true);
-    onSent("(pending moderation)");
+  if (!open)
+    return (
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
+        Leave a review
+      </button>
+    );
+
+  async function submit() {
+    setBusy(true);
+    try {
+      await api("/reviews", { method: "POST", body: { subjectId, requestId, rating, comment: comment || undefined } });
+    } catch {
+      // A 409 here means "already reviewed" (e.g. a second tab) — either way, refresh from the
+      // server's own view of the world rather than trusting local state.
+    } finally {
+      setBusy(false);
+      setOpen(false);
+      onSent();
+    }
   }
 
-  if (sent) return <p className="muted" style={{ fontSize: 12 }}>Reply submitted (awaiting moderation).</p>;
+  return (
+    <div className="card stack" style={{ marginTop: 4 }}>
+      <StarPicker value={rating} onChange={setRating} />
+      <input
+        className="field"
+        placeholder="Optional comment (moderated before it's shared)"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        maxLength={500}
+      />
+      <button className="btn btn-green btn-sm" disabled={busy} onClick={submit}>
+        Submit
+      </button>
+    </div>
+  );
+}
+
+function ReplyComposer({ messages, onSent }: { messages: ThreadMessage[]; onSent: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const firstReview = messages.find((m) => m.type === "review");
+  if (!firstReview) return null; // nothing to reply to yet — one side still needs to leave the opening rating
+
+  async function send() {
+    setBusy(true);
+    try {
+      await api(`/reviews/${firstReview!.id}/reply`, { method: "POST", body: { body } });
+      setBody("");
+      setOpen(false);
+      onSent();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!open)
     return (
       <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
@@ -99,8 +162,8 @@ function InlineReply({ reviewId, onSent }: { reviewId: string; onSent: (body: st
     );
   return (
     <div className="row">
-      <input className="field" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} placeholder="Your reply…" />
-      <button className="btn btn-green btn-sm" onClick={send}>
+      <input className="field" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} placeholder="Your message…" />
+      <button className="btn btn-green btn-sm" disabled={busy || !body.trim()} onClick={send}>
         Send
       </button>
     </div>
