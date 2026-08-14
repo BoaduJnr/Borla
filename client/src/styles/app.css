@@ -111,14 +111,23 @@
 }
 .map-overlay-btn {
   position: absolute;
-  z-index: 15;
+  z-index: 50;
+  /* Belt-and-suspenders on top of .map-wrap's own isolation (D-15): gives the button its own
+     stacking context too, so it never depends on exactly how deeply it's nested relative to
+     the map to win the comparison. */
+  isolation: isolate;
 }
 /* Fills a .map-wrap box exactly, for a MapView nested inside one that already supplies the
    box's own size/edge-bleed — avoids re-applying .map-wrap's own height/margin rules a second
-   time (which would double up full-bleed's negative margins and shift the map off-centre). */
+   time (which would double up full-bleed's negative margins and shift the map off-centre).
+   Isolates too, same reasoning as .map-wrap (D-15) — this box is the one that actually
+   contains the Leaflet container in the Home tab's map, so it should seal its own stacking
+   even though its ancestor already does, in case anything ever nests one .map-fill inside
+   another without a .map-wrap in between. */
 .map-fill {
   height: 100%;
   width: 100%;
+  isolation: isolate;
 }
 
 /* Signature broadcast ring (borla_UI_design.html "signature screen") — the collector's bell,
