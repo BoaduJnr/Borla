@@ -180,6 +180,26 @@ adminRouter.post(
   })
 );
 
+/**
+ * POST /admin/replies/:id/approve — the reply-side equivalent of the review approve above; this
+ * was missing entirely until now, so a reply whose AI classification failed and was never
+ * retried (see D-13/`jobs/workers.ts` processModerate) had no recovery path at all once it
+ * settled into the manual queue — reviews could be manually approved, replies could not.
+ */
+adminRouter.post(
+  "/replies/:id/approve",
+  asyncHandler(async (req, res) => {
+    const row = await queryOne<{ id: string }>(
+      `UPDATE review_replies SET moderation_passed = true, status = 'visible'
+       WHERE id = $1 AND status = 'pending' RETURNING id`,
+      [req.params.id]
+    );
+    if (!row) throw new ApiError(404, "Pending reply not found");
+    await logAudit(req.user!.id, "manual_approve_reply", req.params.id);
+    res.json({ ok: true });
+  })
+);
+
 adminRouter.post(
   "/reviews/:id/remove",
   asyncHandler(async (req, res) => {

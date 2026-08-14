@@ -7,6 +7,7 @@ import { sweepStalePresence, pinCleared, nearbyCollectors } from "../redis/prese
 import { checkNotifRateLimit } from "../redis/rateLimit.js";
 import { inQuietHours } from "../utils/quietHours.js";
 import { classifyText } from "../ai/moderation.js";
+import { config } from "../config.js";
 
 const connection = bullRedis;
 
@@ -167,8 +168,17 @@ interface ModerateJobData {
  */
 async function processModerate(job: Job<ModerateJobData>) {
   const { targetType, targetId, text } = job.data;
+  if (!config.geminiApiKey) return { verdict: "no-key" }; // deliberate, permanent state — retrying achieves nothing, stays in the manual queue
+
   const verdict = await classifyText(text || "(no comment, rating only)", targetType === "review" ? "review comment" : "review reply");
-  if (!verdict) return { verdict: "no-key-or-error" }; // fails closed — stays pending for the admin queue
+  if (!verdict) {
+    // A key IS configured, so a null verdict here means the call itself failed (network blip,
+    // Gemini hiccup, every candidate model erroring) — worth retrying. Throwing lets BullMQ's
+    // own attempts/backoff (queues.ts: 3 attempts, exponential) actually engage, instead of the
+    // job quietly "succeeding" as a no-op and leaving the item stuck in the manual queue forever
+    // after one transient failure that a retry a few seconds later would likely have cleared.
+    throw new Error(`Gemini classification failed for ${targetType} ${targetId}`);
+  }
 
   const table = targetType === "review" ? "reviews" : "review_replies";
   if (verdict.verdict === "allow") {

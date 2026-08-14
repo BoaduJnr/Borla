@@ -229,8 +229,8 @@ function ModerationTab() {
     await api(`/admin/moderation/flags/${id}/resolve`, { method: "POST", body: { action } });
     load();
   }
-  async function approve(id: string) {
-    await api(`/admin/reviews/${id}/approve`, { method: "POST" });
+  async function approve(id: string, type: "review" | "reply") {
+    await api(`/admin/${type === "review" ? "reviews" : "replies"}/${id}/approve`, { method: "POST" });
     load();
   }
 
@@ -271,11 +271,9 @@ function ModerationTab() {
           <div key={item.id} className="card stack">
             <span className="tag-chip t-gold">{item.target_type}</span>
             <p>{item.text}</p>
-            {item.target_type === "review" && (
-              <button className="btn btn-green btn-sm" onClick={() => approve(item.id)}>
-                Approve
-              </button>
-            )}
+            <button className="btn btn-green btn-sm" onClick={() => approve(item.id, item.target_type)}>
+              Approve
+            </button>
           </div>
         ))}
       </div>

@@ -62,7 +62,7 @@ separate phase, which is appropriate at this scale.</p>
 <pre><code>✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
 ✓ test/integration/requests.test.ts (8 tests)
-✓ test/integration/admin.test.ts (4 tests)
+✓ test/integration/admin.test.ts (5 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
@@ -71,7 +71,7 @@ separate phase, which is appropriate at this scale.</p>
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  53 passed (53)
+      Tests  54 passed (54)
    Duration  ~50s
 </code></pre>
 <p><code>redisRateLimit.test.ts</code> and <code>phone.test.ts</code> are new since the Redis/BullMQ migration
@@ -86,14 +86,15 @@ for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-
  Test Files  1 passed (1)
       Tests  3 passed (3)
 </code></pre>
-<p><strong>Total: 56/56 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
+<p><strong>Total: 57/57 automated tests passing</strong> at time of submission (client dropped from 5 to 3 —
 <code>ReviewForm.tsx</code> and its test were retired along with the double-blind review model, TD-15).
 Re-run with <code>npm test</code> from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see <code>README.md</code>).</p>
 <h2>3. Test case log</h2>
 <p>Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
-&quot;Actual result&quot; reflects the real run, including three real defects caught and fixed during
-development (rows T-08, T-19, and T-39).</p>
+&quot;Actual result&quot; reflects the real run, including seven real defects directly caught by an
+inline test-case row (T-08, T-19, T-39, T-48, T-55, T-57, T-60 — the full set of thirteen
+defects, several found other ways, is in §4).</p>
 <table>
 <thead>
 <tr>
@@ -259,11 +260,11 @@ development (rows T-08, T-19, and T-39).</p>
 </tr>
 <tr>
 <td>T-20</td>
-<td>Second reply attempt on an already-replied review</td>
+<td><em>(superseded by T-58 — TD-15 removed the one-reply-per-review cap this test was checking)</em> Second reply attempt on an already-replied review</td>
 <td>Integration</td>
 <td><code>409</code> (one reply per review)</td>
-<td><code>409</code> returned</td>
-<td>Pass</td>
+<td><code>409</code> returned, at the time</td>
+<td>Pass (historical; no longer part of the design)</td>
 </tr>
 <tr>
 <td>T-21</td>
@@ -577,6 +578,22 @@ development (rows T-08, T-19, and T-39).</p>
 <td>Confirmed — both sides&#39; responses matched exactly once cleared; pre-clearance, only the author saw their own <code>mine.status=&#39;pending&#39;</code></td>
 <td>Pass</td>
 </tr>
+<tr>
+<td>T-60</td>
+<td><strong>(defect)</strong> D-13: an admin can manually approve a reply stuck awaiting moderation, not just a review</td>
+<td>Integration</td>
+<td><code>POST /admin/replies/:id/approve</code> makes it <code>visible</code>; a second attempt on the same reply is <code>404</code> (already resolved)</td>
+<td>Confirmed in <code>admin.test.ts</code></td>
+<td>Fail (endpoint didn&#39;t exist) → <strong>Fixed</strong>, now Pass</td>
+</tr>
+<tr>
+<td>T-61</td>
+<td>D-13: a Gemini call failure with a key configured is distinguished from &quot;no key at all&quot;</td>
+<td>Manual (real key, direct <code>classifyText</code> call in isolation)</td>
+<td>The exact text of a reply stuck in production&#39;s manual queue classifies successfully when called directly, supporting &quot;transient failure,&quot; not &quot;genuinely unmoderatable content&quot;</td>
+<td><code>classifyText(&quot;Thank you so much, see you again!&quot;, &quot;review reply&quot;)</code> returned a real <code>{&quot;verdict&quot;:&quot;allow&quot;,&quot;confidence&quot;:0.99,...}</code> outside the failing job&#39;s context</td>
+<td>Pass</td>
+</tr>
 </tbody></table>
 <h2>4. Defects found during development</h2>
 <table>
@@ -660,24 +677,34 @@ development (rows T-08, T-19, and T-39).</p>
 <td>The double-blind release model meant the two parties to the <em>same</em> request could see different content on the <em>same</em> request card at the same time — whichever side hadn&#39;t reviewed yet saw nothing, making the card look inconsistent or broken rather than &quot;waiting on the other person&quot;. <strong>Reported directly by the user</strong> (&quot;why can&#39;t both users see the same comments on the request card&quot;) together with a concrete ask: an open reply chain/chat, either party, AI-moderated.</td>
 <td>This is TD-15, not a small patch: removed the reciprocal-release sweep entirely; a review or reply now goes <code>visible</code> the moment it individually clears moderation (same as replies always worked); <code>review_replies</code>&#39; one-per-review cap and subject-only restriction were both dropped so either party can reply, any number of times; <code>GET /requests/:id/reviews</code> now returns one identical <code>messages</code> thread to both callers. Documented as a deliberate trade-off (dropped collusion-resistance in exchange for consistency and a real chat) rather than a silent regression — see Technical_Debt_Plan.md TD-15. Tests: T-57–T-59.</td>
 </tr>
+<tr>
+<td>D-13</td>
+<td><code>server/src/jobs/workers.ts</code> (<code>processModerate</code>), <code>server/src/modules/admin/routes.ts</code></td>
+<td>Found live in production while verifying D-12/TD-15: a transient Gemini failure (not &quot;no key configured&quot;, an actual call failure — plausibly rate-limiting from this session&#39;s own heavy testing) left two genuine replies stuck in the manual queue indefinitely. Root cause: <code>processModerate</code> returned quietly on a null verdict instead of throwing, so the <code>moderate</code> queue&#39;s own <code>attempts:3</code>/exponential-backoff config (<code>jobs/queues.ts</code>) never engaged — a transient failure got exactly one attempt, forever. Compounding it: there was no admin &quot;Approve&quot; action for a stuck <em>reply</em> at all (only reviews had one), so once stuck, a reply had zero recovery path.</td>
+<td><code>processModerate</code> now distinguishes &quot;no key configured&quot; (permanent, returns cleanly, no point retrying) from &quot;the call itself failed&quot; (throws, letting BullMQ&#39;s existing retry/backoff actually run) — confirmed locally that the exact stuck reply text classifies fine in isolation, supporting transient failure as the cause. Added <code>POST /admin/replies/:id/approve</code>, mirroring the review one, plus its &quot;Approve&quot; button in the admin UI for reply-type queue items (previously review-only). Regression test added (server/test/integration/admin.test.ts).</td>
+</tr>
 </tbody></table>
-<p>All twelve were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12, well
-after) the corresponding feature — seven by the automated suite (D-11 by reasoning through the
-code while building an unrelated feature, not by a user report or production incident), five by
-deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07, D-10, and D-12 reported back by the user; D-08 surfaced in production
-logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by
-reading the code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not
-&quot;critical&quot;: the practice works, it just hasn&#39;t been extended to every corner of the app,
-including production behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em>
-backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users if
-either its state is never surfaced (D-10) or it&#39;s only kept correct along one of several paths
-that touch it (D-11) — functional correctness on the happy path and correctness everywhere the
-same data can change are different bars. D-12 is a step further still: the mechanism was working
-<em>exactly as designed</em>, and the design itself was the problem — no amount of additional testing
-against the original spec would have caught it, because the spec (double-blind release) was
-what the user was objecting to. Some defects are only found by putting the actual feature in
-front of the actual person it&#39;s for.</p>
+<p>All thirteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12,
+well after) the corresponding feature — eight by the automated suite (D-11 by reasoning through
+the code while building an unrelated feature, D-13 by directly observing stuck production
+queue items while manually verifying D-12), five by deliberately exercising the live deployed
+app or reading its logs (D-05 by me re-testing production myself; D-07, D-10, and D-12 reported
+back by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by
+a scripted screenshot pass rather than by reading the code — direct evidence for why TD-10
+(test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the practice works, it just hasn&#39;t been
+extended to every corner of the app, including production behaviour, yet. D-10 and D-11 make a
+related point: a <em>correctly working</em> backend mechanism (the double-blind release sweep; the
+rating aggregate) can still fail users if either its state is never surfaced (D-10) or it&#39;s
+only kept correct along one of several paths that touch it (D-11) — functional correctness on
+the happy path and correctness everywhere the same data can change are different bars. D-12 is
+a step further still: the mechanism was working <em>exactly as designed</em>, and the design itself was
+the problem — no amount of additional testing against the original spec would have caught it,
+because the spec (double-blind release) was what the user was objecting to. D-13, found while
+manually re-verifying D-12&#39;s own fix in production, is a reminder that verification itself can
+surface new defects — the retry/backoff infrastructure existed since TD-05 but had never
+actually been exercised until real usage hit it. Some defects are only found by putting the
+actual feature in front of the actual person it&#39;s for, and some are only found by watching your
+own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

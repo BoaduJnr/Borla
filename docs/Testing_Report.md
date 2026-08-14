@@ -36,7 +36,7 @@ separate phase, which is appropriate at this scale.
 ✓ test/integration/broadcasts.test.ts (4 tests)
 ✓ test/integration/reviews.test.ts (7 tests)
 ✓ test/integration/requests.test.ts (8 tests)
-✓ test/integration/admin.test.ts (4 tests)
+✓ test/integration/admin.test.ts (5 tests)
 ✓ test/integration/auth.test.ts (13 tests)
 ✓ test/unit/redisRateLimit.test.ts (3 tests)
 ✓ test/unit/quietHours.test.ts (4 tests)
@@ -45,7 +45,7 @@ separate phase, which is appropriate at this scale.
 ✓ test/unit/sms.test.ts (3 tests)
 
  Test Files  10 passed (10)
-      Tests  53 passed (53)
+      Tests  54 passed (54)
    Duration  ~50s
 ```
 
@@ -65,7 +65,7 @@ for review-in-request-context (FR-31) and the rating-aggregate staleness fix (D-
       Tests  3 passed (3)
 ```
 
-**Total: 56/56 automated tests passing** at time of submission (client dropped from 5 to 3 —
+**Total: 57/57 automated tests passing** at time of submission (client dropped from 5 to 3 —
 `ReviewForm.tsx` and its test were retired along with the double-blind review model, TD-15).
 Re-run with `npm test` from the
 repository root (requires a reachable Postgres+PostGIS and Redis — see `README.md`).
@@ -73,8 +73,9 @@ repository root (requires a reachable Postgres+PostGIS and Redis — see `README
 ## 3. Test case log
 
 Representative cases spanning all four rubric areas (functional, unit, integration, system/UAT).
-"Actual result" reflects the real run, including three real defects caught and fixed during
-development (rows T-08, T-19, and T-39).
+"Actual result" reflects the real run, including seven real defects directly caught by an
+inline test-case row (T-08, T-19, T-39, T-48, T-55, T-57, T-60 — the full set of thirteen
+defects, several found other ways, is in §4).
 
 | # | Test case | Layer | Expected result | Actual result | Pass/Fail |
 |---|---|---|---|---|---|
@@ -97,7 +98,7 @@ development (rows T-08, T-19, and T-39).
 | T-17 | Review submitted against a request that is **not yet accepted** | Integration | `400` | `400` returned | Pass |
 | T-18 | Duplicate review on the same accepted request | Integration | `409` (unique constraint) | `409` returned | Pass |
 | T-19 | **(defect)** Reply to a review before it is moderation-visible | Integration (found while writing this test) | `400` — cannot reply to a non-visible review | **First implementation only checked `subject_id`, not `status`, allowing a reply on a still-pending review** — see §4 | Fail → **Fixed**, now Pass |
-| T-20 | Second reply attempt on an already-replied review | Integration | `409` (one reply per review) | `409` returned | Pass |
+| T-20 | *(superseded by T-58 — TD-15 removed the one-reply-per-review cap this test was checking)* Second reply attempt on an already-replied review | Integration | `409` (one reply per review) | `409` returned, at the time | Pass (historical; no longer part of the design) |
 | T-21 | Admin verifies a collector; collector can now go online; action appears in audit log | Integration | `200` → `200`; `audit_log` contains `verify_collector` | All three confirmed | Pass |
 | T-22 | Admin suspends a household; suspended user's `/auth/me` is blocked; reinstate restores access | Integration | `403` while suspended, `200` after reinstatement | Confirmed | Pass |
 | T-23 | Admin edits an unknown config key | Integration | `404` | `404` returned | Pass |
@@ -137,6 +138,8 @@ development (rows T-08, T-19, and T-39).
 | T-57 | **(defect)** TD-15: a review now joins the shared thread the moment it clears moderation, instead of waiting for the other side to also review | Integration | A review approved via moderation appears in `GET /users/:id/reviews` immediately — no dependency on the other party's own review | Confirmed in `reviews.test.ts` — visible right after `status='visible'`, with no second review on the request at all | Fail (old double-blind behaviour) → **Fixed**, now Pass |
 | T-58 | TD-15: either party can reply to a review, more than once each | Integration | Both the review's author and its subject can each post multiple replies; a non-party gets `403` | 3 successive replies from both sides confirmed in `reviews.test.ts`, outsider correctly rejected | Pass |
 | T-59 | TD-15: `GET /requests/:id/reviews` returns one identical shared thread to both parties, in order | Integration | Both callers see the same `messages` array (review + reply, chronological); each caller's own not-yet-visible submission only shows to them via `mine` | Confirmed — both sides' responses matched exactly once cleared; pre-clearance, only the author saw their own `mine.status='pending'` | Pass |
+| T-60 | **(defect)** D-13: an admin can manually approve a reply stuck awaiting moderation, not just a review | Integration | `POST /admin/replies/:id/approve` makes it `visible`; a second attempt on the same reply is `404` (already resolved) | Confirmed in `admin.test.ts` | Fail (endpoint didn't exist) → **Fixed**, now Pass |
+| T-61 | D-13: a Gemini call failure with a key configured is distinguished from "no key at all" | Manual (real key, direct `classifyText` call in isolation) | The exact text of a reply stuck in production's manual queue classifies successfully when called directly, supporting "transient failure," not "genuinely unmoderatable content" | `classifyText("Thank you so much, see you again!", "review reply")` returned a real `{"verdict":"allow","confidence":0.99,...}` outside the failing job's context | Pass |
 
 ## 4. Defects found during development
 
@@ -154,24 +157,29 @@ development (rows T-08, T-19, and T-39).
 | D-10 | `client/src/pages/Profile.tsx`, `client/src/components/ReviewForm.tsx` | The double-blind release mechanism itself was working correctly (confirmed by T-49), but nothing in the UI *said* so: `GET /users/:id/reviews` only ever returns `status='visible'` rows by design, and there was no way for the author of a review to see their own submission anywhere — not on Profile, not after the initial "submitted" moment. A one-sided review (the common case until the other party also reviews) looked indistinguishable from a silently-broken or lost one. **Reported by the user** ("why is approved reviews and given reviews not seen by either party") after testing the flow themselves. | Added `GET /reviews/mine` (any status, author-only) and a "Reviews I've given" section on Profile showing each review's real status (`Awaiting moderation` / `Approved — waiting on the other side…` / `Public` / etc.); reworded `ReviewForm`'s post-submit message to explain the hold instead of a bare "thanks". |
 | D-11 | `server/src/jobs/workers.ts` (`recomputeRatingAggregate`), `server/src/modules/admin/routes.ts` | `rating_avg`/`rating_count` were only ever recomputed from inside the review-release sweep, for the reviews *it* just released. Admin actions that change a review's status outside that sweep — removing a visible review directly, or resolving a moderation flag as "remove"/"clear" — updated `reviews.status` but never touched the subject's aggregate, leaving it stale (e.g. a removed 5-star review would keep inflating `rating_count` forever). **Found while adding FR-31's review-in-context view**, reasoning through every path that changes review visibility rather than just the sweep. | Exported `recomputeRatingAggregate` from `jobs/index.ts`; both `/admin/reviews/:id/remove` and `/admin/moderation/flags/:id/resolve` now call it for the affected subject after updating status. Also hardened the function itself to reset to zero (not leave the previous value) when a subject ends up with no visible reviews at all. Regression test added (T-55). |
 | D-12 | `server/src/jobs/workers.ts` (`reviewReleaseSweep`, now removed), `server/src/modules/reviews/routes.ts` | The double-blind release model meant the two parties to the *same* request could see different content on the *same* request card at the same time — whichever side hadn't reviewed yet saw nothing, making the card look inconsistent or broken rather than "waiting on the other person". **Reported directly by the user** ("why can't both users see the same comments on the request card") together with a concrete ask: an open reply chain/chat, either party, AI-moderated. | This is TD-15, not a small patch: removed the reciprocal-release sweep entirely; a review or reply now goes `visible` the moment it individually clears moderation (same as replies always worked); `review_replies`' one-per-review cap and subject-only restriction were both dropped so either party can reply, any number of times; `GET /requests/:id/reviews` now returns one identical `messages` thread to both callers. Documented as a deliberate trade-off (dropped collusion-resistance in exchange for consistency and a real chat) rather than a silent regression — see Technical_Debt_Plan.md TD-15. Tests: T-57–T-59. |
+| D-13 | `server/src/jobs/workers.ts` (`processModerate`), `server/src/modules/admin/routes.ts` | Found live in production while verifying D-12/TD-15: a transient Gemini failure (not "no key configured", an actual call failure — plausibly rate-limiting from this session's own heavy testing) left two genuine replies stuck in the manual queue indefinitely. Root cause: `processModerate` returned quietly on a null verdict instead of throwing, so the `moderate` queue's own `attempts:3`/exponential-backoff config (`jobs/queues.ts`) never engaged — a transient failure got exactly one attempt, forever. Compounding it: there was no admin "Approve" action for a stuck *reply* at all (only reviews had one), so once stuck, a reply had zero recovery path. | `processModerate` now distinguishes "no key configured" (permanent, returns cleanly, no point retrying) from "the call itself failed" (throws, letting BullMQ's existing retry/backoff actually run) — confirmed locally that the exact stuck reply text classifies fine in isolation, supporting transient failure as the cause. Added `POST /admin/replies/:id/approve`, mirroring the review one, plus its "Approve" button in the admin UI for reply-type queue items (previously review-only). Regression test added (server/test/integration/admin.test.ts). |
 
-All twelve were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12, well
-after) the corresponding feature — seven by the automated suite (D-11 by reasoning through the
-code while building an unrelated feature, not by a user report or production incident), five by
-deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07, D-10, and D-12 reported back by the user; D-08 surfaced in production
-logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather than by
-reading the code — direct evidence for why TD-10 (test depth) is listed as "scheduled," not
-"critical": the practice works, it just hasn't been extended to every corner of the app,
-including production behaviour, yet. D-10 and D-11 make a related point: a *correctly working*
-backend mechanism (the double-blind release sweep; the rating aggregate) can still fail users if
-either its state is never surfaced (D-10) or it's only kept correct along one of several paths
-that touch it (D-11) — functional correctness on the happy path and correctness everywhere the
-same data can change are different bars. D-12 is a step further still: the mechanism was working
-*exactly as designed*, and the design itself was the problem — no amount of additional testing
-against the original spec would have caught it, because the spec (double-blind release) was
-what the user was objecting to. Some defects are only found by putting the actual feature in
-front of the actual person it's for.
+All thirteen were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12,
+well after) the corresponding feature — eight by the automated suite (D-11 by reasoning through
+the code while building an unrelated feature, D-13 by directly observing stuck production
+queue items while manually verifying D-12), five by deliberately exercising the live deployed
+app or reading its logs (D-05 by me re-testing production myself; D-07, D-10, and D-12 reported
+back by the user; D-08 surfaced in production logs once the Gemini key went live), and D-09 by
+a scripted screenshot pass rather than by reading the code — direct evidence for why TD-10
+(test depth) is listed as "scheduled," not "critical": the practice works, it just hasn't been
+extended to every corner of the app, including production behaviour, yet. D-10 and D-11 make a
+related point: a *correctly working* backend mechanism (the double-blind release sweep; the
+rating aggregate) can still fail users if either its state is never surfaced (D-10) or it's
+only kept correct along one of several paths that touch it (D-11) — functional correctness on
+the happy path and correctness everywhere the same data can change are different bars. D-12 is
+a step further still: the mechanism was working *exactly as designed*, and the design itself was
+the problem — no amount of additional testing against the original spec would have caught it,
+because the spec (double-blind release) was what the user was objecting to. D-13, found while
+manually re-verifying D-12's own fix in production, is a reminder that verification itself can
+surface new defects — the retry/backoff infrastructure existed since TD-05 but had never
+actually been exercised until real usage hit it. Some defects are only found by putting the
+actual feature in front of the actual person it's for, and some are only found by watching your
+own fix operate for real.
 
 ## 5. Security testing
 
