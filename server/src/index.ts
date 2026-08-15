@@ -20,8 +20,17 @@ async function main() {
 
   // BullMQ (Technical_Debt_Plan.md TD-05): workers must be running before jobs get enqueued,
   // and the repeatable sweeps are registered once per boot (BullMQ dedupes identical repeats).
+  // Registering the sweeps is best-effort at boot, deliberately non-fatal: a Redis/BullMQ hiccup
+  // here (a scheduler's own retry+cleanup in scheduleRepeatableJobs() already covers the common
+  // case) must never take down the whole API — the background sweeps matter, but "the entire
+  // app is unreachable" is a wildly disproportionate failure mode for "one sweep didn't
+  // re-register," and is exactly what happened in production once already.
   startWorkers();
-  await scheduleRepeatableJobs();
+  try {
+    await scheduleRepeatableJobs();
+  } catch (err) {
+    console.error("[jobs] failed to schedule repeatable sweeps after retrying — starting the server anyway", err);
+  }
 
   server.listen(config.port, () => {
     console.log(`[server] Borla API listening on :${config.port} (${config.nodeEnv})`);
