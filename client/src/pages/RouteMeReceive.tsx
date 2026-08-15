@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useGeolocation } from "../hooks/useGeolocation";
-import { MapView } from "../components/MapView";
+import { MapView, type RouteInfo } from "../components/MapView";
 import { Logo } from "../components/Logo";
-import { haversineM, formatDistance, type LonLat } from "../utils/geo";
+import { haversineM, formatDistance, zoomForDistance, type LonLat } from "../utils/geo";
 
 interface ShareInfo {
   senderLon: number;
@@ -77,6 +77,12 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
   // the baseline "how far have you travelled since you started" is measured from.
   const { coords, error: geoError } = useGeolocation(true);
   const [receivePoint, setReceivePoint] = useState<LonLat | null>(null);
+  // Same zoom-as-you-approach behaviour RoutePanel already has for the accepted-request route —
+  // this map draws a route too and was missing it (found while auditing every MapView usage for
+  // the same thing). `info` comes from the actual route distance (road-following via OSRM, or
+  // its straight-line fallback), not the receivePoint-based "travelled" figure below — those are
+  // two different numbers: one is progress since starting, the other is distance still to close.
+  const [info, setInfo] = useState<RouteInfo | null>(null);
 
   useEffect(() => {
     if (coords && !receivePoint) setReceivePoint(coords);
@@ -99,6 +105,8 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
           center={coords}
           points={[{ id: "sender", lon: senderLon, lat: senderLat, color: "#0E6E4E", label: "Them" }]}
           route={{ from: coords, to: { lon: senderLon, lat: senderLat } }}
+          onRouteInfo={setInfo}
+          zoom={zoomForDistance(info?.distanceM)}
           className="map-fill"
         />
       </div>

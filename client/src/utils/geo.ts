@@ -23,3 +23,20 @@ export function haversineM(a: LonLat, b: LonLat): number {
 export function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
+
+/**
+ * Zooms in as two routed points get closer — a 5km route and a 30m one need very different
+ * scales. Shared by every "route to one target" map (RoutePanel; RouteMeReceive) — a wide view
+ * is useless once someone's nearly at the gate. Not meaningful for a multi-marker overview map
+ * (HouseholdHome/CollectorHome's nearby lists, AdminDashboard's live map) where there's no single
+ * target to zoom in on.
+ */
+export function zoomForDistance(m: number | undefined): number {
+  if (m == null) return 14;
+  if (m > 3000) return 13;
+  if (m > 1500) return 14;
+  if (m > 800) return 15;
+  if (m > 400) return 16;
+  if (m > 150) return 17;
+  return 18;
+}
