@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { MapView } from "../components/MapView";
 import { Logo } from "../components/Logo";
+import { haversineM, formatDistance, type LonLat } from "../utils/geo";
 
 interface ShareInfo {
   senderLon: number;
@@ -69,7 +70,17 @@ export default function RouteMeReceive() {
 }
 
 function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat: number }) {
-  const { coords, error: geoError } = useGeolocation(false);
+  // Watched (not one-shot) so the recipient's own position keeps updating while they actually
+  // walk toward the sender — the same live-tracking pattern CollectorHome uses while a collector
+  // roams. `receivePoint` is the first fix only, captured once and never overwritten, exactly
+  // like requests.accept_lon/accept_lat is a one-time snapshot rather than a moving target — it's
+  // the baseline "how far have you travelled since you started" is measured from.
+  const { coords, error: geoError } = useGeolocation(true);
+  const [receivePoint, setReceivePoint] = useState<LonLat | null>(null);
+
+  useEffect(() => {
+    if (coords && !receivePoint) setReceivePoint(coords);
+  }, [coords, receivePoint]);
 
   if (geoError) {
     return (
@@ -94,6 +105,11 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
       <p className="muted" style={{ fontSize: 12.5 }}>
         Their location was captured when this link was sent and won't update live.
       </p>
+      {receivePoint && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          You've travelled {formatDistance(haversineM(receivePoint, coords))} since you started tracking
+        </p>
+      )}
     </div>
   );
 }

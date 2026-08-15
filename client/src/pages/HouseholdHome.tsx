@@ -10,6 +10,7 @@ import { RequestReviews } from "../components/RequestReviews";
 import { IconTrash, IconRecycle, IconLeaf, IconBox, IconPin, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
+import { haversineM, formatDistance } from "../utils/geo";
 
 const WASTE_TYPES = [
   { id: "general", label: "General", Icon: IconTrash },
@@ -42,6 +43,12 @@ interface RequestRow {
   collector_name: string | null;
   collector_lon: number | null;
   collector_lat: number | null;
+  // Where the collector was the instant they accepted (server-side snapshot) — compared against
+  // collector_lon/lat above to show "how far they've travelled since accepting". Straight-line
+  // displacement, not a real path length; null if accepted before this existed, or the collector
+  // had never gone online yet at accept time (nothing to snapshot).
+  accept_lon: number | null;
+  accept_lat: number | null;
 }
 
 type Tab = "home" | "requests" | "history";
@@ -472,6 +479,15 @@ function HouseholdRequestCard({
               label={r.collector_name ?? "collector"}
               onDistanceChange={onDistanceChange}
             />
+          )}
+          {!isHistory && r.accept_lon != null && r.accept_lat != null && r.collector_lon != null && r.collector_lat != null && (
+            <p className="muted" style={{ fontSize: 12 }}>
+              {r.collector_name ?? "Collector"} has travelled{" "}
+              {formatDistance(
+                haversineM({ lon: r.accept_lon, lat: r.accept_lat }, { lon: r.collector_lon, lat: r.collector_lat })
+              )}{" "}
+              since accepting
+            </p>
           )}
           {isHistory ? (
             <>

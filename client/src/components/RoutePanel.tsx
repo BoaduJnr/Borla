@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MapView, type RouteEndpoint, type RouteInfo } from "./MapView";
 import { IconClose } from "./Icon";
+import { formatDistance } from "../utils/geo";
 
 /**
  * Route to the other side of an accepted direct request — a household's target collector, or a
@@ -130,8 +131,4 @@ function zoomForDistance(m: number | undefined): number {
   if (m > 400) return 16;
   if (m > 150) return 17;
   return 18;
-}
-
-function formatDistance(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
