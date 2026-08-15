@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Borla — UI Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#16241C; --ink-soft:#3E4A43; --muted:#6B7A70;
+    --paper:#ECEBE3; --surface:#FFFFFF; --line:#DBD9CE;
+    --green:#0E6E4E; --green-d:#0A5239; --green-tint:#E4F1EA;
+    --marigold:#F5A208; --marigold-d:#D98A00; --marigold-tint:#FFF1D2;
+    --coral:#E14434; --coral-tint:#FBE3DF;
+    --disp:"Bricolage Grotesque",system-ui,sans-serif;
+    --body:"Hanken Grotesk",system-ui,sans-serif;
+    --r:22px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--body); color:var(--ink); background:var(--paper);
+    -webkit-font-smoothing:antialiased; line-height:1.45;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 22px 80px}
+
+  /* ---------- brand header ---------- */
+  .masthead{padding:26px 0 14px}
+  .logo{display:flex; align-items:center; gap:14px}
+  .logo .mark{width:52px; height:52px; flex:none}
+  .logo h1{font-family:var(--disp); font-weight:800; font-size:44px; letter-spacing:-.02em; margin:0; line-height:1}
+  .logo .tag{font-weight:600; color:var(--muted); font-size:15px; margin-top:4px}
+  .lede{max-width:680px; margin:20px 0 0; font-size:17px; color:var(--ink-soft)}
+  .lede b{color:var(--ink); font-weight:700}
+
+  /* ---------- design system strip ---------- */
+  .system{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px; margin:34px 0 10px}
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px}
+  .panel h3{font-family:var(--disp); font-weight:700; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 14px}
+  .swatch{display:flex; align-items:center; gap:11px; margin:9px 0}
+  .swatch i{width:34px; height:34px; border-radius:9px; flex:none; border:1px solid rgba(0,0,0,.08)}
+  .swatch b{font-weight:700; font-size:14px}
+  .swatch span{color:var(--muted); font-size:12.5px; margin-left:auto; font-variant-numeric:tabular-nums}
+  .spec .big{font-family:var(--disp); font-weight:800; font-size:40px; letter-spacing:-.02em; line-height:1; margin:0 0 6px}
+  .spec .row{font-size:14px; color:var(--ink-soft); margin:7px 0}
+  .spec .row small{color:var(--muted)}
+  .chips{display:flex; flex-wrap:wrap; gap:8px}
+  .chips span{background:var(--green-tint); color:var(--green-d); font-weight:700; font-size:12.5px; padding:6px 11px; border-radius:99px}
+
+  /* ---------- section headers ---------- */
+  .band{display:flex; align-items:baseline; gap:16px; margin:60px 0 8px; padding-bottom:14px; border-bottom:2px solid var(--ink)}
+  .band .n{font-family:var(--disp); font-weight:800; font-size:15px; color:var(--marigold-d)}
+  .band h2{font-family:var(--disp); font-weight:800; font-size:30px; letter-spacing:-.02em; margin:0}
+  .band p{margin:0 0 0 auto; color:var(--muted); font-size:14px; max-width:360px; text-align:right}
+
+  /* ---------- phone gallery ---------- */
+  .gallery{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:40px 28px; margin-top:34px}
+  .cell{display:flex; flex-direction:column}
+  .cap{margin-top:16px}
+  .cap b{font-family:var(--disp); font-weight:700; font-size:17px; display:block}
+  .cap span{color:var(--muted); font-size:13.5px}
+
+  /* ---------- device frame ---------- */
+  .phone{width:300px; height:640px; background:#000; border-radius:44px; padding:9px; margin:0 auto;
+    box-shadow:0 30px 60px -24px rgba(22,36,28,.45), 0 8px 20px -10px rgba(22,36,28,.3); position:relative}
+  .screen{position:relative; width:100%; height:100%; background:var(--surface); border-radius:36px; overflow:hidden; display:flex; flex-direction:column}
+  .notch{position:absolute; top:10px; left:50%; transform:translateX(-50%); width:98px; height:22px; background:#000; border-radius:0 0 16px 16px; z-index:40}
+  .sbar{height:34px; display:flex; align-items:center; justify-content:space-between; padding:0 20px 0 22px; font-size:12px; font-weight:700; color:var(--ink); flex:none; z-index:30}
+  .sbar .r{display:flex; gap:5px; align-items:center}
+  .sbar svg{display:block}
+  .body{flex:1; overflow:hidden; position:relative}
+
+  /* generic ui atoms */
+  .pad{padding:16px 18px}
+  .h-disp{font-family:var(--disp); font-weight:800; letter-spacing:-.02em; line-height:1.05}
+  .btn{width:100%; border:0; border-radius:16px; font-family:var(--body); font-weight:800; font-size:16px;
+    padding:15px; display:flex; align-items:center; justify-content:center; gap:9px; cursor:pointer}
+  .btn.lg{padding:18px; font-size:17px}
+  .btn-green{background:var(--green); color:#fff}
+  .btn-gold{background:var(--marigold); color:#2A1C00}
+  .btn-coral{background:var(--coral); color:#fff}
+  .btn-ghost{background:transparent; color:var(--ink); border:2px solid var(--line)}
+  .btn-dark{background:var(--ink); color:#fff}
+  .field{background:#F4F3EC; border:1.5px solid var(--line); border-radius:14px; padding:14px 15px; font-size:15px; color:var(--ink); display:flex; align-items:center; gap:10px}
+  .field .ph{color:var(--muted)}
+  .appbar{display:flex; align-items:center; gap:12px; padding:14px 16px}
+  .appbar .t{font-family:var(--disp); font-weight:800; font-size:19px}
+  .icon-btn{width:40px; height:40px; border-radius:12px; background:#F1F0E8; display:flex; align-items:center; justify-content:center; flex:none}
+  .avatar{width:44px; height:44px; border-radius:50%; background:var(--green-tint); color:var(--green-d); display:flex; align-items:center; justify-content:center; font-weight:800; font-family:var(--disp); flex:none; font-size:16px}
+  .avatar.g{background:var(--marigold-tint); color:var(--marigold-d)}
+  .stars{display:inline-flex; gap:2px; color:var(--marigold); vertical-align:middle}
+  .tag-chip{display:inline-flex; align-items:center; gap:6px; font-weight:700; font-size:12px; padding:5px 10px; border-radius:99px}
+  .t-green{background:var(--green-tint); color:var(--green-d)}
+  .t-gold{background:var(--marigold-tint); color:var(--marigold-d)}
+  .t-coral{background:var(--coral-tint); color:var(--coral)}
+  .card{background:var(--surface); border:1.5px solid var(--line); border-radius:18px; padding:14px}
+  .divider{height:1px; background:var(--line); margin:0}
+
+  /* bottom nav */
+  .tabbar{position:absolute; bottom:0; left:0; right:0; height:66px; background:#fff; border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-around; padding-bottom:6px}
+  .tabbar a{display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10.5px; font-weight:700; color:var(--muted)}
+  .tabbar a.on{color:var(--green)}
+  .tabbar.gold a.on{color:var(--marigold-d)}
+
+  /* map */
+  .map{position:absolute; inset:0; background:
+      radial-gradient(circle at 30% 20%, #EDF3EC, #E7EEE6 40%, #E3E9E0 100%);}
+  .map .roads line{stroke:#D3DAD0; stroke-width:9; stroke-linecap:round}
+  .map .roads line.main{stroke:#C7D0C5; stroke-width:14}
+  .map .roads .river{stroke:#CFE0E6; stroke-width:16}
+  .mpin{position:absolute; transform:translate(-50%,-100%); z-index:5}
+  .mdot{position:absolute; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .mdot.gold{background:var(--marigold)} .mdot.green{background:var(--green)}
+  .me{position:absolute; width:20px; height:20px; border-radius:50%; background:#2F7CEC; border:4px solid #fff; transform:translate(-50%,-50%); box-shadow:0 0 0 6px rgba(47,124,236,.18); z-index:6}
+
+  /* signature broadcast ring */
+  .beacon{position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); width:0; height:0; z-index:4}
+  .beacon .ring{position:absolute; left:50%; top:50%; width:60px; height:60px; margin:-30px 0 0 -30px; border-radius:50%;
+    border:2.5px solid var(--marigold); opacity:0; animation:pulse 3s ease-out infinite}
+  .beacon .ring:nth-child(2){animation-delay:1s} .beacon .ring:nth-child(3){animation-delay:2s}
+  .beacon .core{position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%; background:var(--marigold); box-shadow:0 0 0 6px var(--marigold-tint), 0 4px 12px rgba(0,0,0,.25)}
+  @keyframes pulse{0%{width:60px;height:60px;margin:-30px 0 0 -30px;opacity:.9}100%{width:280px;height:280px;margin:-140px 0 0 -140px;opacity:0}}
+  @media (prefers-reduced-motion:reduce){.beacon .ring{animation:none; opacity:.4}}
+
+  .sheet{position:absolute; left:0; right:0; bottom:0; background:#fff; border-radius:26px 26px 0 0; box-shadow:0 -12px 30px -14px rgba(22,36,28,.3); z-index:10}
+  .grab{width:38px; height:5px; border-radius:99px; background:var(--line); margin:9px auto 4px}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .type-tile{border:1.5px solid var(--line); border-radius:15px; padding:13px 11px; display:flex; flex-direction:column; gap:8px; align-items:flex-start}
+  .type-tile.sel{border-color:var(--green); background:var(--green-tint)}
+  .type-tile b{font-weight:800; font-size:14px}
+  .type-tile .ic{width:34px;height:34px;border-radius:10px;background:#F1F0E8;display:flex;align-items:center;justify-content:center}
+  .type-tile.sel .ic{background:#fff}
+
+  .countdown{font-variant-numeric:tabular-nums; font-family:var(--disp); font-weight:800}
+  .earn{font-family:var(--disp); font-weight:800; letter-spacing:-.02em}
+
+  /* admin */
+  .admin{grid-column:1/-1; background:#0E1512; border-radius:24px; padding:26px; color:#DCE7E0; overflow:hidden}
+  .admin .top{display:flex; align-items:center; gap:12px; margin-bottom:22px}
+  .admin .top .mk{width:34px;height:34px}
+  .admin .top b{font-family:var(--disp); font-weight:800; font-size:20px; color:#fff}
+  .admin .top .pill{margin-left:auto; font-size:12px; font-weight:700; color:#0E1512; background:var(--marigold); padding:6px 12px; border-radius:99px}
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px}
+  .kpi{background:#16211C; border:1px solid #223029; border-radius:16px; padding:16px}
+  .kpi .k{font-size:12px; color:#89A093; font-weight:700}
+  .kpi .v{font-family:var(--disp); font-weight:800; font-size:30px; color:#fff; letter-spacing:-.02em; margin-top:6px}
+  .kpi .d{font-size:12px; margin-top:5px; font-weight:700}
+  .up{color:#5FD39B} .down{color:#F58C7E}
+  .adcols{display:grid; grid-template-columns:1.3fr 1fr; gap:16px}
+  .adcard{background:#16211C; border:1px solid #223029; border-radius:16px; padding:16px}
+  .adcard h4{margin:0 0 14px; font-family:var(--disp); font-size:14px; color:#fff; letter-spacing:.04em}
+  .bars{display:flex; align-items:flex-end; gap:10px; height:120px}
+  .bars .b{flex:1; background:linear-gradient(var(--green),#12503a); border-radius:7px 7px 0 0; position:relative}
+  .bars .b span{position:absolute; bottom:-20px; left:0; right:0; text-align:center; font-size:10px; color:#89A093; font-weight:700}
+  .modrow{display:flex; align-items:center; gap:11px; padding:10px 0; border-bottom:1px solid #223029; font-size:13px}
+  .modrow:last-child{border-bottom:0}
+  .flagdot{width:9px;height:9px;border-radius:50%;background:var(--coral);flex:none}
+  .modrow .why{margin-left:auto; font-size:11px; font-weight:700; color:var(--marigold)}
+
+  .foot{margin-top:70px; padding-top:24px; border-top:1px solid var(--line); color:var(--muted); font-size:13.5px}
+
+  @media(max-width:520px){ .logo h1{font-size:34px} .phone{transform:scale(.98)} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- =================== MASTHEAD =================== -->
+  <header class="masthead">
+    <div class="logo">
+      <svg class="mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M24 45c8-9 13-15.5 13-22A13 13 0 1 0 11 23c0 6.5 5 13 13 22Z" fill="#0E6E4E"/>
+        <circle cx="24" cy="21" r="9" fill="none" stroke="#F5A208" stroke-width="2.4" opacity=".9"/>
+        <circle cx="24" cy="21" r="4.4" fill="#F5A208"/>
+      </svg>
+      <div>
+        <h1>Borla</h1>
+        <div class="tag">Waste, sorted — one ring away.</div>
+      </div>
+    </div>
+    <p class="lede">A real-time matchmaker that connects households with the roaming tricycle collectors already in their neighbourhood. The design digitizes a familiar act — <b>the collector's bell</b> — into a signal you send and a signal you answer. Built for bright sun, cheap Android phones, and mixed literacy: <b>high contrast, icon-first, one clear action per screen.</b></p>
+  </header>
+
+  <!-- =================== DESIGN SYSTEM =================== -->
+  <section class="system">
+    <div class="panel">
+      <h3>Palette</h3>
+      <div class="swatch"><i style="background:#0E6E4E"></i><b>Borla Green</b><span>#0E6E4E</span></div>
+      <div class="swatch"><i style="background:#F5A208"></i><b>Hi-Vis Marigold</b><span>#F5A208</span></div>
+      <div class="swatch"><i style="background:#E14434"></i><b>Alert Coral</b><span>#E14434</span></div>
+      <div class="swatch"><i style="background:#16241C"></i><b>Ink</b><span>#16241C</span></div>
+      <div class="swatch"><i style="background:#ECEBE3"></i><b>Paper</b><span>#ECEBE3</span></div>
+    </div>
+    <div class="panel spec">
+      <h3>Type</h3>
+      <p class="big">Borla 24</p>
+      <div class="row"><b>Bricolage Grotesque</b> <small>— display · 700/800</small></div>
+      <div class="row" style="font-size:15px">Hanken Grotesk — body &amp; UI · 400–800</div>
+      <div class="row"><small>Big, legible, glanceable at arm's length.</small></div>
+    </div>
+    <div class="panel">
+      <h3>Principles</h3>
+      <div class="chips">
+        <span>Icon-first</span><span>One primary action</span><span>56px targets</span>
+        <span>Sunlight contrast</span><span>Local language</span><span>Offline-tolerant</span><span>Plain, active copy</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Signature</h3>
+      <div style="position:relative;height:120px;border-radius:14px;background:var(--green-tint);overflow:hidden">
+        <div class="beacon" style="top:50%">
+          <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+          <div class="core"></div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin:12px 0 0">The <b style="color:var(--ink)">broadcast ring</b> — the bell, made digital. Your signal radiating to collectors nearby.</p>
+    </div>
+  </section>
+
+  <!-- =================== HOUSEHOLD =================== -->
+  <div class="band">
+    <span class="n">A</span>
+    <h2>Household app</h2>
+    <p>Occasional, calm, one-tap. Green leads. The person just wants the borla gone.</p>
+  </div>
+
+  <div class="gallery">
+
+    <!-- 1. Splash / language -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r">
+        <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg>
+        <svg width="22" height="11" viewBox="0 0 24 12"><rect x="1" y="1" width="20" height="10" rx="3" fill="none" stroke="#16241C" stroke-width="1.3"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.5" fill="#0E6E4E"/><rect x="22" y="4" width="2" height="4" rx="1" fill="#16241C"/></svg>
+      </div></div>
+      <div class="body" style="background:linear-gradient(160deg,#0E6E4E,#0A5239); color:#fff; display:flex; flex-direction:column; justify-content:space-between; padding:40px 24px 26px">
+        <div style="margin-top:36px">
+          <svg width="66" height="66" viewBox="0 0 48 48"><path d="M24 45c8-9 13-15.5 13-22A13 13 0 1 0 11 23c0 6.5 5 13 13 22Z" fill="#fff"/><circle cx="24" cy="21" r="9" fill="none" stroke="#F5A208" stroke-width="2.4"/><circle cx="24" cy="21" r="4.4" fill="#F5A208"/></svg>
+          <h2 class="h-disp" style="font-size:44px; margin:20px 0 6px">Borla</h2>
+          <p style="font-size:16px; opacity:.9; margin:0; max-width:210px">Get your waste collected by a trusted rider near you.</p>
+        </div>
+        <div>
+          <div style="font-size:13px; font-weight:700; opacity:.8; margin-bottom:9px">Choose language</div>
+          <div class="grid2" style="gap:8px; margin-bottom:16px">
+            <div class="btn" style="background:#fff;color:var(--green);padding:12px;font-size:14px">English</div>
+            <div class="btn" style="background:rgba(255,255,255,.15);color:#fff;padding:12px;font-size:14px">Twi</div>
+            <div class="btn" style="background:rgba(255,255,255,.15);color:#fff;padding:12px;font-size:14px">Ga</div>
+            <div class="btn" style="background:rgba(255,255,255,.15);color:#fff;padding:12px;font-size:14px">Dagbani</div>
+          </div>
+          <div class="btn btn-gold lg">Get started</div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Welcome</b><span>Brand + language before anything else.</span></div>
+    </div>
+
+    <!-- 2. OTP -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body pad" style="display:flex;flex-direction:column">
+        <div class="icon-btn" style="margin-bottom:22px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#16241C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h2 class="h-disp" style="font-size:27px; margin:0 0 8px">Enter the code</h2>
+        <p style="color:var(--muted); margin:0 0 26px; font-size:15px">We sent a 6-digit code to<br><b style="color:var(--ink)">024 555 0142</b></p>
+        <div style="display:flex; gap:9px; margin-bottom:26px">
+          <div style="flex:1;height:58px;border:2px solid var(--green);border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-weight:800;font-size:26px">4</div>
+          <div style="flex:1;height:58px;border:2px solid var(--green);border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-weight:800;font-size:26px">1</div>
+          <div style="flex:1;height:58px;border:2px solid var(--line);border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-weight:800;font-size:26px;color:var(--muted)"></div>
+          <div style="flex:1;height:58px;border:2px solid var(--line);border-radius:14px"></div>
+          <div style="flex:1;height:58px;border:2px solid var(--line);border-radius:14px"></div>
+          <div style="flex:1;height:58px;border:2px solid var(--line);border-radius:14px"></div>
+        </div>
+        <div class="btn btn-green lg">Verify</div>
+        <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:18px">Resend code in <b style="color:var(--ink)">0:24</b></p>
+      </div>
+    </div></div>
+      <div class="cap"><b>Verify phone</b><span>Phone-first sign-in, SMS OTP. No email.</span></div>
+    </div>
+
+    <!-- 3. Home / map -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body">
+        <div class="map">
+          <svg class="roads" width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 300 560">
+            <line class="main" x1="-10" y1="150" x2="310" y2="200"/>
+            <line class="main" x1="120" y1="-10" x2="180" y2="570"/>
+            <line x1="-10" y1="330" x2="310" y2="300"/>
+            <line x1="40" y1="-10" x2="70" y2="570"/>
+            <line x1="230" y1="-10" x2="250" y2="570"/>
+            <line x1="-10" y1="450" x2="310" y2="470"/>
+          </svg>
+          <div class="mdot gold" style="left:28%; top:30%"></div>
+          <div class="mdot gold" style="left:70%; top:24%"></div>
+          <div class="mdot green" style="left:80%; top:60%"></div>
+          <div class="mdot gold" style="left:38%; top:66%"></div>
+          <div class="me" style="left:50%; top:47%"></div>
+        </div>
+        <!-- top search -->
+        <div style="position:absolute; top:8px; left:14px; right:14px; z-index:20; display:flex; gap:10px">
+          <div class="avatar">A</div>
+          <div class="field" style="flex:1;background:#fff;border:0;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.6 7-12a7 7 0 1 0-14 0c0 5.4 7 12 7 12Z" stroke="#0E6E4E" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.4" fill="#0E6E4E"/></svg>
+            <span style="font-weight:700; font-size:14px">Madina, Estate</span>
+          </div>
+        </div>
+        <!-- online count chip -->
+        <div style="position:absolute; top:66px; left:50%; transform:translateX(-50%); z-index:20; background:var(--ink); color:#fff; font-weight:700; font-size:12.5px; padding:7px 13px; border-radius:99px; display:flex; align-items:center; gap:7px; box-shadow:0 4px 12px -4px rgba(0,0,0,.4)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--marigold);display:inline-block"></span>
+          4 collectors nearby
+        </div>
+        <!-- bottom action sheet -->
+        <div class="sheet pad" style="padding:16px 18px 20px">
+          <div class="grab"></div>
+          <div class="btn btn-green lg" style="margin:8px 0 10px;font-size:18px">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 3h6l1 3H8l1-3Z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M6 6h12l-1 13.5a1.5 1.5 0 0 1-1.5 1.4H8.5A1.5 1.5 0 0 1 7 19.5L6 6Z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+            I have waste
+          </div>
+          <div class="btn btn-ghost">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#16241C" stroke-width="2.2"/><path d="M20 20l-3.2-3.2" stroke="#16241C" stroke-width="2.2" stroke-linecap="round"/></svg>
+            Find a collector
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <a class="on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Home</a>
+        <a><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Activity</a>
+        <a><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M5 20a7 7 0 0 1 14 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Me</a>
+      </div>
+    </div></div>
+      <div class="cap"><b>Home</b><span>Map of who's nearby; one hero action: <em>I have waste</em>.</span></div>
+    </div>
+
+    <!-- 4. Broadcast create -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body pad" style="overflow:auto">
+        <div class="appbar" style="padding:2px 0 14px">
+          <div class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#16241C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="t">What do you have?</div>
+        </div>
+        <div class="grid2" style="margin-bottom:16px">
+          <div class="type-tile sel"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 7h12l-1 12.5a1.4 1.4 0 0 1-1.4 1.3H8.4A1.4 1.4 0 0 1 7 19.5L6 7Z" stroke="#0E6E4E" stroke-width="2" stroke-linejoin="round"/><path d="M9 4h6l1 3H8l1-3Z" stroke="#0E6E4E" stroke-width="2" stroke-linejoin="round"/></svg></div><b>General</b></div>
+          <div class="type-tile"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M7 8l2-3 2 3M17 11l2 3-3 1M9 19l-3-1 1-3" stroke="#16241C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 5h4l2 3M19 14l-1 4-4 0M6 18l-2-3 2-3" stroke="#16241C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".4"/></svg></div><b>Recyclable</b></div>
+          <div class="type-tile"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="11" rx="1.5" stroke="#16241C" stroke-width="2"/><path d="M4 12h16M9 8V5h6v3" stroke="#16241C" stroke-width="2"/></svg></div><b>Bulky</b></div>
+          <div class="type-tile"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 20c4-1 6-4 6-8 0-1.5-1-3-1-3s-2 1-3 3c0-3-2-6-2-6s-2 3-2 6c-1-2-3-3-3-3s-1 1.5-1 3c0 4 2 7 6 8Z" stroke="#16241C" stroke-width="2" stroke-linejoin="round"/></svg></div><b>Organic</b></div>
+        </div>
+        <div style="font-weight:700; font-size:13px; color:var(--muted); margin:2px 0 8px">Pickup location</div>
+        <div class="field" style="margin-bottom:14px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.6 7-12a7 7 0 1 0-14 0c0 5.4 7 12 7 12Z" stroke="#0E6E4E" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.4" fill="#0E6E4E"/></svg>
+          <div><b style="font-size:14px">My home</b><div style="font-size:12px;color:var(--muted)">House 24, Estate Road</div></div>
+        </div>
+        <div class="field" style="margin-bottom:14px; justify-content:center; border-style:dashed; color:var(--green); font-weight:700">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="18" height="13" rx="2.5" stroke="#0E6E4E" stroke-width="2"/><circle cx="12" cy="13.5" r="3.4" stroke="#0E6E4E" stroke-width="2"/><path d="M9 7l1.4-2h3.2L15 7" stroke="#0E6E4E" stroke-width="2" stroke-linejoin="round"/></svg>
+          Add a photo <span style="color:var(--muted);font-weight:600">(optional)</span>
+        </div>
+        <div class="btn btn-green lg">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="2.6" fill="#fff"/></svg>
+          Send to collectors nearby
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Post waste</b><span>Icon grid, not a text menu. Photo can auto-tag the type (AI).</span></div>
+    </div>
+
+    <!-- 5. SIGNATURE — broadcast active -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body">
+        <div class="map"></div>
+        <div class="beacon"><div class="ring"></div><div class="ring"></div><div class="ring"></div><div class="core"></div></div>
+        <div style="position:absolute; top:20px; left:0; right:0; text-align:center; z-index:20">
+          <div class="tag-chip t-gold" style="font-size:13px; padding:8px 14px">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--marigold-d);display:inline-block"></span>
+            Your signal is out
+          </div>
+        </div>
+        <div class="sheet pad" style="padding:18px 18px 22px">
+          <div class="grab"></div>
+          <h2 class="h-disp" style="font-size:22px; margin:6px 0 4px">Ringing the neighbourhood…</h2>
+          <p style="color:var(--muted); margin:0 0 14px; font-size:14px"><b style="color:var(--green)">4 collectors</b> nearby have been alerted. Whoever reaches you first takes it.</p>
+          <div class="card" style="display:flex; align-items:center; gap:12px; margin-bottom:14px; border-color:var(--marigold); background:var(--marigold-tint)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#D98A00" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#D98A00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:13.5px; line-height:1.3"><b>Expires in <span class="countdown">42:10</span></b><div style="color:var(--marigold-d)">Someone here already? Clear it.</div></div>
+          </div>
+          <div class="btn btn-coral lg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5 9-11" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Clear — someone's coming
+          </div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Signal sent  ·  signature screen</b><span>The bell as a ring. Clearing is the hero action — it protects collectors from wasted trips.</span></div>
+    </div>
+
+    <!-- 6. Find a collector -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body" style="display:flex;flex-direction:column">
+        <div class="appbar"><div class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#16241C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="t">Collectors near you</div></div>
+        <div style="padding:0 16px; overflow:auto; flex:1">
+          <!-- collector 1 -->
+          <div class="card" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="avatar g">KA</div>
+              <div style="flex:1"><b style="font-family:var(--disp);font-size:16px">Kofi A.</b>
+                <div style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px">
+                  <span class="stars"><svg width="13" height="13" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span> 4.8 · Tricycle · <b style="color:var(--green)">400m</b>
+                </div>
+              </div>
+              <span class="tag-chip t-green" style="font-size:11px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Online</span>
+            </div>
+            <div class="btn btn-green" style="margin-top:12px;padding:12px">Request Kofi</div>
+          </div>
+          <!-- collector 2 -->
+          <div class="card" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="avatar g">MB</div>
+              <div style="flex:1"><b style="font-family:var(--disp);font-size:16px">Mensah B.</b>
+                <div style="font-size:12.5px;color:var(--muted)"><span class="stars"><svg width="13" height="13" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span> 4.5 · Tricycle · <b style="color:var(--green)">750m</b></div>
+              </div>
+              <span class="tag-chip t-green" style="font-size:11px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Online</span>
+            </div>
+            <div class="btn btn-ghost" style="margin-top:12px;padding:12px">Request Mensah</div>
+          </div>
+          <!-- collector 3 -->
+          <div class="card" style="opacity:.6">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="avatar" style="background:#EEE;color:#999">YD</div>
+              <div style="flex:1"><b style="font-family:var(--disp);font-size:16px">Yaw D.</b>
+                <div style="font-size:12.5px;color:var(--muted)">4.9 · Pickup · <b>1.4km</b></div>
+              </div>
+              <span class="tag-chip" style="font-size:11px;background:#EEE;color:#999">Offline</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Find a collector</b><span>Targeted request. Ratings + distance drive choice; offline riders greyed out.</span></div>
+    </div>
+
+    <!-- 7. Request accepted -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:26px;background:var(--green-tint)">
+        <div style="width:92px;height:92px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:22px;box-shadow:0 12px 30px -10px rgba(14,110,78,.6)">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5 9-11" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h2 class="h-disp" style="font-size:26px;margin:0 0 6px">Kofi accepted!</h2>
+        <p style="color:var(--ink-soft);margin:0 0 24px;font-size:15px">He's on the way. Call to agree the price and guide him in.</p>
+        <div class="card" style="width:100%;background:#fff;display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div class="avatar g" style="width:48px;height:48px">KA</div>
+          <div style="flex:1;text-align:left"><b style="font-family:var(--disp);font-size:17px">Kofi Asante</b><div style="font-size:12.5px;color:var(--muted)"><span class="stars"><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span> 4.8 · 400m away</div></div>
+        </div>
+        <div class="btn btn-gold lg" style="width:100%">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 4h3l1.5 4-2 1.5a11 11 0 0 0 6 6l1.5-2 4 1.5V19a2 2 0 0 1-2 2A16 16 0 0 1 5 6a2 2 0 0 1 1-2Z" stroke="#2A1C00" stroke-width="2" stroke-linejoin="round"/></svg>
+          Call Kofi
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:12px;display:flex;align-items:center;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="#6B7A70" stroke-width="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="#6B7A70" stroke-width="2"/></svg>
+          Numbers are masked for privacy
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Accepted</b><span>Contact unlocks only now, via masked call. App steps back.</span></div>
+    </div>
+
+    <!-- 8. Rate & review -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body pad" style="display:flex;flex-direction:column">
+        <div class="appbar" style="padding:2px 0 18px"><div style="width:40px"></div><div class="t" style="margin:0 auto">Rate the pickup</div><div style="color:var(--muted);font-size:14px;font-weight:700">Skip</div></div>
+        <div style="text-align:center;margin-bottom:8px"><div class="avatar g" style="width:64px;height:64px;margin:0 auto;font-size:22px">KA</div><b style="font-family:var(--disp);font-size:19px;display:block;margin-top:10px">Kofi Asante</b><span style="color:var(--muted);font-size:13px">Today, 9:20am</span></div>
+        <div style="display:flex;justify-content:center;gap:8px;margin:22px 0 24px">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" stroke="#D0CFC4" stroke-width="1.6"/></svg>
+        </div>
+        <div class="field" style="height:96px;align-items:flex-start;margin-bottom:16px"><span class="ph">Add a comment (optional)…</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:auto">
+          <span class="tag-chip t-green">On time</span><span class="tag-chip t-green">Friendly</span><span class="tag-chip" style="background:#F1F0E8;color:var(--ink-soft)">Fair price</span>
+        </div>
+        <div class="btn btn-green lg">Submit rating</div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Rate &amp; review</b><span>Two-sided. Comments are AI-moderated before they publish.</span></div>
+    </div>
+
+  </div>
+
+  <!-- =================== COLLECTOR =================== -->
+  <div class="band">
+    <span class="n">B</span>
+    <h2>Collector app</h2>
+    <p>Active, working, glanceable while riding. Marigold signals "you're on the clock."</p>
+  </div>
+
+  <div class="gallery">
+
+    <!-- 9. Offline / go online -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar" style="color:#fff">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#fff"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#fff"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#fff"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#fff"/></svg></div></div>
+      <div class="body" style="background:linear-gradient(165deg,#16241C,#0A130E);color:#fff;display:flex;flex-direction:column;padding:24px">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:auto">
+          <div class="avatar g" style="width:44px;height:44px">KA</div>
+          <div><b style="font-family:var(--disp);font-size:16px">Kofi Asante</b><div style="font-size:12px;color:#89A093"><span class="stars"><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span> 4.8 · Verified rider</div></div>
+        </div>
+        <div style="text-align:center;margin:auto 0">
+          <div style="color:#89A093;font-weight:700;margin-bottom:18px">You're offline</div>
+          <div style="width:150px;height:150px;border-radius:50%;background:var(--marigold);margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#2A1C00;box-shadow:0 0 0 12px rgba(245,162,8,.16)">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M12 3v9" stroke="#2A1C00" stroke-width="2.6" stroke-linecap="round"/><path d="M6.5 6.5a8 8 0 1 0 11 0" stroke="#2A1C00" stroke-width="2.6" stroke-linecap="round"/></svg>
+            <b style="font-family:var(--disp);font-size:18px;margin-top:6px">Go online</b>
+          </div>
+          <p style="color:#89A093;font-size:13px;max-width:210px;margin:20px auto 0">Going online shares your live location so nearby waste alerts reach you. It uses more battery.</p>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:auto">
+          <div class="card" style="flex:1;background:#16211C;border-color:#223029;text-align:center;color:#fff"><div style="font-size:11px;color:#89A093;font-weight:700">TODAY</div><div class="earn" style="font-size:22px">GH₵ 0</div></div>
+          <div class="card" style="flex:1;background:#16211C;border-color:#223029;text-align:center;color:#fff"><div style="font-size:11px;color:#89A093;font-weight:700">PICKUPS</div><div class="earn" style="font-size:22px">0</div></div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Offline</b><span>Big honest toggle. "Online" is an explicit state — battery + presence truth.</span></div>
+    </div>
+
+    <!-- 10. Online / live map -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body">
+        <div class="map">
+          <svg class="roads" width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 300 560"><line class="main" x1="-10" y1="180" x2="310" y2="150"/><line class="main" x1="150" y1="-10" x2="120" y2="570"/><line x1="-10" y1="360" x2="310" y2="390"/><line x1="60" y1="-10" x2="40" y2="570"/><line x1="240" y1="-10" x2="260" y2="570"/></svg>
+          <!-- waste pins -->
+          <div class="mpin" style="left:34%;top:32%"><svg width="34" height="40" viewBox="0 0 34 40"><path d="M17 39c8-9 14-15 14-23A14 14 0 1 0 3 16c0 8 6 14 14 23Z" fill="#E14434"/><path d="M12 13h10l-1 9.5a1.2 1.2 0 0 1-1.2 1.1h-5.6A1.2 1.2 0 0 1 13 22.5L12 13Z" fill="#fff"/><path d="M14 11h6l.7 2H13.3l.7-2Z" fill="#fff"/></svg></div>
+          <div class="mpin" style="left:70%;top:56%"><svg width="30" height="36" viewBox="0 0 34 40"><path d="M17 39c8-9 14-15 14-23A14 14 0 1 0 3 16c0 8 6 14 14 23Z" fill="#0E6E4E"/><path d="M11 14l2-3 2 3M21 16l2 3-3 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="me" style="left:48%;top:66%"></div>
+        </div>
+        <!-- online banner -->
+        <div style="position:absolute;top:8px;left:14px;right:14px;z-index:20;display:flex;align-items:center;gap:10px;background:var(--marigold);border-radius:16px;padding:11px 14px;box-shadow:0 6px 16px -6px rgba(0,0,0,.35)">
+          <span style="width:10px;height:10px;border-radius:50%;background:#2A1C00;display:inline-block"></span>
+          <b style="font-size:14px;color:#2A1C00">You're online</b>
+          <div style="margin-left:auto;font-size:12px;font-weight:800;color:#2A1C00">GH₵ 45 today</div>
+        </div>
+        <!-- incoming waste card -->
+        <div class="sheet pad" style="padding:16px 16px 18px">
+          <div class="grab"></div>
+          <div style="display:flex;align-items:center;gap:7px;margin:4px 0 12px"><b style="font-family:var(--disp);font-size:16px">2 waste pins near you</b><span class="tag-chip t-coral" style="margin-left:auto">New</span></div>
+          <div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;border-color:var(--coral)">
+            <div style="width:42px;height:42px;border-radius:12px;background:var(--coral-tint);display:flex;align-items:center;justify-content:center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 7h12l-1 12.5a1.4 1.4 0 0 1-1.4 1.3H8.4A1.4 1.4 0 0 1 7 19.5L6 7Z" stroke="#E14434" stroke-width="2"/><path d="M9 4h6l1 3H8l1-3Z" stroke="#E14434" stroke-width="2"/></svg>
+            </div>
+            <div style="flex:1"><b style="font-size:14px">General waste</b><div style="font-size:12px;color:var(--muted)">Estate Road · <b style="color:var(--green)">280m</b> · 2 min ago</div></div>
+            <div class="btn btn-gold" style="width:auto;padding:10px 16px">Go</div>
+          </div>
+          <div class="card" style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:12px;background:var(--green-tint);display:flex;align-items:center;justify-content:center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M7 8l2-3 2 3M17 11l2 3-3 1M9 19l-3-1 1-3" stroke="#0E6E4E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div style="flex:1"><b style="font-size:14px">Recyclable · <span style="color:var(--green)">will pay</span></b><div style="font-size:12px;color:var(--muted)">2nd Lane · <b style="color:var(--green)">600m</b></div></div>
+            <div class="btn btn-ghost" style="width:auto;padding:10px 16px">Go</div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Online — live map</b><span>Waste pins ranked by distance. "Will pay" recyclables stand out. No claim: first there wins.</span></div>
+    </div>
+
+    <!-- 11. Incoming request -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar" style="color:#fff">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#fff"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#fff"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#fff"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#fff"/></svg></div></div>
+      <div class="body" style="background:#16241C;position:relative">
+        <div class="map" style="opacity:.35"></div>
+        <div style="position:absolute;inset:0;background:linear-gradient(#16241C00,#16241C)"></div>
+        <div style="position:absolute;top:26px;left:0;right:0;text-align:center;color:#fff;z-index:5">
+          <div style="font-size:13px;color:var(--marigold);font-weight:800;letter-spacing:.05em">DIRECT REQUEST</div>
+          <div style="font-size:12px;color:#89A093;margin-top:4px">Respond in <b style="color:#fff" class="countdown">0:78</b></div>
+        </div>
+        <div class="sheet pad" style="padding:20px 18px 22px">
+          <div class="grab"></div>
+          <div style="display:flex;align-items:center;gap:13px;margin:8px 0 16px">
+            <div class="avatar" style="width:54px;height:54px;font-size:19px">AO</div>
+            <div style="flex:1"><b style="font-family:var(--disp);font-size:19px">Ama O.</b>
+              <div style="font-size:13px;color:var(--muted)"><span class="stars"><svg width="13" height="13" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span> 4.9 · good household</div>
+            </div>
+            <div style="text-align:right"><b style="font-family:var(--disp);font-size:20px;color:var(--green)">320m</b><div style="font-size:11px;color:var(--muted)">≈ 3 min</div></div>
+          </div>
+          <div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;background:#F7F6F0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 7h12l-1 12.5a1.4 1.4 0 0 1-1.4 1.3H8.4A1.4 1.4 0 0 1 7 19.5L6 7Z" stroke="#16241C" stroke-width="2"/><path d="M9 4h6l1 3H8l1-3Z" stroke="#16241C" stroke-width="2"/></svg>
+            <div style="font-size:13.5px"><b>General waste</b> · House 24, Estate Road</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div class="btn btn-ghost" style="flex:1">Decline</div>
+            <div class="btn btn-gold" style="flex:2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5 9-11" stroke="#2A1C00" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Accept
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Incoming request</b><span>Full-screen, hard to miss. Distance + household rating up front; countdown prevents dead-ends.</span></div>
+    </div>
+
+    <!-- 12. Profile + reply to review -->
+    <div class="cell"><div class="phone"><div class="notch"></div><div class="screen">
+      <div class="sbar">9:41<div class="r"><svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#16241C"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#16241C"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#16241C"/><rect x="13.5" y="0" width="3" height="11" rx="1" fill="#16241C"/></svg></div></div>
+      <div class="body" style="overflow:auto">
+        <div style="background:var(--marigold-tint);padding:22px 18px 18px;text-align:center">
+          <div class="avatar g" style="width:70px;height:70px;font-size:24px;margin:0 auto">KA</div>
+          <b style="font-family:var(--disp);font-size:20px;display:block;margin-top:10px">Kofi Asante</b>
+          <div style="display:flex;justify-content:center;gap:18px;margin-top:14px">
+            <div><div class="earn" style="font-size:20px;color:var(--marigold-d)">4.8</div><div style="font-size:11px;color:var(--ink-soft);font-weight:700">RATING</div></div>
+            <div><div class="earn" style="font-size:20px">213</div><div style="font-size:11px;color:var(--ink-soft);font-weight:700">PICKUPS</div></div>
+            <div><div class="earn" style="font-size:20px">96%</div><div style="font-size:11px;color:var(--ink-soft);font-weight:700">SHOWED UP</div></div>
+          </div>
+        </div>
+        <div class="pad">
+          <b style="font-family:var(--disp);font-size:15px">Recent reviews</b>
+          <div class="card" style="margin-top:12px">
+            <div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="width:32px;height:32px;font-size:13px">AO</div><b style="font-size:13.5px">Ama O.</b><span class="stars" style="margin-left:auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span></div>
+            <p style="font-size:13px;color:var(--ink-soft);margin:9px 0 0">Quick and polite, took everything.</p>
+            <div style="margin-top:10px;padding:10px 12px;background:#F4F3EC;border-radius:12px;font-size:12.5px"><b style="color:var(--green)">You replied:</b> Thank you Ama! 🙏</div>
+          </div>
+          <div class="card" style="margin-top:10px">
+            <div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="width:32px;height:32px;font-size:13px">JD</div><b style="font-size:13.5px">John D.</b><span class="stars" style="margin-left:auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="#F5A208"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" stroke="#D0CFC4" stroke-width="1.6"/></svg></span></div>
+            <p style="font-size:13px;color:var(--ink-soft);margin:9px 0 12px">A bit late but friendly.</p>
+            <div class="btn btn-ghost" style="padding:10px;font-size:14px">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M10 9l-5 5 5 5M5 14h9a5 5 0 0 0 5-5V5" stroke="#16241C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Reply
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+      <div class="cap"><b>Profile &amp; reviews</b><span>"Showed up %" is the trust metric. Collectors get one public reply per review.</span></div>
+    </div>
+
+  </div>
+
+  <!-- =================== ADMIN =================== -->
+  <div class="band">
+    <span class="n">C</span>
+    <h2>Admin console</h2>
+    <p>Desk-web, for ops. Density is the north star; moderation and verification live here.</p>
+  </div>
+
+  <div class="gallery">
+    <div class="admin">
+      <div class="top">
+        <svg class="mk" viewBox="0 0 48 48"><path d="M24 45c8-9 13-15.5 13-22A13 13 0 1 0 11 23c0 6.5 5 13 13 22Z" fill="#0E6E4E"/><circle cx="24" cy="21" r="9" fill="none" stroke="#F5A208" stroke-width="2.4"/><circle cx="24" cy="21" r="4.4" fill="#F5A208"/></svg>
+        <b>Borla Ops</b>
+        <span class="pill">Madina · Live</span>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="k">Collectors online now</div><div class="v">31</div><div class="d up">▲ 8 vs last hr</div></div>
+        <div class="kpi"><div class="k">Active waste pins</div><div class="v">12</div><div class="d up">▲ healthy</div></div>
+        <div class="kpi"><div class="k">Pins cleared vs expired</div><div class="v">84%</div><div class="d up">▲ 5% — fewer wasted trips</div></div>
+        <div class="kpi"><div class="k">Median response</div><div class="v">2:10</div><div class="d down">▼ 12s slower</div></div>
+      </div>
+      <div class="adcols">
+        <div class="adcard">
+          <h4>Online collectors by neighbourhood — the density metric</h4>
+          <div class="bars">
+            <div class="b" style="height:82%"><span>Madina</span></div>
+            <div class="b" style="height:60%"><span>Adenta</span></div>
+            <div class="b" style="height:44%"><span>Legon</span></div>
+            <div class="b" style="height:30%"><span>Circle</span></div>
+            <div class="b" style="height:70%"><span>Kaneshie</span></div>
+            <div class="b" style="height:22%;background:linear-gradient(#E14434,#a5271c)"><span>37</span></div>
+          </div>
+          <p style="color:#89A093;font-size:12px;margin:26px 0 0">37 is under-supplied — surface a nudge to collectors nearby.</p>
+        </div>
+        <div class="adcard">
+          <h4>Moderation queue · AI-flagged</h4>
+          <div class="modrow"><span class="flagdot"></span><div>Review contains a phone number</div><span class="why">PII · 0.94</span></div>
+          <div class="modrow"><span class="flagdot"></span><div>Abusive language in reply</div><span class="why">Abuse · 0.88</span></div>
+          <div class="modrow"><span class="flagdot" style="background:var(--marigold)"></span><div>Reported by user — spam</div><span class="why">Report</span></div>
+          <div class="modrow"><span class="flagdot" style="background:var(--marigold)"></span><div>Collector pending verification</div><span class="why">KYC</span></div>
+          <div style="margin-top:14px;display:flex;gap:8px">
+            <div style="flex:1;text-align:center;background:var(--green);color:#fff;font-weight:800;font-size:13px;padding:10px;border-radius:11px">Review queue</div>
+            <div style="text-align:center;background:#223029;color:#DCE7E0;font-weight:800;font-size:13px;padding:10px 14px;border-radius:11px">Audit log</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    Borla — UI design v1 · Bricolage Grotesque + Hanken Grotesk · Borla Green #0E6E4E / Hi-Vis Marigold #F5A208.
+    Screens are static high-fidelity mockups; the broadcast ring is the one animated moment, and it respects reduced-motion.
+  </footer>
+
+</div>
+</body>
+</html>

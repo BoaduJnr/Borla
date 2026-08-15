@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
+import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
 import { InstallButton } from "../pwa/InstallButton";
@@ -11,6 +12,8 @@ export default function Profile() {
   const { installed } = useInstallPrompt();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  useAutoDismiss(error, setError);
+  useAutoDismiss(saved ? "saved" : null, () => setSaved(false));
 
   if (!user) return null;
 
@@ -76,8 +79,22 @@ export default function Profile() {
         <InstallButton />
       </div>
 
-      {error && <div className="banner err">{error}</div>}
-      {saved && <div className="banner ok">Saved.</div>}
+      {error && (
+        <div className="banner err row" style={{ justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 10px" }} onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {saved && (
+        <div className="banner ok row" style={{ justifyContent: "space-between" }}>
+          <span>Saved.</span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 10px" }} onClick={() => setSaved(false)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {user.role === "household" && (
         <form

@@ -1,0 +1,54 @@
+Student Name: George Boadu Junior
+Student ID: 22427354
+Project Title: Borla — a real-time matchmaker connecting Ghanaian households with nearby
+                roaming waste collectors
+
+Live Application: https://borla.onrender.com
+Admin URL: https://borla.onrender.com/login  (there is no separate admin URL/toggle — enter the
+                admin phone number below at the normal sign-in screen and the app detects it's
+                an admin number automatically, then prompts for the password; you land on
+                https://borla.onrender.com/admin)
+
+All three accounts below are seeded automatically on every server boot (server/src/seed.ts,
+idempotent), so they always exist even after a redeploy.
+
+--- Household / Collector test accounts (phone + fixed one-time code, no password) ---
+Test Username (Household): +233200000001   (display name "Ama (Osu)")
+Test Username (Collector): +233200000002   (display name "Kwame the Collector", pre-verified
+                                             and pre-set online at Osu, Accra)
+Test Password / OTP: 482913
+                These two numbers are arbitrary (not real handsets), so they always use this
+                same fixed, hardcoded code instead of a real SMS send — the app never even
+                attempts to text them. At the sign-in screen (tap "Get started" on the welcome
+                splash first), enter the phone number above, tap "Continue", then enter 482913
+                as the code (it's also shown on-screen automatically). This code is exempt from
+                the OTP rate limit too, so it can be requested as many times as needed. Any
+                other/real phone number gets a genuine random OTP delivered by SMS where
+                configured (see Technical_Debt_Plan.md, item TD-02).
+
+--- Admin account ---
+Admin Username: +233200000000
+Admin Password: Borla-Admin-2026!
+(At the same sign-in screen, enter this phone number and tap "Continue" — the app recognises
+it as an admin number and shows a password field instead of sending an OTP. Enter the password
+above and tap "Sign in".)
+
+Source Code Repository: https://github.com/BoaduJnr/Borla
+
+--- Notes for the examiner ---
+- Health check: https://borla.onrender.com/api/health
+- The repository is public; the full documentation set (SRS, Technical Debt Plan, Testing
+  Report, User Manual, this file, and the consolidated Project Documentation) is under docs/
+  and at the repository root, in both Markdown source and rendered PDF form.
+- Render's free-tier instance can spin down after periods of inactivity — the first request
+  after a period of no traffic may take up to ~30-60 seconds to respond while it wakes up.
+- If SMS delivery to the GiantSMS gateway is not working at the time of grading, use the
+  on-screen fallback code exactly as described above — no account is ever inaccessible because
+  of it.
+- All three accounts above were re-verified live against the production URL on 13 August 2026
+  (login, presence, broadcast fan-out, direct-request accept/reject, AI review moderation) —
+  see Technical_Debt_Plan.md TD-05/TD-01 for what that confirmed.
+- Once a direct request is accepted, both the household and the collector see a route to each
+  other on their map (distance + ETA) — try it with the two seeded accounts above: log in as
+  the household, request the collector, then log in as the collector (a different browser or
+  incognito window keeps both sessions active at once) to accept it.

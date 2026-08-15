@@ -67,6 +67,7 @@ export default function HouseholdHome() {
   const [routeDistances, setRouteDistances] = useState<Record<string, number>>({});
   const lastBroadcastId = useRef<string | null>(null);
   useAutoDismiss(info, setInfo);
+  useAutoDismiss(error, setError);
 
   async function loadNearbyCollectors() {
     try {
@@ -191,6 +192,7 @@ export default function HouseholdHome() {
   }
 
   async function cancelRequest(requestId: string) {
+    setError(null);
     try {
       await api(`/requests/${requestId}/cancel`, { method: "POST" });
       loadRequests();
@@ -254,7 +256,14 @@ export default function HouseholdHome() {
         </button>
       </div>
 
-      {error && <div className="banner err">{error}</div>}
+      {error && (
+        <div className="banner err row" style={{ justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ padding: "4px 10px" }} onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {info && (
         <div className="banner ok row" style={{ justifyContent: "space-between" }}>
           <span>{info}</span>
