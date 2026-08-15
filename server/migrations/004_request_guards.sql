@@ -7,6 +7,26 @@
 --    rapid double-tap could still slip past. Only covers requests that are still "live" for
 --    this pair — a household can send a fresh request to a collector once an earlier one with
 --    them is fully resolved (rejected/timed_out/cancelled) or the collector has arrived.
+--
+--    CREATE UNIQUE INDEX itself fails outright if any existing row already violates it — and it
+--    did, in production: real (and this session's own live-verification) usage had already left
+--    more than one simultaneously-active request between the same household/collector pair.
+--    That crashed every boot (a failed migration is retried, and fails again, on every
+--    subsequent start — server/src/db/migrate.ts wraps each file in its own transaction and
+--    re-attempts anything not yet recorded as applied) until this cleanup step was added ahead
+--    of it: keep the OLDEST live request per pair (consistent with the guard's own future
+--    behaviour — an existing request blocks a newer duplicate, not the other way around) and
+--    cancel any others as a one-time backfill.
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY household_id, collector_id ORDER BY requested_at ASC
+  ) AS rn
+  FROM requests
+  WHERE status IN ('requested', 'seen', 'accepted') AND arrived_at IS NULL
+)
+UPDATE requests SET status = 'cancelled', cancelled_by = 'household', responded_at = COALESCE(responded_at, now())
+WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
+
 CREATE UNIQUE INDEX IF NOT EXISTS requests_active_pair_ux
   ON requests (household_id, collector_id)
   WHERE status IN ('requested', 'seen', 'accepted') AND arrived_at IS NULL;
