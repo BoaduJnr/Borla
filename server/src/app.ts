@@ -17,6 +17,7 @@ import { broadcastsRouter } from "./modules/broadcasts/routes.js";
 import { requestsRouter } from "./modules/requests/routes.js";
 import { reviewsRouter } from "./modules/reviews/routes.js";
 import { adminRouter } from "./modules/admin/routes.js";
+import { routeShareRouter } from "./modules/routeShare/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +28,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 export function createApp() {
   const app = express();
+  // Render terminates TLS and proxies to this app over exactly one hop — without this, req.ip
+  // is the proxy's own address (not the real visitor) and req.protocol always reports "http",
+  // both of which matter now that an anonymous, unauthenticated endpoint (POST /route-share)
+  // rate-limits by IP and builds an absolute link from req.protocol/req.get("host").
+  app.set("trust proxy", 1);
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: config.isProd ? true : config.clientOrigin, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
@@ -102,6 +108,7 @@ export function createApp() {
   app.use("/api/requests", requestsRouter);
   app.use("/api", reviewsRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api", routeShareRouter);
 
   const clientDist = path.resolve(__dirname, "../../client/dist");
   app.use(express.static(clientDist));

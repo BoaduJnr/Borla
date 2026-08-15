@@ -54,3 +54,35 @@ export async function checkNotifRateLimit(collectorId: string, limit: number, wi
     return checkInMemoryRateLimit(`notif:${collectorId}`, limit, windowSeconds);
   }
 }
+
+/**
+ * "Route me" share-link creation (POST /route-share) is unauthenticated and sends a real SMS to
+ * a phone number an anonymous caller names — a materially different abuse shape than OTP, where
+ * the number being texted is always the requester's own. A per-target limit alone doesn't stop
+ * one visitor cycling through many different numbers (using Borla as a free SMS blaster), so
+ * both of the below are checked on every create; either tripping refuses the request. Same
+ * INCR+EXPIRE+in-memory-fallback shape as checkOtpRateLimit.
+ */
+export async function checkRouteShareTargetLimit(phone: string, limit = 3, windowSeconds = 1800): Promise<boolean> {
+  const key = `ratelimit:routeshare:target:${phone}`;
+  try {
+    const count = await withTimeout(redis.incr(key), 2000, "redis.incr(routeshare:target)");
+    if (count === 1) await withTimeout(redis.expire(key, windowSeconds), 2000, "redis.expire(routeshare:target)");
+    return count <= limit;
+  } catch (err) {
+    console.error(`[rateLimit] Redis unavailable for route-share target limit (${phone}) — falling back to in-memory`, err);
+    return checkInMemoryRateLimit(`routeshare:target:${phone}`, limit, windowSeconds);
+  }
+}
+
+export async function checkRouteShareSenderLimit(ip: string, limit = 5, windowSeconds = 3600): Promise<boolean> {
+  const key = `ratelimit:routeshare:sender:${ip}`;
+  try {
+    const count = await withTimeout(redis.incr(key), 2000, "redis.incr(routeshare:sender)");
+    if (count === 1) await withTimeout(redis.expire(key, windowSeconds), 2000, "redis.expire(routeshare:sender)");
+    return count <= limit;
+  } catch (err) {
+    console.error(`[rateLimit] Redis unavailable for route-share sender limit (${ip}) — falling back to in-memory`, err);
+    return checkInMemoryRateLimit(`routeshare:sender:${ip}`, limit, windowSeconds);
+  }
+}
