@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
@@ -9,6 +9,7 @@ import { config } from "./config.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { pool } from "./db/pool.js";
 import { redis } from "./redis/client.js";
+import { verifyAccessToken } from "./utils/jwt.js";
 
 import { authRouter } from "./modules/auth/routes.js";
 import { presenceRouter } from "./modules/presence/routes.js";
@@ -30,16 +31,42 @@ export function createApp() {
   app.use(cors({ origin: config.isProd ? true : config.clientOrigin, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
+  // Keyed by authenticated user id when the request carries a valid access token, falling back
+  // to IP only for unauthenticated calls (login, OTP request, health check, ...). Plain per-IP
+  // keying was measured (see the concurrent-user assessment this followed from) to throttle
+  // innocent users well before it caught anything: idle client-side polling alone runs several
+  // real users behind one shared IP (office wifi, campus NAT, a household on one router) into
+  // the same 120/min bucket. Best-effort only — never throws, never blocks the request; an
+  // invalid/expired/missing token just falls through to the IP-keyed behaviour this already had.
+  function rateLimitKey(req: Request): string {
+    const header = req.headers.authorization;
+    if (header?.startsWith("Bearer ")) {
+      try {
+        const payload = verifyAccessToken(header.slice("Bearer ".length));
+        if (payload.type === "access") return `user:${payload.sub}`;
+      } catch {
+        // invalid/expired token — fall through to IP-keyed limiting below, same as no token at all
+      }
+    }
+    return req.ip ?? "unknown";
+  }
+
   app.use(
     "/api/",
-    // The real, enforced production limit is 120/min per IP. Vitest's supertest calls all
-    // originate from the same loopback "IP" within one shared app instance per test file, so as
-    // the suite has grown, a single heavily-exercised file can legitimately make well over 120
-    // requests inside one 60s window — a test-harness artifact of this specific generic
-    // safety-net middleware, not a real security behaviour under test (no test anywhere asserts
-    // on its exact threshold). Effectively uncapped outside production so test-suite growth
-    // never trips it again; the production number itself is untouched.
-    rateLimit({ windowMs: 60_000, limit: config.isProd ? 120 : 100_000, standardHeaders: true, legacyHeaders: false })
+    // The real, enforced production limit is 120/min per identity (see rateLimitKey above).
+    // Vitest's supertest calls all originate from the same loopback "IP" within one shared app
+    // instance per test file, so as the suite has grown, a single heavily-exercised file can
+    // legitimately make well over 120 requests inside one 60s window — a test-harness artifact of
+    // this specific generic safety-net middleware, not a real security behaviour under test (no
+    // test anywhere asserts on its exact threshold). Effectively uncapped outside production so
+    // test-suite growth never trips it again; the production number itself is untouched.
+    rateLimit({
+      windowMs: 60_000,
+      limit: config.isProd ? 120 : 100_000,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: rateLimitKey,
+    })
   );
 
   // Actively checks both dependencies rather than just answering "the process is up" — the

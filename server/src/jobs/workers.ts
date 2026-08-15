@@ -23,10 +23,10 @@ async function presenceSweep() {
 
 /** Pin expiry (design §3.1): backstop for forgotten/stale broadcasts. */
 async function pinExpirySweep() {
-  const expired = await query<{ id: string }>(
+  const expired = await query<{ id: string; household_id: string }>(
     `UPDATE broadcasts SET status = 'expired', resolved_at = now()
      WHERE status = 'active' AND expires_at < now()
-     RETURNING id`
+     RETURNING id, household_id`
   );
   for (const b of expired) {
     await pinCleared(b.id);
@@ -37,6 +37,11 @@ async function pinExpirySweep() {
     for (const { collector_id } of notified) {
       emitToUser(collector_id, "broadcast:cleared", { broadcastId: b.id, reason: "expired" });
     }
+    // The household itself previously had no push signal for its own pin expiring — only the
+    // notified collectors got one — so HouseholdHome relied entirely on an 8s poll (loadActiveBroadcast)
+    // to notice the disappearance and prompt "did someone come?". Emitting here lets that poll
+    // become a safety net instead of the only path, matching the collector side's broadcast:cleared.
+    emitToUser(b.household_id, "broadcast:expired", { broadcastId: b.id });
   }
   if (expired.length) console.log(`[jobs] pin expiry: ${expired.length} broadcast(s) expired`);
 }

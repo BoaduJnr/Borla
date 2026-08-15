@@ -107,9 +107,14 @@ export default function HouseholdHome() {
     loadNearbyCollectors();
     loadActiveBroadcast();
     loadRequests();
-    const t1 = setInterval(loadNearbyCollectors, 15000);
-    const t2 = setInterval(loadActiveBroadcast, 8000);
-    const t3 = setInterval(loadRequests, 8000);
+    // Widened from 15s/8s/8s (Redis command-quota + per-identity rate-limit pressure — see the
+    // concurrent-user assessment this followed from). These are now a safety net for reconnect
+    // gaps and distance recompute, not the primary update path: every request-status transition
+    // already arrives near-instantly over the socket below, and broadcast:expired (added
+    // alongside this) now covers the one gap loadActiveBroadcast used to be the *only* signal for.
+    const t1 = setInterval(loadNearbyCollectors, 25000);
+    const t2 = setInterval(loadActiveBroadcast, 25000);
+    const t3 = setInterval(loadRequests, 25000);
     return () => {
       clearInterval(t1);
       clearInterval(t2);
@@ -137,6 +142,15 @@ export default function HouseholdHome() {
       setInfo(payload.cancelledBy === "collector" ? "The collector cancelled this request." : "Request cancelled.");
       loadRequests();
     };
+    // Was previously invisible to the household — only the notified collectors learned a pin
+    // expired (broadcast:cleared). loadActiveBroadcast's poll was the only thing that ever
+    // noticed on this side; this makes the "did someone come?" prompt appear immediately instead
+    // of waiting up to one poll tick.
+    const onBroadcastExpired = (payload: { broadcastId: string }) => {
+      setConfirmPrompt({ broadcastId: payload.broadcastId });
+      setBroadcast(null);
+      lastBroadcastId.current = null;
+    };
     socket.on("request:seen", onUpdate);
     socket.on("request:accepted", onUpdate);
     socket.on("request:rejected", onUpdate);
@@ -144,6 +158,7 @@ export default function HouseholdHome() {
     socket.on("request:arrived", onArrived);
     socket.on("request:cancelled", onCancelled);
     socket.on("broadcast:fanned_out", onFannedOut);
+    socket.on("broadcast:expired", onBroadcastExpired);
     return () => {
       socket.off("request:seen", onUpdate);
       socket.off("request:accepted", onUpdate);
@@ -152,6 +167,7 @@ export default function HouseholdHome() {
       socket.off("request:arrived", onArrived);
       socket.off("request:cancelled", onCancelled);
       socket.off("broadcast:fanned_out", onFannedOut);
+      socket.off("broadcast:expired", onBroadcastExpired);
     };
   }, [socket]);
 
