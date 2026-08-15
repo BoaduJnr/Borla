@@ -37,7 +37,14 @@ interface RequestRow {
   can_mark_arrived: boolean;
 }
 
-const HEARTBEAT_MS = 25_000;
+// Widened from the original 25s/12s/8s (Redis command-quota + per-identity rate-limit pressure —
+// see the concurrent-user assessment this followed from). HEARTBEAT_MS must stay safely under
+// presence.ts's 45s `presence:{id}` TTL or a slow tick would let the key itself expire between
+// heartbeats; 35s keeps a comfortable margin. The poll intervals below are now a safety-net/
+// catch-up mechanism (reconnect gaps, distance recompute) rather than the primary update path —
+// every state transition they'd otherwise catch already arrives near-instantly over the socket
+// (request:new/accepted/rejected/arrived/cancelled, broadcast:new/cleared below).
+const HEARTBEAT_MS = 35_000;
 
 type Tab = "home" | "requests" | "history";
 const TERMINAL = ["rejected", "timed_out", "cancelled"];
@@ -69,6 +76,14 @@ export default function CollectorHome() {
       /* ignore transient */
     }
   }
+  // The socket-listener effect below only re-subscribes when `socket`'s identity changes (once
+  // per login session — see SocketContext.tsx), so a plain closure over loadPins there would
+  // freeze `online`/`center` at whatever they were on that one render (very likely `online:false`,
+  // before the collector ever taps "Go online"). Routing the broadcast:new push through this ref
+  // instead means it always calls the *current* loadPins, not a stale one that silently no-ops
+  // forever after the collector goes online.
+  const loadPinsRef = useRef(loadPins);
+  loadPinsRef.current = loadPins;
 
   async function loadRequests() {
     try {
@@ -84,13 +99,13 @@ export default function CollectorHome() {
 
   useEffect(() => {
     loadRequests();
-    const t = setInterval(loadRequests, 8000);
+    const t = setInterval(loadRequests, 20000);
     return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
     loadPins();
-    const t = online ? setInterval(loadPins, 12000) : null;
+    const t = online ? setInterval(loadPins, 20000) : null;
     return () => {
       if (t) clearInterval(t);
     };
@@ -99,7 +114,13 @@ export default function CollectorHome() {
 
   useEffect(() => {
     if (!socket) return;
-    const onNew = () => loadRequests();
+    const onNewRequest = () => loadRequests();
+    // Previously reused onNewRequest here (a stale comment claimed this "triggers a pin refresh
+    // via loadPins on next tick", but the handler only ever called loadRequests() — a broadcast
+    // notification was refetching the wrong list and the new pin actually waited for the next
+    // poll tick to appear). Calling loadPins() directly is what makes this a real push instead of
+    // a no-op that happened to be masked by the old 12s poll.
+    const onNewBroadcast = () => loadPinsRef.current();
     const onCleared = (payload: { broadcastId: string }) =>
       setPins((p) => p.filter((pin) => pin.id !== payload.broadcastId));
     const onArrived = () => {
@@ -110,14 +131,14 @@ export default function CollectorHome() {
       setInfo(payload.cancelledBy === "household" ? "The household cancelled this request." : "Request cancelled.");
       loadRequests();
     };
-    socket.on("request:new", onNew);
-    socket.on("broadcast:new", onNew); // cheap: just triggers a pin refresh via loadPins on next tick
+    socket.on("request:new", onNewRequest);
+    socket.on("broadcast:new", onNewBroadcast);
     socket.on("broadcast:cleared", onCleared);
     socket.on("request:arrived", onArrived);
     socket.on("request:cancelled", onCancelled);
     return () => {
-      socket.off("request:new", onNew);
-      socket.off("broadcast:new", onNew);
+      socket.off("request:new", onNewRequest);
+      socket.off("broadcast:new", onNewBroadcast);
       socket.off("broadcast:cleared", onCleared);
       socket.off("request:arrived", onArrived);
       socket.off("request:cancelled", onCancelled);
