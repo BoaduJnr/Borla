@@ -89,7 +89,7 @@ const sweepHandlers: Record<string, () => Promise<void>> = {
 
 // ---------------------------------------------------------------- fan-out (design §7)
 
-interface FanoutJobData {
+export interface FanoutJobData {
   broadcastId: string;
   householdId: string;
   lon: number;
@@ -101,8 +101,17 @@ interface FanoutJobData {
   radiusM: number;
 }
 
-async function processFanout(job: Job<FanoutJobData>) {
-  const { broadcastId, householdId, lon, lat, wasteType, note, householdName, householdPhone, radiusM } = job.data;
+/**
+ * The actual match-and-notify work, factored out of the BullMQ job handler so
+ * broadcasts/routes.ts can also call it directly, inline, as a fallback for exactly the failure
+ * mode found live: `fanoutQueue.add()` itself silently failing/timing out under the same Redis
+ * instability this incident has been about, meaning the job never gets created at all — no
+ * amount of retry/fallback *inside* processFanout helps if processFanout is never invoked in
+ * the first place. Normal operation is unaffected: this only runs a second time, inline, if the
+ * queue genuinely couldn't take the job.
+ */
+export async function runFanoutLogic(data: FanoutJobData) {
+  const { broadcastId, householdId, lon, lat, wasteType, note, householdName, householdPhone, radiusM } = data;
   // pins:active is registered synchronously in the route handler (broadcasts/routes.ts) so a
   // collector's very next poll sees the pin even before this job gets a worker slot.
 
@@ -152,6 +161,10 @@ async function processFanout(job: Job<FanoutJobData>) {
   }
   emitToUser(householdId, "broadcast:fanned_out", { broadcastId, notified });
   return { notified };
+}
+
+async function processFanout(job: Job<FanoutJobData>) {
+  return runFanoutLogic(job.data);
 }
 
 // ---------------------------------------------------------------- moderation (design §18.1)

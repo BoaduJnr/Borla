@@ -8,6 +8,7 @@ import { emitToUser } from "../../realtime/socket.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
 import * as presence from "../../redis/presence.js";
 import { fanoutQueue } from "../../jobs/queues.js";
+import { runFanoutLogic } from "../../jobs/index.js";
 import { withTimeout } from "../../utils/withTimeout.js";
 
 export const broadcastsRouter = Router();
@@ -68,26 +69,32 @@ broadcastsRouter.post(
       console.error(`[broadcasts] Redis pinActive failed for ${broadcast!.id} — falling back to Postgres-only`, err);
     });
 
+    const fanoutData = {
+      broadcastId: broadcast!.id,
+      householdId: household.id,
+      lon,
+      lat,
+      wasteType: wasteType ?? null,
+      note: note ?? null,
+      householdName: household.display_name,
+      householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
+      radiusM,
+    };
     // 5s timeout, not just .catch(): fanoutQueue.add() uses bullRedis, whose
     // maxRetriesPerRequest:null means a call against unreachable Redis retries forever rather
     // than ever rejecting — a bare .catch() never fires and this request hangs until the
-    // client's own timeout, found live during tonight's Upstash quota incident.
-    await withTimeout(
-      fanoutQueue.add("fanout", {
-        broadcastId: broadcast!.id,
-        householdId: household.id,
-        lon,
-        lat,
-        wasteType: wasteType ?? null,
-        note: note ?? null,
-        householdName: household.display_name,
-        householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
-        radiusM,
-      }),
-      5000,
-      "fanoutQueue.add"
-    ).catch((err) => {
-      console.error(`[broadcasts] failed to enqueue fan-out for ${broadcast!.id} — pin still created, no async notification this time`, err);
+    // client's own timeout, found live during tonight's Upstash quota incident. Found live,
+    // one layer deeper: the enqueue call can also fail/time out *silently* under the same
+    // Redis instability (BullMQ's own Lua-script-based commands, not just simple ones) — when
+    // that happens the job never gets created at all, so no amount of resilience *inside*
+    // processFanout helps, because processFanout is never invoked. Falls back to running the
+    // exact same match-and-notify logic inline, right here, rather than silently losing the
+    // fan-out for this broadcast entirely.
+    await withTimeout(fanoutQueue.add("fanout", fanoutData), 5000, "fanoutQueue.add").catch(async (err) => {
+      console.error(`[broadcasts] failed to enqueue fan-out for ${broadcast!.id} — running it inline instead`, err);
+      await runFanoutLogic(fanoutData).catch((inlineErr) => {
+        console.error(`[broadcasts] inline fan-out fallback also failed for ${broadcast!.id}`, inlineErr);
+      });
     });
 
     res.status(201).json({ broadcast: { ...broadcast, status: "active" } });

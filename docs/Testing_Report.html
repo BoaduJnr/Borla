@@ -937,15 +937,21 @@ defects, several found other ways, is in §4).</p>
 <td>D-27 (critical)</td>
 <td><code>server/src/redis/presence.ts</code>, <code>server/src/jobs/workers.ts</code></td>
 <td>D-26&#39;s fallback logic only kicked in when Redis explicitly <em>errored</em> — but asked directly to &quot;test the abilities for collectors and household to find each other&quot; in production, a household searching from right next to an online, verified collector found nothing (<code>GET /collectors/nearby</code> → <code>[]</code>), and a broadcast pin was invisible to that same collector too. <code>GET /admin/live-map</code> confirmed the collector was correctly online with a fresh position <em>in Postgres</em> — the write side was fine. The read side wasn&#39;t erroring either: GEOSEARCH was cleanly, successfully returning empty, because the underlying GEOADD write had likely been silently dropped by the same ongoing Upstash quota pressure without ever throwing. An empty-but-not-erroring answer is invisible to error-only fallback logic — and the same unprotected call existed a third time, undocumented until now: the background fan-out job (<code>processFanout</code>) called <code>nearbyCollectors</code> directly with no fallback at all, so broadcasts were finding zero candidates and sending zero notifications, silently.</td>
-<td>Added <code>nearbyCollectorsMerged</code>/<code>nearbyPinsMerged</code> (<code>redis/presence.ts</code>) — query Redis (timeout-boxed) and Postgres <em>unconditionally, in parallel</em>, and return the deduplicated union, rather than only reaching for Postgres after an explicit Redis error. All three call sites (<code>GET /collectors/nearby</code>, <code>GET /pins/nearby</code>, and the fan-out job&#39;s candidate matching) now use the merged versions. Verified live immediately after deploying: household-searches-nearby, pin-visible-to-collector, and fan-out-notification-list all correctly found the collector/pin again.</td>
+<td>Added <code>nearbyCollectorsMerged</code>/<code>nearbyPinsMerged</code> (<code>redis/presence.ts</code>) — query Redis (timeout-boxed) and Postgres <em>unconditionally, in parallel</em>, and return the deduplicated union, rather than only reaching for Postgres after an explicit Redis error. All three call sites (<code>GET /collectors/nearby</code>, <code>GET /pins/nearby</code>, and the fan-out job&#39;s candidate matching) now use the merged versions. Verified live immediately after deploying: household-searches-nearby and pin-visible-to-collector both correctly found the collector/pin again — the fan-out notification list specifically did <strong>not</strong> yet, which turned out to be a distinct, deeper issue; see D-28.</td>
+</tr>
+<tr>
+<td>D-28 (critical)</td>
+<td><code>server/src/jobs/workers.ts</code>, <code>server/src/modules/broadcasts/routes.ts</code></td>
+<td>D-27&#39;s fix corrected the two <em>synchronous</em> geo-lookup endpoints, but the fan-out notification list stayed stubbornly empty even after that deploy — connecting a real Socket.IO client and listening for <code>broadcast:fanned_out</code> directly (rather than only polling <code>/broadcasts/:id/notified</code>) showed the event never fired at all, not even with <code>notified:0</code>, meaning <code>processFanout</code> was never being invoked in the first place. Ruled out the notification rate cap (temporarily raised to 1000 via <code>PATCH /admin/config</code>, no change) and quiet hours (explicitly cleared via <code>PATCH /collectors/me</code>, no change) before concluding the enqueue call itself — <code>fanoutQueue.add()</code>, which uses <code>bullRedis</code> and BullMQ&#39;s own Lua-script-based commands — was very likely still silently failing/timing out under the same ongoing Upstash quota pressure that caused D-25, exactly as D-26&#39;s fix already anticipated for <em>that</em> queue&#39;s other operations but hadn&#39;t yet covered for this specific enqueue&#39;s downstream effect: if the job is never created, no amount of resilience <em>inside</em> <code>processFanout</code> runs at all.</td>
+<td>Extracted the match-and-notify logic out of the BullMQ job handler into a plain exported function, <code>runFanoutLogic</code> (<code>jobs/workers.ts</code>), that the route handler now calls directly, inline, whenever <code>fanoutQueue.add()</code> fails or times out — a genuine fallback that actually performs the notification work synchronously, not just a log line. <code>processFanout</code> (the BullMQ handler) is now a one-line wrapper around the same function, so normal operation is completely unchanged when the queue is healthy.</td>
 </tr>
 </tbody></table>
-<p>All twenty-six were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14 through D-22/D-24 through D-27, well after) the corresponding feature — eight by the
+<p>All twenty-seven were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/
+D-12/D-14 through D-22/D-24 through D-28, well after) the corresponding feature — eight by the
 automated suite (D-11 by reasoning through the code while building an unrelated feature, D-13
-by directly observing stuck production queue items while manually verifying D-12), eighteen by
+by directly observing stuck production queue items while manually verifying D-12), nineteen by
 deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07, D-10, D-12, D-14 through D-22, and D-24 through D-27 reported back by
+production myself; D-07, D-10, D-12, D-14 through D-22, and D-24 through D-28 reported back by
 the user, caught by watching production directly, or found while directly asked to verify
 collectors and households can actually find each other in production; D-08 surfaced in
 production logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather
@@ -990,22 +996,26 @@ wrong on the other half (never un-showing it). D-23 is listed separately, delibe
 the count above — it&#39;s a test-harness capacity limit the suite&#39;s own growth ran into, not a
 defect in the product being tested, and is recorded here for the same reason everything else on
 this page is: a decision was made and it should be visible, not just quietly committed. D-24
-through D-27 are a single incident told across its full arc, deliberately not compressed into
+through D-28 are a single incident told across its full arc, deliberately not compressed into
 one entry: a first fix (D-24) was real and necessary but not the actual cause of the outage it
 shipped alongside; a second fix (D-25) found and killed the actual crash, then led straight to
 its own root cause (an exhausted third-party Redis quota); following that thread properly
 (D-26) surfaced two more layers — a whole class of live request paths with no fallback at all,
-and a promise-bypassing crash risk no amount of <code>.catch()</code> placement would ever have caught; and
+and a promise-bypassing crash risk no amount of <code>.catch()</code> placement would ever have caught;
 D-27, found only because the user asked directly &quot;test the abilities for collectors and
 household to find each other&quot; rather than &quot;is the server up,&quot; showed that D-26&#39;s own
 error-only fallback logic wasn&#39;t sufficient — a Redis answer can be <em>wrong</em> (silently missing a
-write) without ever being an <em>error</em>, and a third unprotected call site (the background fan-out
-job) had gone unnoticed through the whole rest of the incident because nothing had exercised it
-end-to-end until asked to. Each layer was only visible once the one above it was fixed enough to
-reveal what was underneath — a reminder that &quot;the crash stopped&quot; and &quot;the root cause is fixed&quot;
-are not the same milestone, that &quot;returns successfully&quot; and &quot;returns correctly&quot; are not the same
-either, and that a production incident is worth following all the way down rather than stopping
-at the first fix that makes the symptom go away. Some defects are only found by putting the
+write) without ever being an <em>error</em>; and D-28 showed that even D-27&#39;s fix wasn&#39;t the whole
+story — verifying the fix live (rather than assuming it from the code change alone) caught that
+the fan-out notification path specifically was <em>still</em> broken, for a fourth, different reason
+(the enqueue call itself silently failing) that only a real Socket.IO client listening for the
+actual event, not just polling an HTTP endpoint, was able to surface. Each layer was only
+visible once the one above it was fixed enough to reveal what was underneath — a reminder that
+&quot;the crash stopped&quot; and &quot;the root cause is fixed&quot; are not the same milestone, that &quot;returns
+successfully&quot; and &quot;returns correctly&quot; are not the same either, that fixing what you can see
+isn&#39;t the same as confirming what you fixed actually worked, and that a production incident is
+worth following all the way down rather than stopping at the first fix that makes the symptom
+go away. Some defects are only found by putting the
 actual feature in front of the actual person it&#39;s for, and some are only found by watching your
 own fix operate for real.</p>
 <h2>5. Security testing</h2>

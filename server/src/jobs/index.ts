@@ -4,5 +4,5 @@
  * processors: presence/pin/request/review sweeps, broadcast fan-out, review/reply moderation).
  */
 export { scheduleRepeatableJobs } from "./scheduler.js";
-export { startWorkers, closeWorkers, recomputeRatingAggregate } from "./workers.js";
+export { startWorkers, closeWorkers, recomputeRatingAggregate, runFanoutLogic, type FanoutJobData } from "./workers.js";
 export { closeQueues, sweepsQueue, fanoutQueue, moderateQueue } from "./queues.js";
