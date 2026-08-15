@@ -933,15 +933,23 @@ defects, several found other ways, is in §4).</p>
 <td>The Redis quota exhaustion behind D-25 turned out to break more than boot: live smoke-testing after D-25&#39;s fix found &quot;Go online,&quot; broadcast creation, and (implicitly) OTP login all still capable of failing once Redis-dependent code ran mid-request — the architecture treats Redis as the sole source of truth for live geo-matching (Technical_Debt_Plan.md TD-05), with no fallback when it&#39;s unavailable. Fixing this surfaced a second, sharper problem: wrapping a Redis/BullMQ call in <code>.catch()</code> alone doesn&#39;t help if the call never rejects promptly — <code>bullRedis</code>&#39;s required <code>maxRetriesPerRequest: null</code>, and ioredis&#39;s own retry/backoff internals more broadly, meant an unprotected call could hang for tens of seconds to over a minute rather than failing fast, found by explicitly timing a full request flow against a locally-simulated outage (47s before this fix; 18s after, both correct). A third, separate crash risk surfaced in the same investigation: ioredis can throw in ways that bypass promise rejection entirely (a subscribe-mode client — Socket.IO&#39;s Redis adapter uses one — flushing its offline queue once retries are exhausted), which a top-level <code>uncaughtException</code>/<code>unhandledRejection</code> handler (<code>server/src/index.ts</code>) now catches as defence in depth underneath every specific fix below, rather than as a substitute for them.</td>
 <td>Added a <code>withTimeout()</code> helper (<code>server/src/utils/withTimeout.ts</code>, 2–5s per call) applied to every Redis/BullMQ call in a live request path, not just the boot-time scheduler. <code>GET /collectors/nearby</code> and <code>GET /pins/nearby</code> fall back to a direct Postgres/PostGIS geo query (<code>collectors.online</code>/<code>last_location</code>, <code>broadcasts.location</code>) when Redis&#39;s GEOSEARCH can&#39;t answer. <code>POST /presence</code> and <code>/presence/heartbeat</code> always write to Postgres regardless of whether the Redis mirror succeeded. <code>checkOtpRateLimit</code>/<code>checkNotifRateLimit</code> fall back to a small in-process counter (<code>server/src/utils/inMemoryRateLimit.ts</code>) instead of failing wide open — real, if per-instance-only, abuse protection for as long as an outage lasts, chosen over reimplementing BullMQ&#39;s queues in-memory (not worth the complexity for a temporary outage) and over an in-memory geo-matching fallback (Postgres is strictly better there — durable, and already correct if this ever scales to multiple instances). The Socket.IO adapter&#39;s two duplicated Redis clients were also found missing their own <code>&#39;error&#39;</code> listeners (<code>realtime/socket.ts</code>) — added, independent of the uncaught-exception backstop.</td>
 </tr>
+<tr>
+<td>D-27 (critical)</td>
+<td><code>server/src/redis/presence.ts</code>, <code>server/src/jobs/workers.ts</code></td>
+<td>D-26&#39;s fallback logic only kicked in when Redis explicitly <em>errored</em> — but asked directly to &quot;test the abilities for collectors and household to find each other&quot; in production, a household searching from right next to an online, verified collector found nothing (<code>GET /collectors/nearby</code> → <code>[]</code>), and a broadcast pin was invisible to that same collector too. <code>GET /admin/live-map</code> confirmed the collector was correctly online with a fresh position <em>in Postgres</em> — the write side was fine. The read side wasn&#39;t erroring either: GEOSEARCH was cleanly, successfully returning empty, because the underlying GEOADD write had likely been silently dropped by the same ongoing Upstash quota pressure without ever throwing. An empty-but-not-erroring answer is invisible to error-only fallback logic — and the same unprotected call existed a third time, undocumented until now: the background fan-out job (<code>processFanout</code>) called <code>nearbyCollectors</code> directly with no fallback at all, so broadcasts were finding zero candidates and sending zero notifications, silently.</td>
+<td>Added <code>nearbyCollectorsMerged</code>/<code>nearbyPinsMerged</code> (<code>redis/presence.ts</code>) — query Redis (timeout-boxed) and Postgres <em>unconditionally, in parallel</em>, and return the deduplicated union, rather than only reaching for Postgres after an explicit Redis error. All three call sites (<code>GET /collectors/nearby</code>, <code>GET /pins/nearby</code>, and the fan-out job&#39;s candidate matching) now use the merged versions. Verified live immediately after deploying: household-searches-nearby, pin-visible-to-collector, and fan-out-notification-list all correctly found the collector/pin again.</td>
+</tr>
 </tbody></table>
-<p>All twenty-five were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14 through D-22/D-24 through D-26, well after) the corresponding feature — eight by the
+<p>All twenty-six were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14 through D-22/D-24 through D-27, well after) the corresponding feature — eight by the
 automated suite (D-11 by reasoning through the code while building an unrelated feature, D-13
-by directly observing stuck production queue items while manually verifying D-12), seventeen by
+by directly observing stuck production queue items while manually verifying D-12), eighteen by
 deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
-production myself; D-07, D-10, D-12, D-14 through D-22, and D-24 through D-26 reported back by
-the user or caught by watching production directly; D-08 surfaced in production logs once
-the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the
+production myself; D-07, D-10, D-12, D-14 through D-22, and D-24 through D-27 reported back by
+the user, caught by watching production directly, or found while directly asked to verify
+collectors and households can actually find each other in production; D-08 surfaced in
+production logs once the Gemini key went live), and D-09 by a scripted screenshot pass rather
+than by reading the
 code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
 practice works, it just hasn&#39;t been extended to every corner of the app, including production
 behaviour, yet. D-10 and D-11 make a related point: a <em>correctly working</em> backend mechanism
@@ -982,18 +990,24 @@ wrong on the other half (never un-showing it). D-23 is listed separately, delibe
 the count above — it&#39;s a test-harness capacity limit the suite&#39;s own growth ran into, not a
 defect in the product being tested, and is recorded here for the same reason everything else on
 this page is: a decision was made and it should be visible, not just quietly committed. D-24
-through D-26 are a single incident told across its full arc, deliberately not compressed into
+through D-27 are a single incident told across its full arc, deliberately not compressed into
 one entry: a first fix (D-24) was real and necessary but not the actual cause of the outage it
 shipped alongside; a second fix (D-25) found and killed the actual crash, then led straight to
-its own root cause (an exhausted third-party Redis quota); and following that thread properly
+its own root cause (an exhausted third-party Redis quota); following that thread properly
 (D-26) surfaced two more layers — a whole class of live request paths with no fallback at all,
-and a promise-bypassing crash risk no amount of <code>.catch()</code> placement would ever have caught.
-Each layer was only visible once the one above it was fixed enough to reveal what was
-underneath — a reminder that &quot;the crash stopped&quot; and &quot;the root cause is fixed&quot; are not the same
-milestone, and that a production incident is worth following all the way down rather than
-stopping at the first fix that makes the symptom go away. Some defects are only found by
-putting the actual feature in front of the actual person it&#39;s for, and some are only found by
-watching your own fix operate for real.</p>
+and a promise-bypassing crash risk no amount of <code>.catch()</code> placement would ever have caught; and
+D-27, found only because the user asked directly &quot;test the abilities for collectors and
+household to find each other&quot; rather than &quot;is the server up,&quot; showed that D-26&#39;s own
+error-only fallback logic wasn&#39;t sufficient — a Redis answer can be <em>wrong</em> (silently missing a
+write) without ever being an <em>error</em>, and a third unprotected call site (the background fan-out
+job) had gone unnoticed through the whole rest of the incident because nothing had exercised it
+end-to-end until asked to. Each layer was only visible once the one above it was fixed enough to
+reveal what was underneath — a reminder that &quot;the crash stopped&quot; and &quot;the root cause is fixed&quot;
+are not the same milestone, that &quot;returns successfully&quot; and &quot;returns correctly&quot; are not the same
+either, and that a production incident is worth following all the way down rather than stopping
+at the first fix that makes the symptom go away. Some defects are only found by putting the
+actual feature in front of the actual person it&#39;s for, and some are only found by watching your
+own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

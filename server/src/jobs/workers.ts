@@ -3,7 +3,7 @@ import { bullRedis } from "../redis/client.js";
 import { query, queryOne } from "../db/pool.js";
 import { emitToUser } from "../realtime/socket.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../utils/appConfig.js";
-import { sweepStalePresence, pinCleared, nearbyCollectors } from "../redis/presence.js";
+import { sweepStalePresence, pinCleared, nearbyCollectorsMerged } from "../redis/presence.js";
 import { checkNotifRateLimit } from "../redis/rateLimit.js";
 import { inQuietHours } from "../utils/quietHours.js";
 import { classifyText } from "../ai/moderation.js";
@@ -106,7 +106,11 @@ async function processFanout(job: Job<FanoutJobData>) {
   // pins:active is registered synchronously in the route handler (broadcasts/routes.ts) so a
   // collector's very next poll sees the pin even before this job gets a worker slot.
 
-  const candidates = await nearbyCollectors(lon, lat, radiusM);
+  // Merges Redis's GEOSEARCH with a direct Postgres geo query rather than trusting Redis alone
+  // — found live that a silently-incomplete Redis write (under Upstash quota pressure) let
+  // GEOSEARCH cleanly return zero candidates with no error at all, which meant zero broadcast
+  // notifications ever went out even though real online collectors existed nearby in Postgres.
+  const candidates = await nearbyCollectorsMerged(lon, lat, radiusM);
   if (candidates.length === 0) {
     emitToUser(householdId, "broadcast:fanned_out", { broadcastId, notified: 0 });
     return { notified: 0 };

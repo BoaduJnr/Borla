@@ -116,28 +116,6 @@ const nearbySchema = z.object({
   radius: z.coerce.number().min(50).max(20000).default(1200),
 });
 
-/**
- * Postgres-only stand-in for presence.nearbyCollectors when Redis's GEOSEARCH can't answer —
- * queries the same durable last_lon/last_lat/last_location mirror every collector write above
- * already keeps current, so this degrades to "no live matching hot path" rather than "no
- * matching at all." Returns the same GeoHit shape so the caller doesn't need to know which path
- * answered. Loses Redis's TTL-based staleness eviction while degraded — a collector who closes
- * their tab without an explicit "Go offline" stays listed until the Postgres presence sweep (or
- * Redis recovering) catches up — an acceptable trade during an outage, not a silent forever-bug.
- */
-async function nearbyCollectorsFallback(lon: number, lat: number, radiusM: number) {
-  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
-    `SELECT c.user_id AS id, c.last_lon AS lon, c.last_lat AS lat,
-            ST_Distance(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
-     FROM collectors c
-     WHERE c.online = true AND c.last_location IS NOT NULL
-       AND ST_DWithin(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-     ORDER BY distance_m ASC`,
-    [lon, lat, radiusM]
-  );
-  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
-}
-
 /** GET /collectors/nearby — "which online collectors are near this point" (design §5, Q1). */
 presenceRouter.get(
   "/collectors/nearby",
@@ -145,10 +123,11 @@ presenceRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const hits = await withTimeout(presence.nearbyCollectors(lon, lat, radius), 3000, "presence.nearbyCollectors").catch((err) => {
-      console.error("[presence] Redis nearbyCollectors failed — falling back to Postgres geo query", err);
-      return nearbyCollectorsFallback(lon, lat, radius);
-    });
+    // Merges Redis's GEOSEARCH with a Postgres geo query rather than only falling back on an
+    // explicit error — a silently-incomplete Redis write (found live) means GEOSEARCH can
+    // cleanly return "nothing here" without ever erroring, which error-only fallback logic
+    // can't detect. See redis/presence.ts's nearbyCollectorsMerged for the full story.
+    const hits = await presence.nearbyCollectorsMerged(lon, lat, radius);
     if (hits.length === 0) return res.json({ collectors: [] });
 
     const rows = await query<{

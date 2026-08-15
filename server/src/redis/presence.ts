@@ -1,4 +1,6 @@
 import { redis } from "./client.js";
+import { query } from "../db/pool.js";
+import { withTimeout } from "../utils/withTimeout.js";
 
 /**
  * Presence & the live geo substrate (borla-technical-design.md §4.2/§5/§6), resolving
@@ -79,6 +81,82 @@ async function geosearch(key: string, lon: number, lat: number, radiusM: number)
     lon: Number(coord[0]),
     lat: Number(coord[1]),
   }));
+}
+
+/**
+ * Postgres-backed stand-ins for the two GEOSEARCH queries above, and "merged" wrappers that
+ * consult BOTH sources rather than only falling back to Postgres when Redis explicitly errors.
+ *
+ * Found live (via GET /admin/live-map showing a collector correctly online with a fresh
+ * position, while GET /collectors/nearby against the exact same point returned nothing): under
+ * the ongoing Upstash quota pressure, a GEOADD write can be silently dropped without the
+ * *write* call ever throwing (or throwing in a way already caught non-fatally, per the presence/
+ * broadcasts route resilience work) — leaving `geo:collectors`/`pins:active` simply short a
+ * member. A subsequent GEOSEARCH on that same key then correctly, cleanly returns "nothing
+ * here" — it isn't lying, Redis genuinely doesn't have the entry — so error-only fallback logic
+ * (this file's earlier callers, and jobs/workers.ts's fan-out candidate matching, all used this
+ * pattern) never triggers: there's no error to catch, just a silently-incomplete answer.
+ * Postgres (`collectors.online`/`last_location`, `broadcasts.location`) is written
+ * unconditionally on every presence/broadcast change regardless of Redis's outcome, so it's
+ * always at least as complete as Redis, and is queried unconditionally here too — the union of
+ * both, deduped by id, is only ever as small as the more complete source, whichever that is on a
+ * given call.
+ */
+async function nearbyCollectorsPg(lon: number, lat: number, radiusM: number): Promise<GeoHit[]> {
+  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
+    `SELECT c.user_id AS id, c.last_lon AS lon, c.last_lat AS lat,
+            ST_Distance(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
+     FROM collectors c
+     WHERE c.online = true AND c.last_location IS NOT NULL
+       AND ST_DWithin(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+     ORDER BY distance_m ASC`,
+    [lon, lat, radiusM]
+  );
+  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
+}
+
+async function nearbyPinsPg(lon: number, lat: number, radiusM: number): Promise<GeoHit[]> {
+  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
+    `SELECT b.id, b.lon, b.lat,
+            ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
+     FROM broadcasts b
+     WHERE b.status = 'active'
+       AND ST_DWithin(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+     ORDER BY distance_m ASC`,
+    [lon, lat, radiusM]
+  );
+  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
+}
+
+function mergeHits(redisHits: GeoHit[], pgHits: GeoHit[]): GeoHit[] {
+  const byId = new Map<string, GeoHit>();
+  for (const h of pgHits) byId.set(h.id, h);
+  for (const h of redisHits) byId.set(h.id, h); // Redis wins on overlap (identical data either way)
+  return [...byId.values()].sort((a, b) => a.distanceM - b.distanceM);
+}
+
+export async function nearbyCollectorsMerged(lon: number, lat: number, radiusM: number): Promise<GeoHit[]> {
+  const [redisResult, pgResult] = await Promise.allSettled([
+    withTimeout(nearbyCollectors(lon, lat, radiusM), 3000, "presence.nearbyCollectors"),
+    nearbyCollectorsPg(lon, lat, radiusM),
+  ]);
+  if (redisResult.status === "rejected") console.error("[presence] Redis nearbyCollectors failed, using Postgres only", redisResult.reason);
+  return mergeHits(
+    redisResult.status === "fulfilled" ? redisResult.value : [],
+    pgResult.status === "fulfilled" ? pgResult.value : []
+  );
+}
+
+export async function nearbyPinsMerged(lon: number, lat: number, radiusM: number): Promise<GeoHit[]> {
+  const [redisResult, pgResult] = await Promise.allSettled([
+    withTimeout(nearbyPinIds(lon, lat, radiusM), 3000, "presence.nearbyPinIds"),
+    nearbyPinsPg(lon, lat, radiusM),
+  ]);
+  if (redisResult.status === "rejected") console.error("[presence] Redis nearbyPinIds failed, using Postgres only", redisResult.reason);
+  return mergeHits(
+    redisResult.status === "fulfilled" ? redisResult.value : [],
+    pgResult.status === "fulfilled" ? pgResult.value : []
+  );
 }
 
 export async function pinActive(broadcastId: string, lon: number, lat: number) {

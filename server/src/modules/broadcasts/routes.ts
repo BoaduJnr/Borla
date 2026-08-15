@@ -145,28 +145,11 @@ const nearbySchema = z.object({
 });
 
 /**
- * Postgres-only stand-in for presence.nearbyPinIds when Redis's GEOSEARCH can't answer — the
- * `broadcasts` table is always the durable source of truth for a pin's existence/status anyway,
- * so this is a direct geo query against it rather than a Redis-mirrored candidate list. Returns
- * the same GeoHit shape so the join below doesn't need to know which path answered.
- */
-async function nearbyPinsFallback(lon: number, lat: number, radiusM: number) {
-  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
-    `SELECT b.id, b.lon, b.lat,
-            ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
-     FROM broadcasts b
-     WHERE b.status = 'active'
-       AND ST_DWithin(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
-     ORDER BY distance_m ASC`,
-    [lon, lat, radiusM]
-  );
-  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
-}
-
-/**
  * GET /pins/nearby — collector's live map of nearby waste (design §5, Q2). Candidate IDs come
- * from Redis's `pins:active` GEO set (the hot path); details are joined from Postgres, the
- * durable source of truth for the broadcast itself.
+ * from Redis's `pins:active` GEO set (the hot path) merged with a direct Postgres geo query
+ * (not just an error-triggered fallback — see redis/presence.ts's nearbyPinsMerged for why a
+ * silently-incomplete Redis write can't be caught by error handling alone); details are joined
+ * from Postgres, the durable source of truth for the broadcast itself either way.
  */
 broadcastsRouter.get(
   "/pins/nearby",
@@ -175,10 +158,7 @@ broadcastsRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const hits = await withTimeout(presence.nearbyPinIds(lon, lat, radius), 3000, "presence.nearbyPinIds").catch((err) => {
-      console.error("[broadcasts] Redis nearbyPinIds failed — falling back to Postgres geo query", err);
-      return nearbyPinsFallback(lon, lat, radius);
-    });
+    const hits = await presence.nearbyPinsMerged(lon, lat, radius);
     if (hits.length === 0) return res.json({ pins: [] });
 
     const rows = await query<{ id: string; waste_type: string | null; note: string | null; created_at: string; expires_at: string; household_name: string | null; household_phone: string }>(
