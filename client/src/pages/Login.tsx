@@ -187,6 +187,14 @@ export default function Login() {
           <button className="btn btn-gold lg" onClick={() => setStep("phone")}>
             Get started
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost lg"
+            style={{ marginTop: 10, borderColor: "rgba(255,255,255,.5)", color: "#fff" }}
+            onClick={() => navigate("/route-me")}
+          >
+            Route me
+          </button>
         </div>
       </div>
     );

@@ -9,6 +9,8 @@ import HouseholdHome from "./pages/HouseholdHome";
 import CollectorHome from "./pages/CollectorHome";
 import AdminDashboard from "./pages/AdminDashboard";
 import Profile from "./pages/Profile";
+import RouteMeSend from "./pages/RouteMeSend";
+import RouteMeReceive from "./pages/RouteMeReceive";
 
 /**
  * Mounted once as a layout route (below), not per-page — every earlier version wrapped each
@@ -101,6 +103,11 @@ export default function App() {
           }
         />
       </Route>
+      {/* Bare, chrome-free routes — no topbar/tabbar. Both are reachable with no login (the
+          splash screen's "Route me" button, and an SMS link opened cold by a stranger with no
+          other context), so neither should look like it needs one. */}
+      <Route path="/route-me" element={<RouteMeSend />} />
+      <Route path="/route/:token" element={<RouteMeReceive />} />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
