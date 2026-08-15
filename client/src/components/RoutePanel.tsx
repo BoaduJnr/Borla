@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MapView, type RouteEndpoint, type RouteInfo } from "./MapView";
 import { IconClose } from "./Icon";
-import { formatDistance } from "../utils/geo";
+import { formatDistance, zoomForDistance } from "../utils/geo";
 
 /**
  * Route to the other side of an accepted direct request — a household's target collector, or a
@@ -120,15 +120,4 @@ export function RoutePanel({
       )}
     </div>
   );
-}
-
-/** Zooms in as the two points get closer — a 5km route and a 30m one need very different scales. */
-function zoomForDistance(m: number | undefined): number {
-  if (m == null) return 14;
-  if (m > 3000) return 13;
-  if (m > 1500) return 14;
-  if (m > 800) return 15;
-  if (m > 400) return 16;
-  if (m > 150) return 17;
-  return 18;
 }
