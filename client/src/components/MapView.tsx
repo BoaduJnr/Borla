@@ -1,6 +1,7 @@
 import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, useMap } from "react-leaflet";
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import { haversineM } from "../utils/geo";
 
 export interface MapPoint {
   id: string;
@@ -64,20 +65,6 @@ function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number 
   }, [map]);
 
   return null;
-}
-
-/**
- * Straight-line distance (metres) — used both as the route fallback geometry and to compute
- * distance/duration when the routing service itself is unreachable.
- */
-function haversineM(a: RouteEndpoint, b: RouteEndpoint): number {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const s =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
 /**

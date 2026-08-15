@@ -10,6 +10,7 @@ import { StatusChip } from "./HouseholdHome";
 import { RequestReviews } from "../components/RequestReviews";
 import { IconPower, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
+import { haversineM, formatDistance } from "../utils/geo";
 
 interface Pin {
   id: string;
@@ -35,6 +36,12 @@ interface RequestRow {
   household_lon: number | null;
   household_lat: number | null;
   can_mark_arrived: boolean;
+  // Where this collector was the instant they accepted (server-side snapshot) — compared
+  // against their own current live-watched position (`center`) to show "how far you've
+  // travelled since accepting". Straight-line displacement, not a real path length; null if
+  // accepted before this existed, or the collector had never gone online yet at accept time.
+  accept_lon: number | null;
+  accept_lat: number | null;
 }
 
 // Widened from the original 25s/12s/8s (Redis command-quota + per-identity rate-limit pressure —
@@ -435,6 +442,11 @@ function CollectorRequestCard({
               label={r.household_name ?? "household"}
               onDistanceChange={onDistanceChange}
             />
+          )}
+          {!isHistory && r.accept_lon != null && r.accept_lat != null && (
+            <p className="muted" style={{ fontSize: 12 }}>
+              You've travelled {formatDistance(haversineM({ lon: r.accept_lon, lat: r.accept_lat }, center))} since accepting
+            </p>
           )}
           {!isHistory && onArrived && r.can_mark_arrived && (
             <button className="btn btn-gold btn-sm" style={{ marginTop: 8 }} onClick={() => onArrived(r.id)}>

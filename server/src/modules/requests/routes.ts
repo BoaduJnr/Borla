@@ -98,7 +98,9 @@ requestsRouter.get(
                 r.arrived_at, r.cancelled_by,
                 u.id AS collector_id, u.display_name AS collector_name,
                 CASE WHEN r.status = 'accepted' THEN c.last_lon END AS collector_lon,
-                CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat
+                CASE WHEN r.status = 'accepted' THEN c.last_lat END AS collector_lat,
+                CASE WHEN r.status = 'accepted' THEN r.accept_lon END AS accept_lon,
+                CASE WHEN r.status = 'accepted' THEN r.accept_lat END AS accept_lat
          FROM requests r
          JOIN users u ON u.id = r.collector_id
          LEFT JOIN collectors c ON c.user_id = r.collector_id
@@ -119,7 +121,12 @@ requestsRouter.get(
                 r.lon AS household_lon, r.lat AS household_lat,
                 u.id AS household_id, u.display_name AS household_name,
                 (r.status = 'accepted' AND r.arrived_at IS NULL AND c.last_location IS NOT NULL
-                 AND ST_DWithin(r.location, c.last_location, $2)) AS can_mark_arrived
+                 AND ST_DWithin(r.location, c.last_location, $2)) AS can_mark_arrived,
+                -- The collector's own baseline for "how far have I travelled since accepting"
+                -- (client compares this to its own live-watched position, not a server value —
+                -- see CollectorHome.tsx's use of accept_lon/accept_lat).
+                CASE WHEN r.status = 'accepted' THEN r.accept_lon END AS accept_lon,
+                CASE WHEN r.status = 'accepted' THEN r.accept_lat END AS accept_lat
          FROM requests r
          JOIN users u ON u.id = r.household_id
          LEFT JOIN collectors c ON c.user_id = r.collector_id
@@ -228,10 +235,19 @@ requestsRouter.post(
   requireAuth,
   requireRole("collector"),
   asyncHandler(async (req, res) => {
+    // Snapshots the collector's own last-known position (collectors.last_lon/last_lat) into
+    // this request the moment it's accepted — the baseline "how far have you travelled since
+    // accepting" is measured from. Done in the same UPDATE as the status change (not a separate
+    // read-then-write) so it's atomic with acceptance itself; NULL if the collector has never
+    // gone online yet (nothing to snapshot), same fail-safe-to-"unknown" spirit as everywhere
+    // else this depends on collectors.last_location being populated.
     const row = await queryOne<{ id: string; household_id: string }>(
-      `UPDATE requests SET status = 'accepted', responded_at = now(), contact_revealed_at = now()
-       WHERE id = $1 AND collector_id = $2 AND status IN ('requested','seen')
-       RETURNING id, household_id`,
+      `UPDATE requests SET status = 'accepted', responded_at = now(), contact_revealed_at = now(),
+              accept_lon = c.last_lon, accept_lat = c.last_lat
+       FROM collectors c
+       WHERE requests.id = $1 AND requests.collector_id = $2 AND requests.status IN ('requested','seen')
+         AND c.user_id = requests.collector_id
+       RETURNING requests.id, requests.household_id`,
       [req.params.id, req.user!.id]
     );
     if (!row) throw new ApiError(409, "This request is no longer pending (already resolved or timed out)");
