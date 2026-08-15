@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { moderateQueue } from "../jobs/queues.js";
+import { withTimeout } from "../utils/withTimeout.js";
 
 /**
  * AI moderation (borla-technical-design.md §18.1, Job A). Runs at content-creation time, never
@@ -91,10 +92,24 @@ ${text.slice(0, 2000)}
   return null; // every candidate failed — fail closed to the manual queue
 }
 
+// 5s, not the caller's .catch() alone: moderateQueue.add() uses bullRedis, whose
+// maxRetriesPerRequest:null (a real BullMQ requirement, see redis/client.ts) means a call
+// against an unreachable Redis retries forever rather than ever rejecting — found live during
+// tonight's Upstash quota incident. Both callers already treat a rejection as "logged, not
+// fatal" (reviews/routes.ts); this just makes sure a rejection actually happens in bounded time
+// instead of hanging the review/reply submission request until the client gives up.
 export async function moderateReviewAsync(reviewId: string, text: string) {
-  await moderateQueue.add("moderate", { targetType: "review", targetId: reviewId, text });
+  await withTimeout(
+    moderateQueue.add("moderate", { targetType: "review", targetId: reviewId, text }),
+    5000,
+    "moderateQueue.add(review)"
+  );
 }
 
 export async function moderateReplyAsync(replyId: string, text: string) {
-  await moderateQueue.add("moderate", { targetType: "reply", targetId: replyId, text });
+  await withTimeout(
+    moderateQueue.add("moderate", { targetType: "reply", targetId: replyId, text }),
+    5000,
+    "moderateQueue.add(reply)"
+  );
 }

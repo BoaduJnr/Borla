@@ -18,9 +18,19 @@ let io: SocketIOServer | null = null;
 const connectedUsers = new Map<string, Set<string>>();
 
 export function initSocket(httpServer: HttpServer): SocketIOServer {
+  // ioredis's .duplicate() does NOT carry over listeners registered on the original client —
+  // each duplicate needs its own 'error' handler, or an unhandled 'error' event on this
+  // EventEmitter risks taking the whole process down (found live: these two were silently
+  // missing one, logging ioredis's own "missing 'error' handler on this Redis client" warning
+  // the moment Redis became unreachable during tonight's Upstash quota incident).
+  const pubClient = redis.duplicate();
+  const subClient = redis.duplicate();
+  pubClient.on("error", (err: Error) => console.error("[redis:socketio-pub] connection error", err.message));
+  subClient.on("error", (err: Error) => console.error("[redis:socketio-sub] connection error", err.message));
+
   io = new SocketIOServer(httpServer, {
     cors: { origin: "*" }, // same-origin in production; local dev serves client separately
-    adapter: createAdapter(redis.duplicate(), redis.duplicate()),
+    adapter: createAdapter(pubClient, subClient),
   });
 
   io.use((socket, next) => {

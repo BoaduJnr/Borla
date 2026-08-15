@@ -915,13 +915,32 @@ defects, several found other ways, is in §4).</p>
 <td>Not a product defect — found while adding the two new tests for FR-36/FR-37 (T-79/T-80): <code>requests.test.ts</code> had grown enough sequential Supertest calls within one shared <code>createApp()</code> instance to legitimately trip the app-wide 120-requests-per-minute safety net mid-file, failing an unrelated later test with a raw <code>429</code> instead of the JSON it expected. No test anywhere asserts on this middleware&#39;s exact threshold — it isn&#39;t the behaviour under test, just collateral from a growing suite sharing one rate-limited app instance.</td>
 <td>Limit is now <code>config.isProd ? 120 : 100,000</code> — the real, enforced production value is completely untouched; only non-production runs (including every test file) are effectively uncapped, so continued suite growth can&#39;t trip this again.</td>
 </tr>
+<tr>
+<td>D-24 (critical, production outage)</td>
+<td><code>server/migrations/004_request_guards.sql</code></td>
+<td>Production went down entirely — every deploy crash-looped on boot. <code>CREATE UNIQUE INDEX requests_active_pair_ux</code> (FR-36&#39;s own migration) fails outright if any existing row already violates it, and real usage (including this session&#39;s own heavy live-verification against the demo accounts) had already left more than one simultaneously-active request for the same household/collector pair. <code>server/src/db/migrate.ts</code> retries an unrecorded migration on every boot, so this failed, and failed again, on every subsequent start.</td>
+<td>Added a one-time cleanup step ahead of the index creation: for any pair with more than one live request, keep the OLDEST (matching the guard&#39;s own future behaviour) and cancel the rest. Safe to edit 004 directly — by definition it never successfully committed in production, so it was never &quot;applied&quot; there. Verified empirically before shipping: reproduced the exact scenario against a disposable Postgres (two active requests, one pair, 2h apart) and confirmed the fixed migration + a full production-identical boot (<code>npm run build &amp;&amp; node dist/index.js</code>) both succeed.</td>
+</tr>
+<tr>
+<td>D-25 (critical, production outage)</td>
+<td><code>server/src/jobs/scheduler.ts</code></td>
+<td>Production went down a second time, immediately after D-24&#39;s fix — a <em>different</em> crash, <code>upsertJobScheduler(&quot;presence-sweep-scheduler&quot;)</code> throwing <code>WRONGTYPE</code> against Redis on every boot. Reproduced exactly locally by deliberately corrupting that one scheduler&#39;s own Redis key (hash → string) and getting an identical Lua-script/<code>WRONGTYPE</code> error to production&#39;s log. The deeper cause, confirmed from a fuller log the user pasted: Upstash&#39;s free-tier Redis had hit its hard monthly command quota (<code>max requests limit exceeded. Limit: 500000, Usage: 500010</code>) — not a one-off corrupted key, but <em>every</em> Redis command being rejected for the rest of the billing period, most likely from this session&#39;s own very heavy live-testing.</td>
+<td><code>upsertJobScheduler</code> calls now retry a few times, then fall back to clearing that scheduler&#39;s own Redis state and recreating it. More importantly, <code>scheduleRepeatableJobs()</code> is now non-fatal to boot even if it still fails after retrying — the background sweeps matter, but &quot;the entire API is unreachable&quot; is a wildly disproportionate blast radius for one repeatable job&#39;s registration failing, which is exactly what took production down.</td>
+</tr>
+<tr>
+<td>D-26 (critical)</td>
+<td><code>server/src/modules/presence/routes.ts</code>, <code>server/src/modules/broadcasts/routes.ts</code>, <code>server/src/redis/rateLimit.ts</code></td>
+<td>The Redis quota exhaustion behind D-25 turned out to break more than boot: live smoke-testing after D-25&#39;s fix found &quot;Go online,&quot; broadcast creation, and (implicitly) OTP login all still capable of failing once Redis-dependent code ran mid-request — the architecture treats Redis as the sole source of truth for live geo-matching (Technical_Debt_Plan.md TD-05), with no fallback when it&#39;s unavailable. Fixing this surfaced a second, sharper problem: wrapping a Redis/BullMQ call in <code>.catch()</code> alone doesn&#39;t help if the call never rejects promptly — <code>bullRedis</code>&#39;s required <code>maxRetriesPerRequest: null</code>, and ioredis&#39;s own retry/backoff internals more broadly, meant an unprotected call could hang for tens of seconds to over a minute rather than failing fast, found by explicitly timing a full request flow against a locally-simulated outage (47s before this fix; 18s after, both correct). A third, separate crash risk surfaced in the same investigation: ioredis can throw in ways that bypass promise rejection entirely (a subscribe-mode client — Socket.IO&#39;s Redis adapter uses one — flushing its offline queue once retries are exhausted), which a top-level <code>uncaughtException</code>/<code>unhandledRejection</code> handler (<code>server/src/index.ts</code>) now catches as defence in depth underneath every specific fix below, rather than as a substitute for them.</td>
+<td>Added a <code>withTimeout()</code> helper (<code>server/src/utils/withTimeout.ts</code>, 2–5s per call) applied to every Redis/BullMQ call in a live request path, not just the boot-time scheduler. <code>GET /collectors/nearby</code> and <code>GET /pins/nearby</code> fall back to a direct Postgres/PostGIS geo query (<code>collectors.online</code>/<code>last_location</code>, <code>broadcasts.location</code>) when Redis&#39;s GEOSEARCH can&#39;t answer. <code>POST /presence</code> and <code>/presence/heartbeat</code> always write to Postgres regardless of whether the Redis mirror succeeded. <code>checkOtpRateLimit</code>/<code>checkNotifRateLimit</code> fall back to a small in-process counter (<code>server/src/utils/inMemoryRateLimit.ts</code>) instead of failing wide open — real, if per-instance-only, abuse protection for as long as an outage lasts, chosen over reimplementing BullMQ&#39;s queues in-memory (not worth the complexity for a temporary outage) and over an in-memory geo-matching fallback (Postgres is strictly better there — durable, and already correct if this ever scales to multiple instances). The Socket.IO adapter&#39;s two duplicated Redis clients were also found missing their own <code>&#39;error&#39;</code> listeners (<code>realtime/socket.ts</code>) — added, independent of the uncaught-exception backstop.</td>
+</tr>
 </tbody></table>
-<p>All twenty-two were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
-D-14 through D-22, well after) the corresponding feature — eight by the automated suite (D-11
-by reasoning through the code while building an unrelated feature, D-13 by directly observing
-stuck production queue items while manually verifying D-12), fourteen by deliberately exercising
-the live deployed app or reading its logs (D-05 by me re-testing production myself; D-07, D-10,
-D-12, and D-14 through D-22 reported back by the user; D-08 surfaced in production logs once
+<p>All twenty-five were caught by testing immediately after (or, for D-05/D-06/D-07/D-08/D-10/D-12/
+D-14 through D-22/D-24 through D-26, well after) the corresponding feature — eight by the
+automated suite (D-11 by reasoning through the code while building an unrelated feature, D-13
+by directly observing stuck production queue items while manually verifying D-12), seventeen by
+deliberately exercising the live deployed app or reading its logs (D-05 by me re-testing
+production myself; D-07, D-10, D-12, D-14 through D-22, and D-24 through D-26 reported back by
+the user or caught by watching production directly; D-08 surfaced in production logs once
 the Gemini key went live), and D-09 by a scripted screenshot pass rather than by reading the
 code — direct evidence for why TD-10 (test depth) is listed as &quot;scheduled,&quot; not &quot;critical&quot;: the
 practice works, it just hasn&#39;t been extended to every corner of the app, including production
@@ -960,11 +979,21 @@ z-index. D-21 and D-22 are both instances of the same gap: a piece of transient 
 (<code>info</code>; <code>offlineReady</code>) with a clear &quot;this should eventually go away&quot; intent, but no code that
 actually implemented that intent — correct on the happy path (showing the message) and silently
 wrong on the other half (never un-showing it). D-23 is listed separately, deliberately outside
-the &quot;twenty-two&quot; count above — it&#39;s a test-harness capacity limit the suite&#39;s own growth ran
-into, not a defect in the product being tested, and is recorded here for the same reason
-everything else on this page is: a decision was made and it should be visible, not just quietly
-committed. Some defects are only found by putting the actual feature in front of the actual
-person it&#39;s for, and some are only found by watching your own fix operate for real.</p>
+the count above — it&#39;s a test-harness capacity limit the suite&#39;s own growth ran into, not a
+defect in the product being tested, and is recorded here for the same reason everything else on
+this page is: a decision was made and it should be visible, not just quietly committed. D-24
+through D-26 are a single incident told across its full arc, deliberately not compressed into
+one entry: a first fix (D-24) was real and necessary but not the actual cause of the outage it
+shipped alongside; a second fix (D-25) found and killed the actual crash, then led straight to
+its own root cause (an exhausted third-party Redis quota); and following that thread properly
+(D-26) surfaced two more layers — a whole class of live request paths with no fallback at all,
+and a promise-bypassing crash risk no amount of <code>.catch()</code> placement would ever have caught.
+Each layer was only visible once the one above it was fixed enough to reveal what was
+underneath — a reminder that &quot;the crash stopped&quot; and &quot;the root cause is fixed&quot; are not the same
+milestone, and that a production incident is worth following all the way down rather than
+stopping at the first fix that makes the symptom go away. Some defects are only found by
+putting the actual feature in front of the actual person it&#39;s for, and some are only found by
+watching your own fix operate for real.</p>
 <h2>5. Security testing</h2>
 <table>
 <thead>

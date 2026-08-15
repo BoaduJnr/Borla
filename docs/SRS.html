@@ -496,9 +496,9 @@ tier), Google AI Studio/Gemini (free tier) — no paid Vertex AI tier.</li>
 <td><code>contact_revealed_at</code>; phone fields stripped from the API response pre-accept</td>
 </tr>
 <tr>
-<td>NFR-5 (Reliability under poor connectivity)</td>
-<td>The app tolerates dropped connections and stale devices</td>
-<td>Presence self-heals via a Redis-backed TTL/heartbeat sweep (<code>redis/presence.ts</code>, TD-05); idempotent state transitions; polling fallback alongside sockets</td>
+<td>NFR-5 (Reliability under poor connectivity / infrastructure failure)</td>
+<td>The app tolerates dropped connections and stale devices, and degrades gracefully — never crashes or hangs — if Redis itself becomes unavailable</td>
+<td>Presence self-heals via a Redis-backed TTL/heartbeat sweep (<code>redis/presence.ts</code>, TD-05); idempotent state transitions; polling fallback alongside sockets. A real production incident (Technical_Debt_Plan.md TD-05 update, Testing_Report.md D-24–D-26) found this needed strengthening: <code>GET /collectors/nearby</code>/<code>GET /pins/nearby</code> now fall back to Postgres geo queries, presence writes always durably persist to Postgres regardless of Redis&#39;s outcome, rate limiting degrades to an in-memory counter instead of failing wide open, every Redis/BullMQ call in a live request path is time-boxed (<code>utils/withTimeout.ts</code>), and a top-level <code>uncaughtException</code>/<code>unhandledRejection</code> handler (<code>index.ts</code>) is a last-resort backstop against ioredis&#39;s own promise-bypassing failure modes</td>
 </tr>
 <tr>
 <td>NFR-6 (Usability)</td>

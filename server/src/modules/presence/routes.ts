@@ -5,6 +5,7 @@ import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import * as presence from "../../redis/presence.js";
+import { withTimeout } from "../../utils/withTimeout.js";
 
 export const presenceRouter = Router();
 
@@ -37,7 +38,14 @@ presenceRouter.post(
       if (lon === undefined || lat === undefined) {
         throw new ApiError(400, "lon/lat required to go online");
       }
-      await presence.goOnline(user.id, lon, lat);
+      // Redis is best-effort here, not load-bearing: a Redis incident (found live — an exhausted
+      // Upstash free-tier quota) must never stop a collector from actually going online in the
+      // one place that matters for real, Postgres — GET /collectors/nearby's own fallback below
+      // reads straight from collectors.online/last_location when Redis's geosearch is down, so
+      // this write is what keeps matching alive during an outage, not just a mirror of it.
+      await withTimeout(presence.goOnline(user.id, lon, lat), 3000, "presence.goOnline").catch((err) => {
+        console.error(`[presence] Redis goOnline failed for ${user.id} — continuing Postgres-only`, err);
+      });
       await query(
         `UPDATE collectors SET
            online = true,
@@ -48,7 +56,9 @@ presenceRouter.post(
         [lon, lat, user.id]
       );
     } else {
-      await presence.goOffline(user.id);
+      await withTimeout(presence.goOffline(user.id), 3000, "presence.goOffline").catch((err) => {
+        console.error(`[presence] Redis goOffline failed for ${user.id} — continuing Postgres-only`, err);
+      });
       await query(`UPDATE collectors SET online = false WHERE user_id = $1`, [user.id]);
     }
 
@@ -73,11 +83,21 @@ presenceRouter.post(
   validateBody(heartbeatSchema),
   asyncHandler(async (req, res) => {
     const { lon, lat } = req.body as { lon: number; lat: number };
-    if (!(await presence.isOnline(req.user!.id))) {
+    // Falls back to Postgres's own online flag if Redis can't answer — the same reasoning as
+    // POST /presence below: a Redis incident must degrade this check, never turn it into a hard
+    // failure that locks a genuinely-online collector out of sending further heartbeats.
+    const isOnline = await withTimeout(presence.isOnline(req.user!.id), 3000, "presence.isOnline").catch(async (err) => {
+      console.error(`[presence] Redis isOnline check failed for ${req.user!.id} — falling back to Postgres`, err);
+      const row = await queryOne<{ online: boolean }>(`SELECT online FROM collectors WHERE user_id = $1`, [req.user!.id]);
+      return row?.online ?? false;
+    });
+    if (!isOnline) {
       throw new ApiError(400, "Not online — call POST /presence first");
     }
 
-    await presence.heartbeat(req.user!.id, lon, lat);
+    await withTimeout(presence.heartbeat(req.user!.id, lon, lat), 3000, "presence.heartbeat").catch((err) => {
+      console.error(`[presence] Redis heartbeat failed for ${req.user!.id} — continuing Postgres-only`, err);
+    });
     await query(
       `UPDATE collectors SET
          last_lon = $1, last_lat = $2,
@@ -96,6 +116,28 @@ const nearbySchema = z.object({
   radius: z.coerce.number().min(50).max(20000).default(1200),
 });
 
+/**
+ * Postgres-only stand-in for presence.nearbyCollectors when Redis's GEOSEARCH can't answer —
+ * queries the same durable last_lon/last_lat/last_location mirror every collector write above
+ * already keeps current, so this degrades to "no live matching hot path" rather than "no
+ * matching at all." Returns the same GeoHit shape so the caller doesn't need to know which path
+ * answered. Loses Redis's TTL-based staleness eviction while degraded — a collector who closes
+ * their tab without an explicit "Go offline" stays listed until the Postgres presence sweep (or
+ * Redis recovering) catches up — an acceptable trade during an outage, not a silent forever-bug.
+ */
+async function nearbyCollectorsFallback(lon: number, lat: number, radiusM: number) {
+  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
+    `SELECT c.user_id AS id, c.last_lon AS lon, c.last_lat AS lat,
+            ST_Distance(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
+     FROM collectors c
+     WHERE c.online = true AND c.last_location IS NOT NULL
+       AND ST_DWithin(c.last_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+     ORDER BY distance_m ASC`,
+    [lon, lat, radiusM]
+  );
+  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
+}
+
 /** GET /collectors/nearby — "which online collectors are near this point" (design §5, Q1). */
 presenceRouter.get(
   "/collectors/nearby",
@@ -103,7 +145,10 @@ presenceRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const hits = await presence.nearbyCollectors(lon, lat, radius);
+    const hits = await withTimeout(presence.nearbyCollectors(lon, lat, radius), 3000, "presence.nearbyCollectors").catch((err) => {
+      console.error("[presence] Redis nearbyCollectors failed — falling back to Postgres geo query", err);
+      return nearbyCollectorsFallback(lon, lat, radius);
+    });
     if (hits.length === 0) return res.json({ collectors: [] });
 
     const rows = await query<{

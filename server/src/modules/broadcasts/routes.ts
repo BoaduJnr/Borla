@@ -8,6 +8,7 @@ import { emitToUser } from "../../realtime/socket.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
 import * as presence from "../../redis/presence.js";
 import { fanoutQueue } from "../../jobs/queues.js";
+import { withTimeout } from "../../utils/withTimeout.js";
 
 export const broadcastsRouter = Router();
 
@@ -56,18 +57,37 @@ broadcastsRouter.post(
       [household.id, lon, lat, wasteType ?? null, note ?? null]
     );
 
-    await presence.pinActive(broadcast!.id, lon, lat);
+    // Both Redis-dependent steps below are best-effort against the pin the household just got
+    // back a 201 for — a Redis incident (found live — an exhausted Upstash free-tier quota) must
+    // never turn "your pin is up" into a 500 when the pin itself (Postgres, above) is already
+    // safely created. Losing pinActive means GET /pins/nearby falls back to the Postgres query
+    // below instead of Redis's hot geosearch; losing the fanout enqueue means this specific
+    // broadcast doesn't get its async notification pass — a real degrade, but "the pin exists
+    // and collectors can still find it by polling" beats "the household can't broadcast at all."
+    await withTimeout(presence.pinActive(broadcast!.id, lon, lat), 3000, "presence.pinActive").catch((err) => {
+      console.error(`[broadcasts] Redis pinActive failed for ${broadcast!.id} — falling back to Postgres-only`, err);
+    });
 
-    await fanoutQueue.add("fanout", {
-      broadcastId: broadcast!.id,
-      householdId: household.id,
-      lon,
-      lat,
-      wasteType: wasteType ?? null,
-      note: note ?? null,
-      householdName: household.display_name,
-      householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
-      radiusM,
+    // 5s timeout, not just .catch(): fanoutQueue.add() uses bullRedis, whose
+    // maxRetriesPerRequest:null means a call against unreachable Redis retries forever rather
+    // than ever rejecting — a bare .catch() never fires and this request hangs until the
+    // client's own timeout, found live during tonight's Upstash quota incident.
+    await withTimeout(
+      fanoutQueue.add("fanout", {
+        broadcastId: broadcast!.id,
+        householdId: household.id,
+        lon,
+        lat,
+        wasteType: wasteType ?? null,
+        note: note ?? null,
+        householdName: household.display_name,
+        householdPhone: household.phone, // reveal is immediate for broadcasts — see design §10 / SRS NFR-Privacy
+        radiusM,
+      }),
+      5000,
+      "fanoutQueue.add"
+    ).catch((err) => {
+      console.error(`[broadcasts] failed to enqueue fan-out for ${broadcast!.id} — pin still created, no async notification this time`, err);
     });
 
     res.status(201).json({ broadcast: { ...broadcast, status: "active" } });
@@ -88,7 +108,9 @@ broadcastsRouter.post(
     );
     if (!row) throw new ApiError(404, "No active broadcast found to clear");
 
-    await presence.pinCleared(row.id);
+    await withTimeout(presence.pinCleared(row.id), 3000, "presence.pinCleared").catch((err) => {
+      console.error(`[broadcasts] Redis pinCleared failed for ${row.id} — Postgres is already cleared, degrading gracefully`, err);
+    });
 
     const notifiedCollectors = await query<{ collector_id: string }>(
       `SELECT collector_id FROM broadcast_notifications WHERE broadcast_id = $1`,
@@ -123,6 +145,25 @@ const nearbySchema = z.object({
 });
 
 /**
+ * Postgres-only stand-in for presence.nearbyPinIds when Redis's GEOSEARCH can't answer — the
+ * `broadcasts` table is always the durable source of truth for a pin's existence/status anyway,
+ * so this is a direct geo query against it rather than a Redis-mirrored candidate list. Returns
+ * the same GeoHit shape so the join below doesn't need to know which path answered.
+ */
+async function nearbyPinsFallback(lon: number, lat: number, radiusM: number) {
+  const rows = await query<{ id: string; lon: number; lat: number; distance_m: string }>(
+    `SELECT b.id, b.lon, b.lat,
+            ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
+     FROM broadcasts b
+     WHERE b.status = 'active'
+       AND ST_DWithin(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+     ORDER BY distance_m ASC`,
+    [lon, lat, radiusM]
+  );
+  return rows.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, distanceM: Number(r.distance_m) }));
+}
+
+/**
  * GET /pins/nearby — collector's live map of nearby waste (design §5, Q2). Candidate IDs come
  * from Redis's `pins:active` GEO set (the hot path); details are joined from Postgres, the
  * durable source of truth for the broadcast itself.
@@ -134,7 +175,10 @@ broadcastsRouter.get(
   validateQuery(nearbySchema),
   asyncHandler(async (req, res) => {
     const { lon, lat, radius } = req.query as unknown as { lon: number; lat: number; radius: number };
-    const hits = await presence.nearbyPinIds(lon, lat, radius);
+    const hits = await withTimeout(presence.nearbyPinIds(lon, lat, radius), 3000, "presence.nearbyPinIds").catch((err) => {
+      console.error("[broadcasts] Redis nearbyPinIds failed — falling back to Postgres geo query", err);
+      return nearbyPinsFallback(lon, lat, radius);
+    });
     if (hits.length === 0) return res.json({ pins: [] });
 
     const rows = await query<{ id: string; waste_type: string | null; note: string | null; created_at: string; expires_at: string; household_name: string | null; household_phone: string }>(
