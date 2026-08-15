@@ -7,6 +7,8 @@ import rateLimit from "express-rate-limit";
 
 import { config } from "./config.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { pool } from "./db/pool.js";
+import { redis } from "./redis/client.js";
 
 import { authRouter } from "./modules/auth/routes.js";
 import { presenceRouter } from "./modules/presence/routes.js";
@@ -40,7 +42,32 @@ export function createApp() {
     rateLimit({ windowMs: 60_000, limit: config.isProd ? 120 : 100_000, standardHeaders: true, legacyHeaders: false })
   );
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+  // Actively checks both dependencies rather than just answering "the process is up" — the
+  // BullMQ/Upstash incident this was added right after (a hard monthly Redis command quota,
+  // "max requests limit exceeded", rejecting every Redis command for the rest of the billing
+  // period) would have been invisible from a bare 200 for as long as it lasted. Deliberately
+  // does NOT let Redis being down affect the overall status/HTTP code: Postgres is the one
+  // dependency every route genuinely needs, Redis degrades presence/fan-out/moderation/rate-
+  // limiting but the app is still meaningfully usable without it (and this is the render.yaml
+  // healthCheckPath — if Redis being down also failed this check, Render would consider an
+  // otherwise-working deploy unhealthy and could restart it on a loop for no benefit, since a
+  // restart doesn't fix an exhausted quota). Each check gets its own timeout so a hung
+  // dependency can't make the health check itself hang.
+  app.get("/api/health", async (_req, res) => {
+    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), ms))]);
+
+    const [db, redisHealth] = await Promise.all([
+      withTimeout(pool.query("SELECT 1"), 3000)
+        .then(() => ({ ok: true as const }))
+        .catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })),
+      withTimeout(redis.ping(), 3000)
+        .then(() => ({ ok: true as const }))
+        .catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })),
+    ]);
+
+    res.status(db.ok ? 200 : 503).json({ ok: db.ok, time: new Date().toISOString(), db, redis: redisHealth });
+  });
 
   app.use("/api/auth", authRouter);
   app.use("/api", presenceRouter);
