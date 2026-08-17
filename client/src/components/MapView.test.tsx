@@ -10,6 +10,11 @@ import { MapView } from "./MapView";
  * run its actual, unmodified logic against. No `route`/OSRM fetch involved: `Recenter` only
  * reacts to `center`/`zoom`, so every test here drives that directly via re-renders.
  *
+ * The resume-after-a-gesture half of that behaviour is opt-in (`resumeFollowAfterMs`) — only
+ * Route me's recipient page and a collector's own accepted-request route pass it in production;
+ * every render below passes it explicitly too, since that mechanism is what these tests exist
+ * to exercise.
+ *
  * `setView` deliberately does NOT auto-fire zoomstart/zoomend itself. Real Leaflet's animated
  * zoom fires 'zoomstart' synchronously but 'zoomend' only once its CSS transition completes,
  * asynchronously, well after React has already committed and attached this component's
@@ -52,8 +57,14 @@ vi.mock("react-leaflet", () => ({
 
 const POINT = { lon: -0.187, lat: 5.6037 };
 
+// The resume-after-gesture behaviour these tests exercise is opt-in (MapView.tsx) — off by
+// default so a plain overview map never snaps back under a user just looking around. Every test
+// below passes it explicitly, the same way RouteMeReceive/CollectorHome's own RoutePanel call
+// actually do in production, since that's the mechanism under test here.
+const RESUME_MS = 15_000;
+
 function renderMap(zoom: number) {
-  return render(<MapView center={POINT} points={[]} zoom={zoom} />);
+  return render(<MapView center={POINT} points={[]} zoom={zoom} resumeFollowAfterMs={RESUME_MS} />);
 }
 
 /**
@@ -87,11 +98,11 @@ describe("MapView auto-recentring/zoom (Recenter)", () => {
     // Simulates RoutePanel/RouteMeReceive re-rendering with a shrinking zoomForDistance() result
     // as the two points close in — three steps, not one, to prove this isn't a one-off initial
     // zoom but an ongoing "recompute on every update" behaviour.
-    rerender(<MapView center={POINT} points={[]} zoom={16} />);
+    rerender(<MapView center={POINT} points={[]} zoom={16} resumeFollowAfterMs={RESUME_MS} />);
     expect(fakeMap.setView).toHaveBeenLastCalledWith([POINT.lat, POINT.lon], 16);
     fireZoomStartThenEnd();
 
-    rerender(<MapView center={POINT} points={[]} zoom={18} />);
+    rerender(<MapView center={POINT} points={[]} zoom={18} resumeFollowAfterMs={RESUME_MS} />);
     expect(fakeMap.setView).toHaveBeenLastCalledWith([POINT.lat, POINT.lon], 18);
 
     expect(fakeMap.setView).toHaveBeenCalledTimes(3);
@@ -108,8 +119,8 @@ describe("MapView auto-recentring/zoom (Recenter)", () => {
     // The target keeps getting closer (zoom prop keeps shrinking towards it) exactly as it would
     // in a live request/route-me session — auto-recentring shouldn't act on any of it yet (see
     // the resume-after-15s tests below for what happens once the user actually leaves it alone).
-    rerender(<MapView center={POINT} points={[]} zoom={17} />);
-    rerender(<MapView center={POINT} points={[]} zoom={18} />);
+    rerender(<MapView center={POINT} points={[]} zoom={17} resumeFollowAfterMs={RESUME_MS} />);
+    rerender(<MapView center={POINT} points={[]} zoom={18} resumeFollowAfterMs={RESUME_MS} />);
     expect(fakeMap.setView).toHaveBeenCalledTimes(callsAfterManualZoom);
   });
 
@@ -122,7 +133,7 @@ describe("MapView auto-recentring/zoom (Recenter)", () => {
     const callsAfterManualZoom = fakeMap.setView.mock.calls.length;
     // The target keeps closing in while the user has the map paused — ignored for now, exactly
     // like the immediate-pause test above.
-    rerender(<MapView center={POINT} points={[]} zoom={18} />);
+    rerender(<MapView center={POINT} points={[]} zoom={18} resumeFollowAfterMs={RESUME_MS} />);
     expect(fakeMap.setView).toHaveBeenCalledTimes(callsAfterManualZoom);
 
     // Just under 15s: still paused.
@@ -180,18 +191,18 @@ describe("MapView auto-recentring/zoom (Recenter)", () => {
     });
 
     const callsAfterDrag = fakeMap.setView.mock.calls.length;
-    rerender(<MapView center={{ lon: -0.19, lat: 5.61 }} points={[]} zoom={16} />);
+    rerender(<MapView center={{ lon: -0.19, lat: 5.61 }} points={[]} zoom={16} resumeFollowAfterMs={RESUME_MS} />);
     expect(fakeMap.setView).toHaveBeenCalledTimes(callsAfterDrag);
   });
 
   it("remounting the map (e.g. navigating away and back) starts following again immediately", () => {
-    const first = render(<MapView center={POINT} points={[]} zoom={14} />);
+    const first = render(<MapView center={POINT} points={[]} zoom={14} resumeFollowAfterMs={RESUME_MS} />);
     fireZoomStartThenEnd();
     fireZoomStartThenEnd(); // pause follow on this instance
     first.unmount();
 
     fakeMap.setView.mockClear();
-    render(<MapView center={POINT} points={[]} zoom={16} />);
+    render(<MapView center={POINT} points={[]} zoom={16} resumeFollowAfterMs={RESUME_MS} />);
     // A fresh Recenter instance starts with follow=true again, with no 15s wait needed — the
     // pause above is scoped to one mounted map instance, not the app's lifetime.
     expect(fakeMap.setView).toHaveBeenCalledWith([POINT.lat, POINT.lon], 16);
