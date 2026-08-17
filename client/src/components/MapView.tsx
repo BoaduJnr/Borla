@@ -23,22 +23,33 @@ export interface RouteInfo {
   roadFollowing: boolean; // false when this is the straight-line fallback, not a real route
 }
 
+// How long the map stays put after a user gesture before auto-recentring/zoom resumes on its
+// own. Long enough that it never fights an active pan/pinch (reset on every "drag" tick, not
+// just once per gesture — see below); short enough that a route/map screen left alone for a few
+// seconds still catches back up to a moving target instead of staying stuck wherever the user
+// last looked.
+const RESUME_FOLLOW_AFTER_MS = 15_000;
+
 /**
  * Keeps the map centred on `lon`/`lat` as it updates live — until the user takes over. A
  * collector's own position streams in every few seconds while online/roaming, and a route's
  * zoom recomputes as distance changes (RoutePanel); without this guard, either one yanks the
  * viewport back out from under a finger mid-pan on mobile, making the map impossible to look
  * around in ("resets when you move" — reported directly by a user testing on an iPhone).
- * Once a real drag or pinch-zoom is detected, auto-recentring stops for the life of this map
- * instance; the "you are here"/route markers keep tracking live coordinates regardless, since
- * they're plain props on CircleMarker/Polyline, independent of this viewport-following logic.
+ * A real drag or pinch-zoom pauses auto-recentring, not stops it outright: it resumes on its own
+ * after RESUME_FOLLOW_AFTER_MS of no further gesture, so briefly looking around doesn't mean
+ * losing the live zoom-in-as-you-approach effect for the rest of the session. The "you are
+ * here"/route markers keep tracking live coordinates regardless of any of this, since they're
+ * plain props on CircleMarker/Polyline, independent of this viewport-following logic.
  */
 function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number }) {
   const map = useMap();
   const [follow, setFollow] = useState(true);
   // Distinguishes our own setView-triggered zoomstart/zoomend from a real pinch/double-tap zoom
-  // — setView never fires "dragstart" on its own, only zoomstart/zoomend when the zoom changes.
+  // — setView never fires "dragstart"/"drag" on its own, only zoomstart/zoomend when the zoom
+  // changes.
   const programmaticZoom = useRef(false);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!follow) return;
@@ -47,20 +58,36 @@ function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number 
   }, [lon, lat, zoom, follow, map]);
 
   useEffect(() => {
+    const scheduleResume = () => {
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
+      resumeTimer.current = setTimeout(() => setFollow(true), RESUME_FOLLOW_AFTER_MS);
+    };
     const onZoomEnd = () => {
       programmaticZoom.current = false;
     };
-    const onDragStart = () => setFollow(false);
+    const onDragStart = () => {
+      setFollow(false);
+      scheduleResume();
+    };
+    // Fires repeatedly while an active pan is in progress — restarting the timer on every tick
+    // (not just once at dragstart) is what stops a long, slow drag from getting yanked back to
+    // the target mid-gesture the instant the clock runs out.
+    const onDrag = () => scheduleResume();
     const onZoomStart = () => {
-      if (!programmaticZoom.current) setFollow(false);
+      if (programmaticZoom.current) return;
+      setFollow(false);
+      scheduleResume();
     };
     map.on("zoomend", onZoomEnd);
     map.on("dragstart", onDragStart);
+    map.on("drag", onDrag);
     map.on("zoomstart", onZoomStart);
     return () => {
       map.off("zoomend", onZoomEnd);
       map.off("dragstart", onDragStart);
+      map.off("drag", onDrag);
       map.off("zoomstart", onZoomStart);
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
     };
   }, [map]);
 
