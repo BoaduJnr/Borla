@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
-import { signup, auth, makeAdmin } from "../helpers.js";
+import { signup, auth, makeAdmin, testPhone } from "../helpers.js";
 import { query } from "../../src/db/pool.js";
 
 const app = createApp();
@@ -101,5 +101,25 @@ describe("admin portal (design §17)", () => {
 
     const already = await request(app).post(`/api/admin/replies/${replyId}/approve`).set(auth(admin.access));
     expect(already.status).toBe(404); // already resolved, not silently "ok" again
+  });
+
+  it("GET /admin/route-shares requires admin and lists issued links with delivery/receiver/found status", async () => {
+    const { access } = await signup(app, "household");
+    const forbidden = await request(app).get("/api/admin/route-shares").set(auth(access));
+    expect(forbidden.status).toBe(403);
+
+    const phone = testPhone();
+    const createRes = await request(app).post("/api/route-share").send({ phone, senderLon: -0.19, senderLat: 5.6 });
+    const token = (createRes.body.devLink as string).split("/route/")[1];
+    await request(app).post(`/api/route-share/${token}/checkin`).send({ lon: -0.191, lat: 5.601 });
+
+    const admin = await makeAdmin(app);
+    const list = await request(app).get("/api/admin/route-shares").set(auth(admin.access));
+    expect(list.status).toBe(200);
+    const row = list.body.routeShares.find((r: any) => r.phone === phone);
+    expect(row).toBeTruthy();
+    expect(row.delivered).toBe(false); // no GiantSMS configured in test env
+    expect(row.receiver_lon).toBeCloseTo(-0.191);
+    expect(row.receiver_lat).toBeCloseTo(5.601);
   });
 });

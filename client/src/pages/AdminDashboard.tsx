@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { MapView, type MapPoint } from "../components/MapView";
+import { MapView, type MapPoint, type RouteInfo } from "../components/MapView";
 import { FALLBACK_COORDS } from "../hooks/useGeolocation";
+import { formatDistance, zoomForDistance } from "../utils/geo";
+import { IconClose } from "../components/Icon";
 
-type Tab = "stats" | "map" | "users" | "moderation" | "audit" | "config";
+type Tab = "stats" | "map" | "users" | "moderation" | "audit" | "config" | "routes";
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("stats");
@@ -14,7 +16,7 @@ export default function AdminDashboard() {
         Admin — Ops console
       </h2>
       <div className="row" style={{ flexWrap: "wrap" }}>
-        {(["stats", "map", "users", "moderation", "audit", "config"] as Tab[]).map((t) => (
+        {(["stats", "map", "users", "moderation", "audit", "config", "routes"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`btn btn-sm ${tab === t ? "btn-dark" : "btn-ghost"}`}
@@ -30,6 +32,7 @@ export default function AdminDashboard() {
       {tab === "moderation" && <ModerationTab />}
       {tab === "audit" && <AuditTab />}
       {tab === "config" && <ConfigTab />}
+      {tab === "routes" && <RouteSharesTab />}
     </div>
   );
 }
@@ -382,6 +385,123 @@ function ConfigTab() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Every "Route me" link issued, and whether the recipient ever actually found the sender. */
+function RouteSharesTab() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [viewing, setViewing] = useState<any | null>(null);
+
+  useEffect(() => {
+    api<{ routeShares: any[] }>("/admin/route-shares").then((d) => setRows(d.routeShares));
+  }, []);
+
+  return (
+    <div className="stack">
+      <p className="muted" style={{ fontSize: 12.5 }}>
+        Every "Route me" link sent, newest first. "Found" means the recipient's own reported
+        position came within 150m of the sender at some point while the link was open — a soft,
+        self-reported signal for ops visibility, not a verified/security-grade check.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Sent</th>
+              <th>Phone</th>
+              <th>Delivered</th>
+              <th>Status</th>
+              <th>Map</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const expired = new Date(r.expires_at).getTime() < Date.now();
+              return (
+                <tr key={r.id}>
+                  <td>{new Date(r.created_at).toLocaleString()}</td>
+                  <td>{r.phone}</td>
+                  <td>{r.delivered ? "✓" : "—"}</td>
+                  <td>
+                    {r.found_at ? (
+                      <span className="tag-chip t-green">Found</span>
+                    ) : expired ? (
+                      <span className="tag-chip t-coral">Expired</span>
+                    ) : (
+                      <span className="tag-chip t-gold">Pending</span>
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={r.receiver_lon == null}
+                      onClick={() => setViewing(r)}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {viewing && <RouteShareMapModal row={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+/** Issuer's + receiver's original (first-fix) locations for one route-share link, as a lightbox
+ * map — same fixed-inset dialog shape RoutePanel's own enlarge view already uses. */
+function RouteShareMapModal({ row, onClose }: { row: any; onClose: () => void }) {
+  const [info, setInfo] = useState<RouteInfo | null>(null);
+  const sender = { lon: row.sender_lon, lat: row.sender_lat };
+  const receiver = { lon: row.receiver_lon, lat: row.receiver_lat };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", border: 0, cursor: "pointer" }}
+      />
+      <div className="map-wrap" style={{ width: "100%", maxWidth: 640, height: "80vh", position: "relative", zIndex: 1 }}>
+        <MapView
+          center={sender}
+          points={[
+            { id: "sender", lon: sender.lon, lat: sender.lat, color: "#0E6E4E", label: "Issuer" },
+            { id: "receiver", lon: receiver.lon, lat: receiver.lat, color: "#F5A208", label: "Receiver (first fix)" },
+          ]}
+          route={{ from: receiver, to: sender }}
+          onRouteInfo={setInfo}
+          zoom={zoomForDistance(info?.distanceM)}
+          className="map-wrap"
+        />
+        <button
+          type="button"
+          className="btn btn-dark btn-sm"
+          style={{ position: "absolute", top: 10, right: 10, padding: 8, borderRadius: 999 }}
+          onClick={onClose}
+          aria-label="Close"
+        >
+          <IconClose size={18} color="#fff" />
+        </button>
+        {info && (
+          <p
+            className="muted"
+            style={{ position: "absolute", bottom: 10, left: 10, background: "#fff", padding: "6px 10px", borderRadius: 8, fontSize: 12.5 }}
+          >
+            {formatDistance(info.distanceM)} apart{row.found_at ? " · found ✓" : ""}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

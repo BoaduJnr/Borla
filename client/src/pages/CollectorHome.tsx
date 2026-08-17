@@ -10,7 +10,7 @@ import { StatusChip } from "./HouseholdHome";
 import { RequestReviews } from "../components/RequestReviews";
 import { IconPower, IconPhone } from "../components/Icon";
 import { Avatar } from "../components/Avatar";
-import { haversineM, formatDistance } from "../utils/geo";
+import { haversineM, formatDistance, LIVE_TRACKING_RESUME_MS } from "../utils/geo";
 
 interface Pin {
   id: string;
@@ -441,6 +441,10 @@ function CollectorRequestCard({
               to={{ lon: r.household_lon, lat: r.household_lat }}
               label={r.household_name ?? "household"}
               onDistanceChange={onDistanceChange}
+              // Opt in here (not on HouseholdHome's equivalent route to a collector): this is a
+              // collector actively navigating toward a fixed target, the same "closing in on a
+              // moving/live goal" scenario Route me's recipient page is.
+              resumeFollowAfterMs={LIVE_TRACKING_RESUME_MS}
             />
           )}
           {!isHistory && r.accept_lon != null && r.accept_lat != null && (

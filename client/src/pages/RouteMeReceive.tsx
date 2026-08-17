@@ -4,7 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { MapView, type RouteInfo } from "../components/MapView";
 import { Logo } from "../components/Logo";
-import { haversineM, formatDistance, zoomForDistance, type LonLat } from "../utils/geo";
+import { haversineM, formatDistance, zoomForDistance, LIVE_TRACKING_RESUME_MS, type LonLat } from "../utils/geo";
 
 interface ShareInfo {
   senderLon: number;
@@ -63,13 +63,15 @@ export default function RouteMeReceive() {
           </div>
         )}
 
-        {share && locating && <RouteToSender senderLon={share.senderLon} senderLat={share.senderLat} />}
+        {share && locating && token && (
+          <RouteToSender token={token} senderLon={share.senderLon} senderLat={share.senderLat} />
+        )}
       </div>
     </div>
   );
 }
 
-function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat: number }) {
+function RouteToSender({ token, senderLon, senderLat }: { token: string; senderLon: number; senderLat: number }) {
   // Watched (not one-shot) so the recipient's own position keeps updating while they actually
   // walk toward the sender — the same live-tracking pattern CollectorHome uses while a collector
   // roams. `receivePoint` is the first fix only, captured once and never overwritten, exactly
@@ -83,10 +85,30 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
   // its straight-line fallback), not the receivePoint-based "travelled" figure below — those are
   // two different numbers: one is progress since starting, the other is distance still to close.
   const [info, setInfo] = useState<RouteInfo | null>(null);
+  const [found, setFound] = useState(false);
 
   useEffect(() => {
     if (coords && !receivePoint) setReceivePoint(coords);
   }, [coords, receivePoint]);
+
+  // Pings the server with each fresh fix so it can (a) capture this recipient's original
+  // location for the admin's map, and (b) mark the link "found" once we're within 150m of the
+  // sender — an ops-visibility signal, not something shown as a security/business decision.
+  // Stops pinging once found, since there's nothing left to detect.
+  useEffect(() => {
+    if (!coords || found) return;
+    let cancelled = false;
+    api<{ found: boolean }>(`/route-share/${token}/checkin`, { method: "POST", body: coords, auth: false })
+      .then((res) => {
+        if (!cancelled && res.found) setFound(true);
+      })
+      .catch(() => {
+        // Best-effort — a failed check-in never blocks the map/route from working.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [coords, found, token]);
 
   if (geoError) {
     return (
@@ -108,6 +130,7 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
           onRouteInfo={setInfo}
           zoom={zoomForDistance(info?.distanceM)}
           className="map-fill"
+          resumeFollowAfterMs={LIVE_TRACKING_RESUME_MS}
         />
       </div>
       <p className="muted" style={{ fontSize: 12.5 }}>
@@ -118,6 +141,7 @@ function RouteToSender({ senderLon, senderLat }: { senderLon: number; senderLat:
           You've travelled {formatDistance(haversineM(receivePoint, coords))} since you started tracking
         </p>
       )}
+      {found && <div className="banner ok">You're close — they should be able to see you found them.</div>}
     </div>
   );
 }

@@ -227,6 +227,25 @@ adminRouter.get(
   })
 );
 
+/**
+ * GET /admin/route-shares — every "Route me" link issued, for ops visibility + abuse review.
+ * Includes `phone`: unlike the recipient's own page (which must never learn who sent a link),
+ * this is an admin-only investigative view — the column itself already exists "for abuse
+ * investigation only" (route_shares migration). No audit-log entry: reads aren't audited
+ * anywhere else in this router either.
+ */
+adminRouter.get(
+  "/route-shares",
+  asyncHandler(async (_req, res) => {
+    const rows = await query(
+      `SELECT id, phone, sender_lon, sender_lat, receiver_lon, receiver_lat,
+              delivered, found_at, expires_at, created_at
+       FROM route_shares ORDER BY created_at DESC LIMIT 200`
+    );
+    res.json({ routeShares: rows });
+  })
+);
+
 /** GET/PATCH /admin/config — live tuning without redeploy (design §17). */
 adminRouter.get(
   "/config",

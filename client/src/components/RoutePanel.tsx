@@ -15,6 +15,7 @@ export function RoutePanel({
   to,
   label,
   onDistanceChange,
+  resumeFollowAfterMs,
 }: {
   from: RouteEndpoint;
   to: RouteEndpoint;
@@ -23,6 +24,10 @@ export function RoutePanel({
    * requests can sort itself by "closest first" and keep that order current as either side
    * moves, instead of only ever reflecting distance at the moment the list was loaded. */
   onDistanceChange?: (distanceM: number) => void;
+  /** Forwarded to MapView — opt-in per caller (see MapView.tsx). Left off by default: only a
+   * collector's own accepted-request route currently opts in, not the household side of that
+   * same route. */
+  resumeFollowAfterMs?: number;
 }) {
   const [info, setInfo] = useState<RouteInfo | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -50,6 +55,7 @@ export function RoutePanel({
           zoom={zoom}
           interactive={false}
           className="map-wrap"
+          resumeFollowAfterMs={resumeFollowAfterMs}
         />
         <span
           className="muted"
@@ -105,6 +111,7 @@ export function RoutePanel({
               route={{ from, to }}
               zoom={zoom}
               className="map-wrap"
+              resumeFollowAfterMs={resumeFollowAfterMs}
             />
             <button
               type="button"

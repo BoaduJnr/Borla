@@ -31,6 +31,17 @@ export function formatDistance(m: number): string {
  * (HouseholdHome/CollectorHome's nearby lists, AdminDashboard's live map) where there's no single
  * target to zoom in on.
  */
+/**
+ * How long a manual pan/pinch pauses the "recentre + zoom in as you approach" auto-follow
+ * (MapView's Recenter) before it resumes on its own. Opt-in per screen, not a global default —
+ * MapView/RoutePanel leave auto-recentring off for good once a user pans unless a caller passes
+ * this explicitly. The two screens that opt in are the two "closing in on a live target" flows:
+ * Route me's recipient page (a stranger walking toward the sender) and a collector's own
+ * accepted-request route (navigating to a matched household) — not the household side of that
+ * same route, and not a plain overview map with no single target to zoom in on.
+ */
+export const LIVE_TRACKING_RESUME_MS = 15_000;
+
 export function zoomForDistance(m: number | undefined): number {
   if (m == null) return 14;
   if (m > 3000) return 13;

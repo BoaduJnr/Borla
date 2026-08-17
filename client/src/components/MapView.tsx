@@ -23,26 +23,22 @@ export interface RouteInfo {
   roadFollowing: boolean; // false when this is the straight-line fallback, not a real route
 }
 
-// How long the map stays put after a user gesture before auto-recentring/zoom resumes on its
-// own. Long enough that it never fights an active pan/pinch (reset on every "drag" tick, not
-// just once per gesture — see below); short enough that a route/map screen left alone for a few
-// seconds still catches back up to a moving target instead of staying stuck wherever the user
-// last looked.
-const RESUME_FOLLOW_AFTER_MS = 15_000;
-
 /**
  * Keeps the map centred on `lon`/`lat` as it updates live — until the user takes over. A
  * collector's own position streams in every few seconds while online/roaming, and a route's
  * zoom recomputes as distance changes (RoutePanel); without this guard, either one yanks the
  * viewport back out from under a finger mid-pan on mobile, making the map impossible to look
  * around in ("resets when you move" — reported directly by a user testing on an iPhone).
- * A real drag or pinch-zoom pauses auto-recentring, not stops it outright: it resumes on its own
- * after RESUME_FOLLOW_AFTER_MS of no further gesture, so briefly looking around doesn't mean
- * losing the live zoom-in-as-you-approach effect for the rest of the session. The "you are
+ * A real drag or pinch-zoom always pauses auto-recentring; whether it ever resumes on its own is
+ * opt-in via `resumeAfterMs` (LIVE_TRACKING_RESUME_MS, utils/geo.ts) — only the screens where
+ * periodically snapping back to a moving/closing target actually matters (Route me's recipient
+ * page, a collector's own accepted-request route) pass it. Everywhere else, panning once stops
+ * auto-recentring for the life of this map instance, so a plain overview map (HouseholdHome,
+ * the admin live map) never yanks the view back under a user just looking around. The "you are
  * here"/route markers keep tracking live coordinates regardless of any of this, since they're
  * plain props on CircleMarker/Polyline, independent of this viewport-following logic.
  */
-function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number }) {
+function Recenter({ lon, lat, zoom, resumeAfterMs }: { lon: number; lat: number; zoom?: number; resumeAfterMs?: number }) {
   const map = useMap();
   const [follow, setFollow] = useState(true);
   // Distinguishes our own setView-triggered zoomstart/zoomend from a real pinch/double-tap zoom
@@ -59,8 +55,9 @@ function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number 
 
   useEffect(() => {
     const scheduleResume = () => {
+      if (!resumeAfterMs) return; // opted out — once panned, stay put for good
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
-      resumeTimer.current = setTimeout(() => setFollow(true), RESUME_FOLLOW_AFTER_MS);
+      resumeTimer.current = setTimeout(() => setFollow(true), resumeAfterMs);
     };
     const onZoomEnd = () => {
       programmaticZoom.current = false;
@@ -89,7 +86,7 @@ function Recenter({ lon, lat, zoom }: { lon: number; lat: number; zoom?: number 
       map.off("zoomstart", onZoomStart);
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
     };
-  }, [map]);
+  }, [map, resumeAfterMs]);
 
   return null;
 }
@@ -161,6 +158,7 @@ export function MapView({
   onRouteInfo,
   zoom = 14,
   interactive = true,
+  resumeFollowAfterMs,
 }: {
   center: { lon: number; lat: number };
   points: MapPoint[];
@@ -175,6 +173,11 @@ export function MapView({
    * the page past a small map doesn't accidentally zoom it. The enlarged lightbox stays fully
    * interactive. */
   interactive?: boolean;
+  /** Opt-in: how long a manual pan/pinch pauses auto-recentring before it resumes on its own
+   * (LIVE_TRACKING_RESUME_MS, utils/geo.ts). Omitted entirely by default — panning once then
+   * stops auto-recentring for good, which is the right behaviour for a plain overview map with
+   * no single target to snap back to. */
+  resumeFollowAfterMs?: number;
 }) {
   const routeState = useRoute(route?.from, route?.to, onRouteInfo);
 
@@ -197,7 +200,7 @@ export function MapView({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Recenter lon={center.lon} lat={center.lat} zoom={zoom} />
+        <Recenter lon={center.lon} lat={center.lat} zoom={zoom} resumeAfterMs={resumeFollowAfterMs} />
         {routeState && (
           <Polyline
             positions={routeState.path}
