@@ -14,5 +14,9 @@
     "strict": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // sw.ts runs in the service worker global scope (WebWorker lib), not the browser window (DOM
+  // lib) — the two declare conflicting globals (e.g. `self`), so it gets its own program
+  // (tsconfig.sw.json) instead of joining this one.
+  "exclude": ["src/sw.ts"]
 }

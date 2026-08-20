@@ -4,7 +4,7 @@ import { query, queryOne } from "../../db/pool.js";
 import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { emitToUser } from "../../realtime/socket.js";
+import { notifyUser } from "../../notify.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
 import * as presence from "../../redis/presence.js";
 import { fanoutQueue } from "../../jobs/queues.js";
@@ -124,7 +124,11 @@ broadcastsRouter.post(
       [row.id]
     );
     for (const { collector_id } of notifiedCollectors) {
-      emitToUser(collector_id, "broadcast:cleared", { broadcastId: row.id });
+      notifyUser(collector_id, "broadcast:cleared", { broadcastId: row.id }, {
+        title: "Pin no longer available",
+        body: "That household's pin was cleared — someone already came.",
+        tag: `broadcast:${row.id}`,
+      });
     }
     res.json({ ok: true });
   })

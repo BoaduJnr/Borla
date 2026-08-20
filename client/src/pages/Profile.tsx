@@ -6,6 +6,7 @@ import { Avatar } from "../components/Avatar";
 import { Stars } from "../components/Stars";
 import { InstallButton } from "../pwa/InstallButton";
 import { useInstallPrompt } from "../pwa/useInstallPrompt";
+import { PushToggle } from "../pwa/PushToggle";
 
 export default function Profile() {
   const { user, profile, refreshProfile } = useAuth();
@@ -77,6 +78,10 @@ export default function Profile() {
           <span className="muted" style={{ fontSize: 13 }}>Add Borla to your home screen for one-tap access.</span>
         )}
         <InstallButton />
+      </div>
+
+      <div className="card">
+        <PushToggle />
       </div>
 
       {error && (

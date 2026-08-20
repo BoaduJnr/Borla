@@ -19,6 +19,7 @@ import { reviewsRouter } from "./modules/reviews/routes.js";
 import { adminRouter } from "./modules/admin/routes.js";
 import { routeShareRouter } from "./modules/routeShare/routes.js";
 import { landmarksRouter } from "./modules/landmarks/routes.js";
+import { pushRouter } from "./modules/push/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +112,7 @@ export function createApp() {
   app.use("/api/admin", adminRouter);
   app.use("/api", routeShareRouter);
   app.use("/api", landmarksRouter);
+  app.use("/api", pushRouter);
 
   const clientDist = path.resolve(__dirname, "../../client/dist");
   app.use(express.static(clientDist));

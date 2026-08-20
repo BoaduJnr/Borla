@@ -25,6 +25,15 @@ export const config = {
     token: process.env.GIANTSMS_API_TOKEN ?? "",
     senderId: process.env.GIANTSMS_SENDER_ID ?? "",
   },
+  // Web Push (VAPID) — real OS-level notifications, closing the gap Socket.IO alone can't:
+  // emitToUser() only reaches a client with the tab open and connected right now. Same
+  // fail-open-without-a-key spirit as geminiApiKey/giantSms above: notify.ts's push half is a
+  // silent no-op whenever these aren't configured, never a hard failure blocking the socket half.
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.VAPID_SUBJECT ?? "mailto:admin@borla.example",
+  },
   // Business tuning defaults — mirrored in app_config so admins can retune without redeploy
   // (borla-technical-design.md §17 "Neighbourhood & config management")
   defaults: {

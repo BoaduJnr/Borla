@@ -8,12 +8,22 @@ export default defineConfig({
     // Real PWA install + update behaviour (resolves part of Technical_Debt_Plan.md TD-04):
     // installable app-shell with icons, a service worker that precaches the built assets, and
     // registerType:'prompt' so updates surface as an explicit "Update available" banner
-    // (src/pwa.ts) instead of silently swapping content under a user's feet. API/socket traffic
-    // is untouched — no runtimeCaching rule targets /api or /socket.io, so it always hits the
-    // network live; only the static app shell (JS/CSS/HTML/icons) is precached for offline use.
+    // (src/pwa/UpdatePrompt.tsx) instead of silently swapping content under a user's feet.
+    // API/socket traffic is untouched — no route in src/sw.ts targets /api or /socket.io, so it
+    // always hits the network live; only the static app shell (JS/CSS/HTML/icons) is precached.
+    //
+    // strategies: 'injectManifest' (was the default 'generateSW') — a real push notification
+    // handler needs a `push`/`notificationclick` listener, which generateSW's auto-generated
+    // worker has no room for. src/sw.ts is a real, hand-written service worker source now;
+    // everything generateSW used to do automatically (precaching, the SPA navigation fallback,
+    // the SKIP_WAITING message registerType:'prompt' depends on) is rebuilt there explicitly —
+    // see that file's own comments for the line-by-line mapping.
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       registerType: "prompt",
-      injectRegister: null, // we call registerSW ourselves in src/pwa.ts for a custom update UI
+      injectRegister: null, // we call registerSW ourselves in src/pwa/UpdatePrompt.tsx for a custom update UI
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "Borla",
@@ -31,9 +41,9 @@ export default defineConfig({
           { src: "/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: {
+      injectManifest: {
+        // The injectManifest equivalent of the old workbox.globPatterns — what gets precached.
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
-        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
       },
       devOptions: {
         enabled: false, // keep local `npm run dev` free of service-worker caching quirks

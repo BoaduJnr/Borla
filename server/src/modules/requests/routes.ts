@@ -5,6 +5,7 @@ import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import { emitToUser } from "../../realtime/socket.js";
+import { notifyUser } from "../../notify.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
 import { sendSms, isSmsConfigured } from "../../utils/sms.js";
 
@@ -55,15 +56,24 @@ requestsRouter.post(
       throw err;
     }
 
-    emitToUser(collectorId, "request:new", {
-      requestId: row!.id,
-      householdId: req.user!.id,
-      householdName: req.user!.display_name,
-      lon,
-      lat,
-      wasteType: wasteType ?? null,
-      note: note ?? null,
-    });
+    notifyUser(
+      collectorId,
+      "request:new",
+      {
+        requestId: row!.id,
+        householdId: req.user!.id,
+        householdName: req.user!.display_name,
+        lon,
+        lat,
+        wasteType: wasteType ?? null,
+        note: note ?? null,
+      },
+      {
+        title: "New pickup request",
+        body: `${req.user!.display_name ?? "A household"} sent you a request.`,
+        tag: `request:${row!.id}`,
+      }
+    );
 
     res.status(201).json({ request: row });
   })
@@ -174,7 +184,13 @@ requestsRouter.post(
       if (!sent.ok) console.error(`[requests] arrival SMS failed for ${household.phone}: ${sent.error}`);
     }
 
-    emitToUser(row.household_id, "request:arrived", { requestId: row.id });
+    notifyUser(row.household_id, "request:arrived", { requestId: row.id }, {
+      title: "🎉 Your collector has arrived!",
+      body: "They're at your pickup point now.",
+      tag: `request:${row.id}`,
+    });
+    // No push for the collector's own copy of this event — they just tapped "I've arrived"
+    // themselves and are already looking at the confirmation on screen.
     emitToUser(req.user!.id, "request:arrived", { requestId: row.id });
     res.json({ ok: true });
   })
@@ -219,7 +235,13 @@ requestsRouter.post(
       [req.params.id, req.user!.id]
     );
     // Zero rows = already resolved (accepted/rejected/timed_out) — idempotent no-op, not an error.
-    if (row) emitToUser(row.household_id, "request:seen", { requestId: row.id });
+    if (row) {
+      notifyUser(row.household_id, "request:seen", { requestId: row.id }, {
+        title: "Request seen",
+        body: "The collector has seen your request.",
+        tag: `request:${row.id}`,
+      });
+    }
     res.json({ ok: true });
   })
 );
@@ -251,7 +273,11 @@ requestsRouter.post(
       [req.params.id, req.user!.id]
     );
     if (!row) throw new ApiError(409, "This request is no longer pending (already resolved or timed out)");
-    emitToUser(row.household_id, "request:accepted", { requestId: row.id });
+    notifyUser(row.household_id, "request:accepted", { requestId: row.id }, {
+      title: "Request accepted!",
+      body: "A collector accepted your request — they're on the way.",
+      tag: `request:${row.id}`,
+    });
     res.json({ ok: true });
   })
 );
@@ -268,7 +294,11 @@ requestsRouter.post(
       [req.params.id, req.user!.id]
     );
     if (!row) throw new ApiError(409, "This request is no longer pending (already resolved or timed out)");
-    emitToUser(row.household_id, "request:rejected", { requestId: row.id });
+    notifyUser(row.household_id, "request:rejected", { requestId: row.id }, {
+      title: "Request declined",
+      body: "That collector can't take this one — try another nearby.",
+      tag: `request:${row.id}`,
+    });
     res.json({ ok: true });
   })
 );
@@ -296,7 +326,11 @@ requestsRouter.post(
     );
     if (!row) throw new ApiError(409, "This request can no longer be cancelled (already resolved, or the collector has arrived)");
     const otherPartyId = user.role === "household" ? row.collector_id : row.household_id;
-    emitToUser(otherPartyId, "request:cancelled", { requestId: row.id, cancelledBy: user.role });
+    notifyUser(otherPartyId, "request:cancelled", { requestId: row.id, cancelledBy: user.role }, {
+      title: "Request cancelled",
+      body: user.role === "household" ? "The household cancelled this request." : "The collector cancelled this request.",
+      tag: `request:${row.id}`,
+    });
     res.json({ ok: true });
   })
 );

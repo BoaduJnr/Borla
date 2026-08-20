@@ -33,3 +33,12 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Web Push (VAPID) — not generateValue:true like the JWT secrets above: these need to be a
+      # real EC P-256 keypair (web-push's own generateVAPIDKeys(), not an arbitrary random
+      # string), so they're supplied the same way GIANTSMS/GEMINI are.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

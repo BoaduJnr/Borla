@@ -2,6 +2,7 @@ import { Worker, type Job } from "bullmq";
 import { bullRedis } from "../redis/client.js";
 import { query, queryOne } from "../db/pool.js";
 import { emitToUser } from "../realtime/socket.js";
+import { notifyUser } from "../notify.js";
 import { getConfigNumber, AppConfigKeys, defaults } from "../utils/appConfig.js";
 import { sweepStalePresence, pinCleared, nearbyCollectorsMerged } from "../redis/presence.js";
 import { checkNotifRateLimit } from "../redis/rateLimit.js";
@@ -35,13 +36,21 @@ async function pinExpirySweep() {
       [b.id]
     );
     for (const { collector_id } of notified) {
-      emitToUser(collector_id, "broadcast:cleared", { broadcastId: b.id, reason: "expired" });
+      notifyUser(collector_id, "broadcast:cleared", { broadcastId: b.id, reason: "expired" }, {
+        title: "Pin no longer available",
+        body: "That waste pin expired — no need to head over.",
+        tag: `broadcast:${b.id}`,
+      });
     }
     // The household itself previously had no push signal for its own pin expiring — only the
     // notified collectors got one — so HouseholdHome relied entirely on an 8s poll (loadActiveBroadcast)
     // to notice the disappearance and prompt "did someone come?". Emitting here lets that poll
     // become a safety net instead of the only path, matching the collector side's broadcast:cleared.
-    emitToUser(b.household_id, "broadcast:expired", { broadcastId: b.id });
+    notifyUser(b.household_id, "broadcast:expired", { broadcastId: b.id }, {
+      title: "Your pin expired",
+      body: "Did someone come for your waste? Open Borla to let us know.",
+      tag: `broadcast:${b.id}`,
+    });
   }
   if (expired.length) console.log(`[jobs] pin expiry: ${expired.length} broadcast(s) expired`);
 }
@@ -55,7 +64,13 @@ async function requestTimeoutSweep() {
        AND requested_at < now() - interval '${timeoutSeconds} seconds'
      RETURNING id, household_id`
   );
-  for (const r of rows) emitToUser(r.household_id, "request:timed_out", { requestId: r.id });
+  for (const r of rows) {
+    notifyUser(r.household_id, "request:timed_out", { requestId: r.id }, {
+      title: "No response",
+      body: "That collector didn't respond in time — try another one nearby.",
+      tag: `request:${r.id}`,
+    });
+  }
   if (rows.length) console.log(`[jobs] request timeout: ${rows.length} request(s) timed out`);
 }
 
@@ -153,15 +168,18 @@ export async function runFanoutLogic(data: FanoutJobData) {
       `INSERT INTO broadcast_notifications (broadcast_id, collector_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [broadcastId, candidate.id]
     );
-    emitToUser(candidate.id, "broadcast:new", {
-      broadcastId,
-      lon,
-      lat,
-      wasteType,
-      note,
-      householdName,
-      householdPhone,
-    });
+    notifyUser(
+      candidate.id,
+      "broadcast:new",
+      { broadcastId, lon, lat, wasteType, note, householdName, householdPhone },
+      {
+        // The core gap this whole feature exists to close: a collector with the tab closed or
+        // the phone locked previously got nothing at all for a new pin nearby.
+        title: "New waste pickup nearby",
+        body: `${householdName ?? "A household"} nearby has ${wasteType ?? "waste"} ready for pickup.`,
+        tag: `broadcast:${broadcastId}`,
+      }
+    );
     notified++;
   }
   emitToUser(householdId, "broadcast:fanned_out", { broadcastId, notified });
