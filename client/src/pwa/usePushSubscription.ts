@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { urlBase64ToUint8Array } from "../utils/push";
+import { isIOS, isStandalone } from "../utils/platform";
 
 /**
  * Real OS-level push notifications (closes the gap Socket.IO's emitToUser() alone can't — that
@@ -9,15 +10,24 @@ import { urlBase64ToUint8Array } from "../utils/push";
  * on "Enable notifications" (see PushToggle.tsx), never automatically on load. Same "a stranger/
  * user deserves an informed prompt, not a surprise browser popup" philosophy already used for
  * geolocation (useGeolocation.ts) and RouteMeReceive's own "Locate me" button.
+ *
+ * iOS is a real, separate case, not just "another browser": Safari exposes `serviceWorker`/
+ * `PushManager` in a plain tab (so the naive feature-detect below reports `supported: true`),
+ * but Apple only actually delivers push to an installed, Home-Screen PWA (`display-mode:
+ * standalone`) — a plain Safari tab's subscribe() call fails. Found live: this is exactly why it
+ * worked on a laptop browser and silently didn't on an iPhone opened straight in Safari.
+ * `needsIOSInstall` exists so the UI can say *why*, instead of a generic failure or (worse)
+ * nothing at all.
  */
 export function usePushSubscription() {
   const [supported] = useState(() => "serviceWorker" in navigator && "PushManager" in window);
+  const [needsIOSInstall] = useState(() => isIOS() && !isStandalone());
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supported) return;
+    if (!supported || needsIOSInstall) return;
     let cancelled = false;
     navigator.serviceWorker.ready
       .then((reg) => reg.pushManager.getSubscription())
@@ -30,10 +40,17 @@ export function usePushSubscription() {
     return () => {
       cancelled = true;
     };
-  }, [supported]);
+  }, [supported, needsIOSInstall]);
 
   async function subscribe() {
     setError(null);
+    if (needsIOSInstall) {
+      // PushToggle.tsx shouldn't even show a button in this case, but guard here too in case
+      // subscribe() is ever called another way — a plain Safari tab's subscribe() call would
+      // otherwise fail with an opaque browser error instead of this actionable one.
+      setError("Add Borla to your Home Screen first (Share → Add to Home Screen), then open it from there to turn on notifications.");
+      return;
+    }
     setBusy(true);
     try {
       const permission = await Notification.requestPermission();
@@ -85,5 +102,5 @@ export function usePushSubscription() {
     }
   }
 
-  return { supported, subscribed, busy, error, subscribe, unsubscribe };
+  return { supported, needsIOSInstall, subscribed, busy, error, subscribe, unsubscribe };
 }

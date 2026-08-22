@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isStandalone } from "../utils/platform";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -15,14 +16,7 @@ interface BeforeInstallPromptEvent extends Event {
  */
 export function useInstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(
-    () =>
-      (window.matchMedia?.("(display-mode: standalone)").matches ?? false) ||
-      // Older iOS Safari never reflects standalone launches in the display-mode media query —
-      // it exposes this non-standard boolean instead. Without it, an iPhone user who already
-      // did a manual "Add to Home Screen" would keep seeing the install prompt forever.
-      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-  );
+  const [installed, setInstalled] = useState(isStandalone);
 
   useEffect(() => {
     const onBeforeInstall = (e: Event) => {

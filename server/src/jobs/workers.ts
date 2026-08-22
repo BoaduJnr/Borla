@@ -244,6 +244,52 @@ async function processModerate(job: Job<ModerateJobData>) {
 // ---------------------------------------------------------------- wiring
 
 let workers: Worker[] = [];
+let backoffTimers: ReturnType<typeof setTimeout>[] = [];
+
+// Matches ioredis's ReplyError.message for Upstash's hard monthly command quota (found live —
+// see Technical_Debt_Plan.md TD-05 — during the exact incident that motivated this): e.g.
+// "ERR max requests limit exceeded. Limit: 500000, Usage: 500010. See https://upstash.com/..."
+const REDIS_QUOTA_ERROR_PATTERN = /max requests limit exceeded/i;
+const QUOTA_BACKOFF_MS = 60_000;
+
+/** The minimal slice of BullMQ's Worker this needs — kept narrow so it's trivially testable
+ *  against a plain fake instead of a real Worker/Redis connection. */
+interface BackoffableWorker {
+  on(event: "error", listener: (err: Error) => void): unknown;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+}
+
+/**
+ * BullMQ's own internal "wait for the next job" loop has no backoff for a *scripted command*
+ * error the way it does for a dropped connection (ioredis's own maxRetriesPerRequest/reconnect
+ * strategy already paces those) — an exhausted Upstash monthly quota rejects every single
+ * command instantly, so without this the loop re-fires as fast as it possibly can, thousands of
+ * times a minute, on the exact free-tier instance that can least afford the added load. Found
+ * live: this is the leading suspect for why a hibernating instance's own wake attempt failed
+ * during the window the quota ran out. Pausing the worker for QUOTA_BACKOFF_MS and resuming
+ * automatically turns an indefinite tight retry loop into a slow, bounded poll instead — no one
+ * has to notice the quota ran out and manually restart anything for this part to stop hurting.
+ */
+export function attachQuotaBackoff(worker: BackoffableWorker, name: string) {
+  let backingOff = false;
+  worker.on("error", (err) => {
+    if (!REDIS_QUOTA_ERROR_PATTERN.test(err.message)) {
+      console.error(`[jobs] ${name} worker error:`, err.message);
+      return;
+    }
+    if (backingOff) return; // already pausing/waiting to resume — don't stack timers per error
+    backingOff = true;
+    console.error(`[jobs] ${name} worker hit the Redis command quota — pausing ${QUOTA_BACKOFF_MS / 1000}s instead of retrying instantly`);
+    worker.pause().catch(() => {}); // best-effort: the loop itself stopping matters more than this call succeeding
+    const timer = setTimeout(() => {
+      backingOff = false;
+      worker.resume().catch((e) => console.error(`[jobs] ${name} worker failed to resume after quota backoff`, e));
+      console.log(`[jobs] ${name} worker resuming after quota backoff`);
+    }, QUOTA_BACKOFF_MS);
+    backoffTimers.push(timer);
+  });
+}
 
 export function startWorkers() {
   // Each Worker gets its own duplicated connection — BullMQ Workers use blocking Redis commands
@@ -261,8 +307,14 @@ export function startWorkers() {
   const fanout = new Worker("fanout", processFanout, { connection: connection.duplicate(), concurrency: 5 });
   const moderate = new Worker("moderate", processModerate, { connection: connection.duplicate(), concurrency: 3 });
 
-  for (const w of [sweeps, fanout, moderate]) {
+  const named: [Worker, string][] = [
+    [sweeps, "sweeps"],
+    [fanout, "fanout"],
+    [moderate, "moderate"],
+  ];
+  for (const [w, name] of named) {
     w.on("failed", (job, err) => console.error(`[jobs] ${job?.queueName}:${job?.name} failed`, err.message));
+    attachQuotaBackoff(w, name);
   }
 
   workers = [sweeps, fanout, moderate];
@@ -270,5 +322,7 @@ export function startWorkers() {
 }
 
 export async function closeWorkers() {
+  for (const t of backoffTimers) clearTimeout(t);
+  backoffTimers = [];
   await Promise.allSettled(workers.map((w) => w.close()));
 }

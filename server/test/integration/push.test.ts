@@ -3,14 +3,23 @@ import request from "supertest";
 import { createApp } from "../../src/app.js";
 import { signup, auth } from "../helpers.js";
 import { query } from "../../src/db/pool.js";
+import { config } from "../../src/config.js";
 
 const app = createApp();
 
 describe("push subscriptions (Web Push)", () => {
-  it("GET /push/vapid-public-key returns null when VAPID isn't configured (test env default, same as GiantSMS/Gemini)", async () => {
-    const res = await request(app).get("/api/push/vapid-public-key");
-    expect(res.status).toBe(200);
-    expect(res.body.publicKey).toBeNull();
+  it("GET /push/vapid-public-key returns null when VAPID isn't configured (same fail-open pattern as GiantSMS/Gemini)", async () => {
+    // Blanked and restored explicitly rather than assuming server/.env has no key set — it now
+    // does, for real local push testing — so this stays correct regardless of the ambient env.
+    const publicKey = config.vapid.publicKey;
+    config.vapid.publicKey = "";
+    try {
+      const res = await request(app).get("/api/push/vapid-public-key");
+      expect(res.status).toBe(200);
+      expect(res.body.publicKey).toBeNull();
+    } finally {
+      config.vapid.publicKey = publicKey;
+    }
   });
 
   it("requires auth to subscribe", async () => {

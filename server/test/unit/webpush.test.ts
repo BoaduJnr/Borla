@@ -25,14 +25,22 @@ describe("sendPushToUser", () => {
 
   // Deliberately the FIRST test in this file: sendPushToUser caches "VAPID is configured" in a
   // module-level flag once it sees real keys, so it doesn't call webpush.setVapidDetails on every
-  // single send. Real production env vars are absent here (server/.env has none set, same as
-  // GiantSMS/Gemini), so this is what every send actually does today until VAPID keys are added
-  // to Render. Ordered before any test below sets config.vapid, so that cache is still empty.
-  it("is a silent no-op when VAPID keys aren't configured (today's real env, same fail-open pattern as SMS/Gemini)", async () => {
-    expect(config.vapid.publicKey).toBe(""); // sanity: confirms the ordering assumption above
-    const sendSpy = vi.spyOn(webpush, "sendNotification");
-    await sendPushToUser("some-user-id", { title: "t", body: "b" });
-    expect(sendSpy).not.toHaveBeenCalled();
+  // single send. Blanks config.vapid explicitly (and restores it) rather than assuming server/.env
+  // has no keys set — it now does, for real local push testing — so this stays correct regardless
+  // of the ambient environment. Ordered before any test below sets config.vapid, so that
+  // module-level cache is still empty when this runs.
+  it("is a silent no-op when VAPID keys aren't configured (same fail-open pattern as SMS/Gemini)", async () => {
+    const { publicKey, privateKey } = config.vapid;
+    config.vapid.publicKey = "";
+    config.vapid.privateKey = "";
+    try {
+      const sendSpy = vi.spyOn(webpush, "sendNotification");
+      await sendPushToUser("00000000-0000-0000-0000-000000000000", { title: "t", body: "b" });
+      expect(sendSpy).not.toHaveBeenCalled();
+    } finally {
+      config.vapid.publicKey = publicKey;
+      config.vapid.privateKey = privateKey;
+    }
   });
 
   it("sends to every subscription the user has, once VAPID is configured", async () => {
