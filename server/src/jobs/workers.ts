@@ -199,6 +199,69 @@ interface ModerateJobData {
 }
 
 /**
+ * Notifies the *subject* (never the author — they already know they just submitted it) once a
+ * review actually becomes visible. Self-contained (looks everything up from just the id) so it
+ * can be called identically from every path that can grant visibility: the AI "allow" verdict
+ * below, and admin/routes.ts's flag-resolve and manual-approve endpoints — before this, only the
+ * AI path existed at all, so a household/collector never learned about a review or reply through
+ * any channel, in-app or push.
+ */
+export async function notifyReviewVisible(reviewId: string) {
+  const row = await queryOne<{
+    subject_id: string;
+    rating: number;
+    request_id: string | null;
+    broadcast_id: string | null;
+    author_name: string | null;
+  }>(
+    `SELECT r.subject_id, r.rating, r.request_id, r.broadcast_id, u.display_name AS author_name
+     FROM reviews r JOIN users u ON u.id = r.author_id
+     WHERE r.id = $1`,
+    [reviewId]
+  );
+  if (!row) return;
+  notifyUser(
+    row.subject_id,
+    "review:new",
+    { reviewId, requestId: row.request_id, broadcastId: row.broadcast_id, rating: row.rating },
+    { title: "New review", body: `${row.author_name ?? "Someone"} rated you ${row.rating}★`, tag: `review:${reviewId}` }
+  );
+}
+
+/**
+ * Notifies whichever of the review's two participants did *not* just write this reply — the
+ * thread is a shared, back-and-forth conversation (Technical_Debt_Plan.md: no more double-blind
+ * gate), so "the other party" isn't fixed to either the review's author or its subject.
+ */
+export async function notifyReplyVisible(replyId: string) {
+  const row = await queryOne<{
+    review_id: string;
+    reply_author_id: string;
+    review_author_id: string;
+    subject_id: string;
+    request_id: string | null;
+    broadcast_id: string | null;
+    reply_author_name: string | null;
+  }>(
+    `SELECT rr.review_id, rr.author_id AS reply_author_id, r.author_id AS review_author_id, r.subject_id,
+            r.request_id, r.broadcast_id, u.display_name AS reply_author_name
+     FROM review_replies rr
+     JOIN reviews r ON r.id = rr.review_id
+     JOIN users u ON u.id = rr.author_id
+     WHERE rr.id = $1`,
+    [replyId]
+  );
+  if (!row) return;
+  const otherParty = row.reply_author_id === row.review_author_id ? row.subject_id : row.review_author_id;
+  notifyUser(
+    otherParty,
+    "reply:new",
+    { replyId, reviewId: row.review_id, requestId: row.request_id, broadcastId: row.broadcast_id },
+    { title: "New reply", body: `${row.reply_author_name ?? "Someone"} replied in your conversation`, tag: `review:${row.review_id}` }
+  );
+}
+
+/**
  * Both a review (a request's chat thread opens with one) and a reply (any later message in
  * that thread, from either party) go visible the moment they individually clear moderation —
  * there is no more double-blind "wait for the other side" gate. That gate used to mean the two
@@ -227,9 +290,13 @@ async function processModerate(job: Job<ModerateJobData>) {
         `UPDATE reviews SET moderation_passed = true, status = 'visible', visible_at = now() WHERE id = $1 RETURNING subject_id`,
         [targetId]
       );
-      if (row) await recomputeRatingAggregate(row.subject_id);
+      if (row) {
+        await recomputeRatingAggregate(row.subject_id);
+        await notifyReviewVisible(targetId).catch((err) => console.error(`[reviews] failed to notify review ${targetId} visible`, err));
+      }
     } else {
       await query(`UPDATE review_replies SET moderation_passed = true, status = 'visible' WHERE id = $1`, [targetId]);
+      await notifyReplyVisible(targetId).catch((err) => console.error(`[reviews] failed to notify reply ${targetId} visible`, err));
     }
   } else {
     await query(`UPDATE ${table} SET status = 'flagged' WHERE id = $1`, [targetId]);

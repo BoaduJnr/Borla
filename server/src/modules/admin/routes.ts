@@ -4,7 +4,7 @@ import { query, queryOne } from "../../db/pool.js";
 import { asyncHandler, ApiError } from "../../middleware/errorHandler.js";
 import { validateBody } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
-import { recomputeRatingAggregate } from "../../jobs/index.js";
+import { recomputeRatingAggregate, notifyReviewVisible, notifyReplyVisible } from "../../jobs/index.js";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("admin"));
@@ -156,6 +156,12 @@ adminRouter.post(
       const review = await queryOne<{ subject_id: string }>(`SELECT subject_id FROM reviews WHERE id = $1`, [flag.target_id]);
       if (review) await recomputeRatingAggregate(review.subject_id);
     }
+    // Same notify-on-visible as the AI "allow" path (jobs/workers.ts processModerate) — an
+    // admin clearing a flag is just as much "this became visible" as an AI verdict is.
+    if (newStatus === "visible") {
+      const notify = flag.target_type === "review" ? notifyReviewVisible : notifyReplyVisible;
+      await notify(flag.target_id).catch((err) => console.error(`[admin] failed to notify ${flag.target_type} ${flag.target_id} visible`, err));
+    }
     res.json({ ok: true });
   })
 );
@@ -175,6 +181,7 @@ adminRouter.post(
     );
     if (!row) throw new ApiError(404, "Pending review not found");
     await recomputeRatingAggregate(row.subject_id);
+    await notifyReviewVisible(row.id).catch((err) => console.error(`[admin] failed to notify review ${row.id} visible`, err));
     await logAudit(req.user!.id, "manual_approve_review", req.params.id);
     res.json({ ok: true });
   })
@@ -195,6 +202,7 @@ adminRouter.post(
       [req.params.id]
     );
     if (!row) throw new ApiError(404, "Pending reply not found");
+    await notifyReplyVisible(row.id).catch((err) => console.error(`[admin] failed to notify reply ${row.id} visible`, err));
     await logAudit(req.user!.id, "manual_approve_reply", req.params.id);
     res.json({ ok: true });
   })

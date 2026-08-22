@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useSocket } from "../hooks/SocketContext";
 import { Avatar } from "./Avatar";
 import { Stars, StarPicker } from "./Stars";
 
@@ -43,6 +44,7 @@ export function RequestReviews({
    * rating form and no reply composer. Rate/reply while the request is still active. */
   interactive?: boolean;
 }) {
+  const socket = useSocket();
   const [messages, setMessages] = useState<ThreadMessage[] | null>(null);
   const [mine, setMine] = useState<MyReview | null>(null);
   const [needsRating, setNeedsRating] = useState(false);
@@ -58,6 +60,24 @@ export function RequestReviews({
   }
 
   useEffect(load, [requestId]);
+
+  // Previously nothing refreshed this thread at all — not even a poll — once mounted: a new
+  // review/reply clearing moderation was invisible until the user happened to reopen it. review:new/
+  // reply:new (server/src/jobs/workers.ts notifyReviewVisible/notifyReplyVisible) now fire for
+  // every path that can grant visibility (AI moderation, admin flag-resolve, admin manual-approve).
+  useEffect(() => {
+    if (!socket) return;
+    const onThreadUpdate = (payload: { requestId?: string | null }) => {
+      if (payload.requestId === requestId) load();
+    };
+    socket.on("review:new", onThreadUpdate);
+    socket.on("reply:new", onThreadUpdate);
+    return () => {
+      socket.off("review:new", onThreadUpdate);
+      socket.off("reply:new", onThreadUpdate);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, requestId]);
 
   if (!messages) return null;
 
