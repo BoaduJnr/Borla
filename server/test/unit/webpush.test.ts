@@ -68,7 +68,8 @@ describe("sendPushToUser", () => {
     expect(sendSpy).toHaveBeenCalledTimes(2);
     expect(sendSpy).toHaveBeenCalledWith(
       { endpoint: "https://push.example/1", keys: { p256dh: "p1", auth: "a1" } },
-      JSON.stringify({ title: "New pickup nearby", body: "..." })
+      JSON.stringify({ title: "New pickup nearby", body: "..." }),
+      { urgency: "high", TTL: 3600 }
     );
   });
 

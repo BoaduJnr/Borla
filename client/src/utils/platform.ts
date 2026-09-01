@@ -22,3 +22,17 @@ export function isIOS(): boolean {
   if (/iPad|iPhone|iPod/.test(navigator.userAgent)) return true;
   return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
 }
+
+/**
+ * Real Safari on any Apple device (iOS or desktop macOS) — `vendor` is the standard, reliable way
+ * to tell it apart from Chrome/Edge/Firefox running on a Mac, which all report a different
+ * vendor string despite sharing the same "Macintosh" bits of the user agent. Desktop Safari has
+ * its own version of iOS's install requirement (historically: added to the Dock via Safari's own
+ * File menu, not just any tab) — less certain/more version-dependent than the confirmed iOS case,
+ * so this only powers an error-message *hint*, not a hard gate like isIOS()/needsIOSInstall does.
+ * Blocking the button outright on a guess would risk hiding a feature that works fine for some
+ * desktop Safari versions; a hint on actual failure doesn't have that downside.
+ */
+export function isSafari(): boolean {
+  return navigator.vendor === "Apple Computer, Inc.";
+}

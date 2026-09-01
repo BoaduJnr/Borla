@@ -54,7 +54,20 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         await withTimeout(
           webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify(payload)
+            JSON.stringify(payload),
+            {
+              // "normal" (the default) is exactly what FCM/Android's battery-optimization Doze
+              // mode deprioritizes and can visibly delay — every notification Borla actually
+              // sends is a real 1:1 signal, not bulk/marketing traffic, so there's no downside
+              // to asking for prompt delivery every time.
+              urgency: "high",
+              // Bounded so a notification about something time-sensitive (a pin that's since
+              // expired, a request that's since timed out) doesn't sit queued and then arrive
+              // hours later the next time an offline phone reconnects. 1 hour comfortably covers
+              // every current event's own natural lifetime (broadcast pins expire in well under
+              // that — app_config's pin_ttl_minutes default is 45).
+              TTL: 3600,
+            }
           ),
           5000,
           "webpush.sendNotification"

@@ -3,12 +3,16 @@ import "dotenv/config";
 
 const { Pool } = pg;
 
+// Every managed Postgres provider this app has pointed at (Render, Supabase's pooler) requires
+// SSL; only a local Docker instance for dev doesn't use it at all. Was previously an allowlist of
+// just "render.com" — broke silently the moment DATABASE_URL pointed anywhere else managed
+// (found moving to Supabase: its pooler expects TLS and a plain connection just fails to
+// connect), so this now assumes SSL unless the host is explicitly local.
+const isLocalDb = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? "");
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Render's free Postgres requires SSL; local dev typically doesn't use it.
-  ssl: process.env.DATABASE_URL?.includes("render.com")
-    ? { rejectUnauthorized: false }
-    : undefined,
+  ssl: isLocalDb ? undefined : { rejectUnauthorized: false },
   max: 10,
 });
 

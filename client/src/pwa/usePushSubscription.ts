@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { urlBase64ToUint8Array } from "../utils/push";
-import { isIOS, isStandalone } from "../utils/platform";
+import { isIOS, isStandalone, isSafari } from "../utils/platform";
 
 /**
  * Real OS-level push notifications (closes the gap Socket.IO's emitToUser() alone can't — that
@@ -75,7 +75,17 @@ export function usePushSubscription() {
       await api("/push/subscribe", { method: "POST", body: sub.toJSON() });
       setSubscribed(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not enable notifications");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else if (isSafari()) {
+        // Desktop Safari has its own, less predictable version of iOS's install requirement
+        // (historically: added to the Dock, not just any open tab) — not confirmed reliably
+        // enough to hard-block the button the way needsIOSInstall does for iOS, but a real
+        // subscribe() failure on Safari is very plausibly exactly that, so say so.
+        setError("Could not enable notifications. On Safari, try adding this page to your Dock (or Home Screen) first, then try again.");
+      } else {
+        setError("Could not enable notifications");
+      }
     } finally {
       setBusy(false);
     }

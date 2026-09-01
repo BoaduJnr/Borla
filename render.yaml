@@ -1,3 +1,9 @@
+# borla-db (Render's own free managed Postgres) is no longer bound to DATABASE_URL below --
+# Borla now runs on a dedicated Supabase project instead (kept separate from the live
+# farmconnect-ghana project's database; PostGIS enabled, migrations + demo seed already applied).
+# This block is left in place, not deleted, so the old database resource isn't destroyed by a
+# Blueprint sync -- it's just unused now. Safe to remove yourself once you're sure nothing on it
+# is still needed; not done here since deleting a database isn't this change's call to make.
 databases:
   - name: borla-db
     plan: free
@@ -17,10 +23,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Points at a dedicated Supabase project (not the old borla-db above) -- paste the real
+      # connection string in Render's dashboard, same as GEMINI_API_KEY/GIANTSMS_* below. Use the
+      # pooler connection string (port 5432 or 6543, host ending in pooler.supabase.com), not the
+      # direct-connection one.
       - key: DATABASE_URL
-        fromDatabase:
-          name: borla-db
-          property: connectionString
+        sync: false
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
