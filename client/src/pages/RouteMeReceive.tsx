@@ -3,7 +3,6 @@ import { useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { MapView, type RouteInfo } from "../components/MapView";
-import { Logo } from "../components/Logo";
 import { haversineM, formatDistance, zoomForDistance, LIVE_TRACKING_RESUME_MS, type LonLat } from "../utils/geo";
 
 interface ShareInfo {
@@ -40,33 +39,27 @@ export default function RouteMeReceive() {
   }, [token]);
 
   return (
-    <div className="app-shell">
-      <div className="content">
-        <div style={{ marginBottom: 22 }}>
-          <Logo size={30} />
+    <div className="content">
+      {error && <div className="banner err">{error}</div>}
+      {!error && !share && <p className="muted">Loading…</p>}
+
+      {share && !locating && (
+        <div className="stack">
+          <h1 className="h-disp" style={{ fontSize: 24 }}>
+            Someone wants you to find them
+          </h1>
+          <p className="muted" style={{ maxWidth: 340 }}>
+            Use the map to locate yourself, and we'll draw a route from where you are to where they are.
+          </p>
+          <button className="btn btn-green" onClick={() => setLocating(true)}>
+            Locate me
+          </button>
         </div>
+      )}
 
-        {error && <div className="banner err">{error}</div>}
-        {!error && !share && <p className="muted">Loading…</p>}
-
-        {share && !locating && (
-          <div className="stack">
-            <h1 className="h-disp" style={{ fontSize: 24 }}>
-              Someone wants you to find them
-            </h1>
-            <p className="muted" style={{ maxWidth: 340 }}>
-              Use the map to locate yourself, and we'll draw a route from where you are to where they are.
-            </p>
-            <button className="btn btn-green" onClick={() => setLocating(true)}>
-              Locate me
-            </button>
-          </div>
-        )}
-
-        {share && locating && token && (
-          <RouteToSender token={token} senderLon={share.senderLon} senderLat={share.senderLat} />
-        )}
-      </div>
+      {share && locating && token && (
+        <RouteToSender token={token} senderLon={share.senderLon} senderLat={share.senderLat} />
+      )}
     </div>
   );
 }

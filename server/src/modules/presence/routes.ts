@@ -6,8 +6,124 @@ import { validateBody, validateQuery } from "../../middleware/validate.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 import * as presence from "../../redis/presence.js";
 import { withTimeout } from "../../utils/withTimeout.js";
+import { notifyUser } from "../../notify.js";
+import { getConfigNumber, AppConfigKeys, defaults } from "../../utils/appConfig.js";
+import { checkNotifRateLimit } from "../../redis/rateLimit.js";
+import { inQuietHours } from "../../utils/quietHours.js";
 
 export const presenceRouter = Router();
+
+/**
+ * Runs once, inline, the moment a collector goes online — deliberately not on every heartbeat
+ * (every 25-35s per online collector), which would mean re-scanning nearby broadcasts constantly
+ * and would need its own story for not re-notifying the same household repeatedly while a
+ * collector just sits in range. "Go online" is an infrequent, deliberate user action, so this
+ * stays a clean, bounded, one-shot scan instead.
+ *
+ * Two things can now be true that weren't a moment ago, neither covered by the
+ * broadcast-creation-time fan-out (jobs/workers.ts runFanoutLogic), which only ever matches
+ * against collectors who were *already* online when a pin went up:
+ *
+ *   1. This collector is within the admin-configured broadcast radius of an existing active pin
+ *      they were never notified about (they were offline when it was created) — same checks the
+ *      original fan-out applies (waste-type match, quiet hours, the notif rate cap, and the same
+ *      broadcast_notifications table so they're never double-notified for one pin).
+ *   2. This collector is now within *that household's own* alert radius — a separate, per-
+ *      household setting (PATCH /households/me), independent of the admin's broadcast radius.
+ *      The household had no signal at all for this before today; gated on their own
+ *      alerts_enabled toggle and the same rate-limit collectors already get, so one collector
+ *      repeatedly toggling online/offline can't spam a household.
+ */
+async function notifyOnCollectorOnline(collectorId: string, lon: number, lat: number) {
+  const collector = await queryOne<{ waste_types: string[]; quiet_hours: { start: string; end: string } | null }>(
+    `SELECT waste_types, quiet_hours FROM collectors WHERE user_id = $1`,
+    [collectorId]
+  );
+  if (!collector) return;
+
+  const broadcastRadiusM = await getConfigNumber(AppConfigKeys.broadcastRadiusM, defaults.broadcastRadiusM);
+  const notifCap = await getConfigNumber(AppConfigKeys.notifCapPer10Min, defaults.notifCapPer10Min);
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+
+  // One outer bound wide enough to catch either radius — a household's own alert_radius_m tops
+  // out at 5000m (PATCH /households/me's own validation) regardless of the admin's own setting.
+  const rows = await query<{
+    id: string;
+    lon: number;
+    lat: number;
+    waste_type: string | null;
+    note: string | null;
+    household_id: string;
+    household_name: string | null;
+    household_phone: string;
+    alert_radius_m: number;
+    alerts_enabled: boolean;
+    distance_m: string;
+  }>(
+    `SELECT b.id, b.lon, b.lat, b.waste_type, b.note,
+            h.user_id AS household_id, hu.display_name AS household_name, hu.phone AS household_phone,
+            h.alert_radius_m, h.alerts_enabled,
+            ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_m
+     FROM broadcasts b
+     JOIN households h ON h.user_id = b.household_id
+     JOIN users hu ON hu.id = b.household_id
+     WHERE b.status = 'active'
+       AND ST_DWithin(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, GREATEST($3, 5000))`,
+    [lon, lat, broadcastRadiusM]
+  );
+
+  for (const row of rows) {
+    const distanceM = Number(row.distance_m);
+
+    if (distanceM <= broadcastRadiusM) {
+      const wasteTypeMismatch = Boolean(collector.waste_types?.length && row.waste_type && !collector.waste_types.includes(row.waste_type));
+      const quiet = Boolean(collector.quiet_hours && inQuietHours(nowMinutes, collector.quiet_hours));
+      if (!wasteTypeMismatch && !quiet) {
+        // ON CONFLICT DO NOTHING + RETURNING: only actually notify if this row is newly
+        // inserted — a null result means this exact (broadcast, collector) pair was already
+        // recorded (they got the original creation-time fan-out, or an earlier go-online already
+        // caught this one), so notifying again would just be a duplicate ping for the same pin.
+        const inserted = await queryOne(
+          `INSERT INTO broadcast_notifications (broadcast_id, collector_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id`,
+          [row.id, collectorId]
+        );
+        if (inserted && (await checkNotifRateLimit(collectorId, notifCap))) {
+          notifyUser(
+            collectorId,
+            "broadcast:new",
+            {
+              broadcastId: row.id,
+              lon: row.lon,
+              lat: row.lat,
+              wasteType: row.waste_type,
+              note: row.note,
+              householdName: row.household_name,
+              householdPhone: row.household_phone,
+            },
+            {
+              title: "New waste pickup nearby",
+              body: `${row.household_name ?? "A household"} nearby has ${row.waste_type ?? "waste"} ready for pickup.`,
+              tag: `broadcast:${row.id}`,
+            }
+          );
+        }
+      }
+    }
+
+    if (row.alerts_enabled && distanceM <= row.alert_radius_m && (await checkNotifRateLimit(row.household_id, notifCap))) {
+      notifyUser(
+        row.household_id,
+        "collector:nearby",
+        { broadcastId: row.id },
+        {
+          title: "A collector is nearby",
+          body: "An online collector just came within range of your pickup.",
+          tag: `collector-nearby:${row.id}`,
+        }
+      );
+    }
+  }
+}
 
 const toggleSchema = z.object({
   online: z.boolean(),
@@ -55,6 +171,12 @@ presenceRouter.post(
          WHERE user_id = $3`,
         [lon, lat, user.id]
       );
+      // Best-effort, same spirit as the Redis calls above: a failure here must never stop a
+      // collector from actually going online — that already fully succeeded, in Postgres, by
+      // this point.
+      await notifyOnCollectorOnline(user.id, lon, lat).catch((err) => {
+        console.error(`[presence] notifyOnCollectorOnline failed for ${user.id} — continuing`, err);
+      });
     } else {
       await withTimeout(presence.goOffline(user.id), 3000, "presence.goOffline").catch((err) => {
         console.error(`[presence] Redis goOffline failed for ${user.id} — continuing Postgres-only`, err);

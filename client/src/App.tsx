@@ -102,12 +102,13 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Both reachable with no login (the splash screen's "Route me" button, and an SMS link
+            opened cold by a stranger) — Shell already renders the topbar unconditionally and the
+            "Log out" button/tabbar only for a logged-in user, so an anonymous visitor here still
+            gets the same consistent topbar everyone else does, just without those two extras. */}
+        <Route path="/route-me" element={<RouteMeSend />} />
+        <Route path="/route/:token" element={<RouteMeReceive />} />
       </Route>
-      {/* Bare, chrome-free routes — no topbar/tabbar. Both are reachable with no login (the
-          splash screen's "Route me" button, and an SMS link opened cold by a stranger with no
-          other context), so neither should look like it needs one. */}
-      <Route path="/route-me" element={<RouteMeSend />} />
-      <Route path="/route/:token" element={<RouteMeReceive />} />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

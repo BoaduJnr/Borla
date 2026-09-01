@@ -4,7 +4,6 @@ import { api, ApiError } from "../api/client";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { IconBack, IconPerson, IconSearch } from "../components/Icon";
-import { Logo } from "../components/Logo";
 import { MapView, type RouteInfo } from "../components/MapView";
 import { LandmarkSearch, type LandmarkResult } from "../components/LandmarkSearch";
 import { zoomForDistance, LIVE_TRACKING_RESUME_MS } from "../utils/geo";
@@ -28,26 +27,20 @@ export default function RouteMeSend() {
   const [mode, setMode] = useState<Mode>(null);
 
   return (
-    <div className="app-shell">
-      <div className="content">
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginBottom: 20 }}
-          onClick={() => (mode ? setMode(null) : navigate("/login"))}
-        >
-          <IconBack size={18} />
-          Back
-        </button>
+    <div className="content">
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 20 }}
+        onClick={() => (mode ? setMode(null) : navigate("/login"))}
+      >
+        <IconBack size={18} />
+        Back
+      </button>
 
-        <div style={{ marginBottom: 22 }}>
-          <Logo size={30} />
-        </div>
-
-        {mode === null && <ModePicker onPick={setMode} />}
-        {mode === "share" && <ShareLocationForm />}
-        {mode === "search" && <SearchAndRoute />}
-      </div>
+      {mode === null && <ModePicker onPick={setMode} />}
+      {mode === "share" && <ShareLocationForm />}
+      {mode === "search" && <SearchAndRoute />}
     </div>
   );
 }
